@@ -1,3 +1,20 @@
 <resources>
     <string name="app_name">QuietPDF</string>
+    <string name="open_pdf">Open PDF</string>
+    <string name="open_another_pdf">Open another PDF</string>
+    <string name="home_title">Your PDFs stay on this device</string>
+    <string name="home_description">Choose a PDF to open it privately. QuietPDF does not upload your documents.</string>
+    <string name="opening_pdf">Opening PDF…</string>
+    <string name="pdf_ready">PDF ready</string>
+    <string name="selected_pdf">Selected PDF</string>
+    <string name="error_permission_denied">QuietPDF no longer has permission to open this file. Choose it again.</string>
+    <string name="error_file_unavailable">This PDF is no longer available. Check that it has not been moved or deleted.</string>
+    <string name="error_corrupted_pdf">This file is not a readable PDF. It may be damaged or incomplete.</string>
+    <string name="error_password_protected">This PDF is password-protected. Password entry is not available yet.</string>
+    <string name="error_unsupported_pdf">This PDF uses a format that this device cannot open.</string>
+    <string name="error_empty_pdf">This PDF does not contain any pages.</string>
+    <plurals name="page_count">
+        <item quantity="one">%1$d page</item>
+        <item quantity="other">%1$d pages</item>
+    </plurals>
 </resources>
