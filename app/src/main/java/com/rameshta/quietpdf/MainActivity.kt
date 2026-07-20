@@ -31,15 +31,17 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.rameshta.quietpdf.pdf.PdfOpenFailure
+import com.rameshta.quietpdf.pdf.PageRenderFailure
+import com.rameshta.quietpdf.pdf.PageRenderResult
 import com.rameshta.quietpdf.pdf.PdfOpenState
 import com.rameshta.quietpdf.pdf.PdfOpenViewModel
+import com.rameshta.quietpdf.ui.reader.PdfReaderScreen
 import com.rameshta.quietpdf.ui.theme.QuietPDFTheme
 
 class MainActivity : ComponentActivity() {
@@ -65,6 +67,7 @@ class MainActivity : ComponentActivity() {
                 QuietPdfApp(
                     state = viewModel.state,
                     onOpenPdf = { picker.launch(arrayOf("application/pdf")) },
+                    renderPage = viewModel::renderPage,
                 )
             }
         }
@@ -104,7 +107,20 @@ class MainActivity : ComponentActivity() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun QuietPdfApp(state: PdfOpenState, onOpenPdf: () -> Unit) {
+fun QuietPdfApp(
+    state: PdfOpenState,
+    onOpenPdf: () -> Unit,
+    renderPage: suspend (pageIndex: Int, targetWidth: Int) -> PageRenderResult,
+) {
+    if (state is PdfOpenState.Opened) {
+        PdfReaderScreen(
+            document = state,
+            onOpenAnother = onOpenPdf,
+            renderPage = renderPage,
+        )
+        return
+    }
+
     Scaffold(
         topBar = { TopAppBar(title = { Text(stringResource(R.string.app_name)) }) },
     ) { innerPadding ->
@@ -145,7 +161,7 @@ private fun OpenPdfContent(
         when (state) {
             PdfOpenState.Idle -> IdleContent(onOpenPdf)
             PdfOpenState.Opening -> OpeningContent()
-            is PdfOpenState.Opened -> OpenedContent(state, onOpenPdf)
+            is PdfOpenState.Opened -> Unit
             is PdfOpenState.Failed -> FailedContent(state.failure, onOpenPdf)
         }
     }
@@ -185,31 +201,6 @@ private fun OpeningContent() {
 }
 
 @Composable
-private fun OpenedContent(state: PdfOpenState.Opened, onOpenPdf: () -> Unit) {
-    Text(
-        text = stringResource(R.string.pdf_ready),
-        style = MaterialTheme.typography.labelLarge,
-        color = MaterialTheme.colorScheme.primary,
-    )
-    Spacer(Modifier.height(8.dp))
-    Text(
-        text = state.displayName ?: stringResource(R.string.selected_pdf),
-        style = MaterialTheme.typography.headlineSmall,
-        fontWeight = FontWeight.SemiBold,
-        textAlign = TextAlign.Center,
-        modifier = Modifier.testTag("opened_file_name"),
-    )
-    Spacer(Modifier.height(8.dp))
-    Text(
-        text = pluralStringResource(R.plurals.page_count, state.pageCount, state.pageCount),
-        style = MaterialTheme.typography.bodyLarge,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
-    Spacer(Modifier.height(24.dp))
-    OpenButton(label = stringResource(R.string.open_another_pdf), onClick = onOpenPdf)
-}
-
-@Composable
 private fun FailedContent(failure: PdfOpenFailure, onOpenPdf: () -> Unit) {
     Text(
         text = stringResource(failure.messageResource),
@@ -239,6 +230,10 @@ private fun OpenButton(label: String, onClick: () -> Unit) {
 @Composable
 private fun QuietPdfPreview() {
     QuietPDFTheme(dynamicColor = false) {
-        QuietPdfApp(state = PdfOpenState.Idle, onOpenPdf = {})
+        QuietPdfApp(
+            state = PdfOpenState.Idle,
+            onOpenPdf = {},
+            renderPage = { _, _ -> PageRenderResult.Failed(PageRenderFailure.UnableToRender) },
+        )
     }
 }

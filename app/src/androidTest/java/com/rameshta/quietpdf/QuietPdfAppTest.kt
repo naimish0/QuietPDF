@@ -1,5 +1,6 @@
 package com.rameshta.quietpdf
 
+import android.graphics.Bitmap
 import android.net.Uri
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertTextEquals
@@ -7,12 +8,15 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.rameshta.quietpdf.pdf.PageRenderResult
 import com.rameshta.quietpdf.pdf.PdfOpenFailure
 import com.rameshta.quietpdf.pdf.PdfOpenState
 import com.rameshta.quietpdf.ui.theme.QuietPDFTheme
 import org.junit.Rule
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.util.concurrent.atomic.AtomicInteger
 
 @RunWith(AndroidJUnit4::class)
 class QuietPdfAppTest {
@@ -37,8 +41,9 @@ class QuietPdfAppTest {
             ),
         )
 
-        composeRule.onNodeWithTag("opened_file_name").assertTextEquals("fixture.pdf")
-        composeRule.onNodeWithText("2 pages").assertIsDisplayed()
+        composeRule.onNodeWithText("fixture.pdf").assertIsDisplayed()
+        composeRule.onNodeWithTag("pdf_page_1").assertIsDisplayed()
+        composeRule.onNodeWithText("Page 1 of 2").assertIsDisplayed()
     }
 
     @Test
@@ -49,10 +54,42 @@ class QuietPdfAppTest {
         composeRule.onNodeWithTag("open_pdf_button").assertTextEquals("Open PDF")
     }
 
-    private fun setContent(state: PdfOpenState) {
+    @Test
+    fun largeDocument_onlyRendersPagesNearTheViewport() {
+        val renderCount = AtomicInteger()
+        setContent(
+            state = PdfOpenState.Opened(
+                uri = Uri.parse("content://test/large-document"),
+                displayName = "large.pdf",
+                pageCount = 1_000,
+            ),
+            renderPage = { _, _ ->
+                renderCount.incrementAndGet()
+                PageRenderResult.Ready(
+                    Bitmap.createBitmap(100, 140, Bitmap.Config.ARGB_8888),
+                )
+            },
+        )
+
+        composeRule.waitUntil(timeoutMillis = 5_000) { renderCount.get() > 0 }
+        assertTrue("Lazy reader rendered too many pages", renderCount.get() < 20)
+    }
+
+    private fun setContent(
+        state: PdfOpenState,
+        renderPage: suspend (Int, Int) -> PageRenderResult = { _, _ ->
+            PageRenderResult.Ready(
+                Bitmap.createBitmap(100, 140, Bitmap.Config.ARGB_8888),
+            )
+        },
+    ) {
         composeRule.setContent {
             QuietPDFTheme(dynamicColor = false) {
-                QuietPdfApp(state = state, onOpenPdf = {})
+                QuietPdfApp(
+                    state = state,
+                    onOpenPdf = {},
+                    renderPage = renderPage,
+                )
             }
         }
     }
