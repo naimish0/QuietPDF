@@ -317,4 +317,21 @@
     <string name="remove_password_permission_denied">QuietPDF lost access to the PDF or save location. Choose them again.</string>
     <string name="remove_password_memory_error">This PDF needs more memory than is available. Close other apps or try a smaller PDF.</string>
     <string name="remove_password_save_error">The unlocked PDF could not be created and reopened safely. The protected original was not changed; choose another save location.</string>
+    <string name="change_password">Change password</string>
+    <string name="change_password_title">Change password</string>
+    <string name="change_password_document_summary">Enter the current and new passwords for %1$s.</string>
+    <string name="new_password">New password</string>
+    <string name="change_password_incorrect">The current password is incorrect. Try again.</string>
+    <string name="change_password_must_differ">The new password must be different from the current password.</string>
+    <string name="change_password_note">A new AES-256 protected copy will be saved. The original and both passwords are not stored.</string>
+    <string name="save_changed_password_pdf">Save with new password</string>
+    <string name="change_password_preparing">Checking whether this PDF is password protected…</string>
+    <string name="change_password_changing">Changing the password and validating the saved copy…</string>
+    <string name="change_password_completed">Password changed and %1$d pages validated. Keep the new password safe—it cannot be recovered.</string>
+    <string name="change_password_not_protected">This PDF does not have a password to change. Use Protect PDF instead.</string>
+    <string name="change_password_invalid_new">Use a different new password of at least 6 characters that is not only spaces.</string>
+    <string name="change_password_invalid_document">This file changed or is not a readable protected PDF. Choose the original again.</string>
+    <string name="change_password_permission_denied">QuietPDF lost access to the PDF or save location. Choose them again.</string>
+    <string name="change_password_memory_error">This PDF needs more memory than is available. Close other apps or try a smaller PDF.</string>
+    <string name="change_password_save_error">The newly protected PDF could not be created and reopened safely. The original was not changed; choose another save location.</string>
 </resources>

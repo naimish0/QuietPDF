@@ -230,6 +230,28 @@ sealed interface RemovePasswordState {
     data class Failed(val failure: RemovePasswordFailure) : RemovePasswordState
 }
 
+sealed interface ChangePasswordState {
+    data object Idle : ChangePasswordState
+    data object Preparing : ChangePasswordState
+    data class Configuring(
+        val sourceUri: Uri,
+        val displayName: String,
+        val currentPasswordError: Boolean = false,
+    ) : ChangePasswordState
+    data object Changing : ChangePasswordState
+    data class Completed(val pageCount: Int) : ChangePasswordState
+    data class Failed(val failure: ChangePasswordFailure) : ChangePasswordState
+}
+
+enum class ChangePasswordFailure(@get:StringRes val messageResource: Int) {
+    NotProtected(R.string.change_password_not_protected),
+    InvalidNewPassword(R.string.change_password_invalid_new),
+    InvalidDocument(R.string.change_password_invalid_document),
+    PermissionDenied(R.string.change_password_permission_denied),
+    InsufficientMemory(R.string.change_password_memory_error),
+    UnableToSave(R.string.change_password_save_error),
+}
+
 enum class RemovePasswordFailure(@get:StringRes val messageResource: Int) {
     NotProtected(R.string.remove_password_not_protected),
     InvalidDocument(R.string.remove_password_invalid_document),
@@ -335,6 +357,7 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
     private val compressPdfEngine = CompressPdfEngine(application)
     private val protectPdfEngine = ProtectPdfEngine(application)
     private val removePasswordEngine = RemovePasswordEngine(application)
+    private val changePasswordEngine = ChangePasswordEngine(application)
     private val scannerCaptureEngine = ScannerCaptureEngine(application)
     private val scannerCropCorrectionEngine = ScannerCropCorrectionEngine(application.cacheDir)
     private val scannerEnhancementEngine = ScannerEnhancementEngine(application.cacheDir)
@@ -350,6 +373,7 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
     private var compressPdfJob: Job? = null
     private var protectPdfJob: Job? = null
     private var removePasswordJob: Job? = null
+    private var changePasswordJob: Job? = null
     private var scannerJob: Job? = null
     private var scannerEnhancementJob: Job? = null
     private var scannerCaptureFile: File? = null
@@ -406,6 +430,9 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
         private set
 
     var removePasswordState: RemovePasswordState by mutableStateOf(RemovePasswordState.Idle)
+        private set
+
+    var changePasswordState: ChangePasswordState by mutableStateOf(ChangePasswordState.Idle)
         private set
 
     var scannerCaptureState: ScannerCaptureState by mutableStateOf(ScannerCaptureState.Idle)
@@ -1560,6 +1587,97 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
 
     fun clearRemovePasswordResult() {
         removePasswordState = RemovePasswordState.Idle
+    }
+
+    fun selectPdfForPasswordChange(uri: Uri) {
+        changePasswordJob?.cancel()
+        changePasswordState = ChangePasswordState.Preparing
+        changePasswordJob = viewModelScope.launch {
+            changePasswordState = when (removePasswordEngine.analyze(uri)) {
+                RemovePasswordAnalysisResult.Protected -> ChangePasswordState.Configuring(
+                    sourceUri = uri,
+                    displayName = withContext(Dispatchers.IO) { queryDisplayName(uri) } ?: "PDF",
+                )
+                RemovePasswordAnalysisResult.NotProtected -> {
+                    ChangePasswordState.Failed(ChangePasswordFailure.NotProtected)
+                }
+                RemovePasswordAnalysisResult.InvalidDocument -> {
+                    ChangePasswordState.Failed(ChangePasswordFailure.InvalidDocument)
+                }
+                RemovePasswordAnalysisResult.PermissionDenied -> {
+                    ChangePasswordState.Failed(ChangePasswordFailure.PermissionDenied)
+                }
+                RemovePasswordAnalysisResult.InsufficientMemory -> {
+                    ChangePasswordState.Failed(ChangePasswordFailure.InsufficientMemory)
+                }
+            }
+        }
+    }
+
+    fun changeSelectedPdfPassword(
+        outputUri: Uri,
+        suppliedCurrentPassword: CharArray,
+        suppliedNewPassword: CharArray,
+    ) {
+        val configuring = changePasswordState as? ChangePasswordState.Configuring
+        if (configuring == null) {
+            suppliedCurrentPassword.fill('\u0000')
+            suppliedNewPassword.fill('\u0000')
+            return
+        }
+        val currentPassword = suppliedCurrentPassword.copyOf()
+        val newPassword = suppliedNewPassword.copyOf()
+        suppliedCurrentPassword.fill('\u0000')
+        suppliedNewPassword.fill('\u0000')
+        changePasswordJob?.cancel()
+        changePasswordState = ChangePasswordState.Changing
+        changePasswordJob = viewModelScope.launch {
+            try {
+                changePasswordState = when (
+                    val result = changePasswordEngine.change(
+                        sourceUri = configuring.sourceUri,
+                        outputUri = outputUri,
+                        currentPassword = currentPassword,
+                        newPassword = newPassword,
+                    )
+                ) {
+                    is ChangePasswordResult.Success -> ChangePasswordState.Completed(result.pageCount)
+                    ChangePasswordResult.IncorrectCurrentPassword -> {
+                        configuring.copy(currentPasswordError = true)
+                    }
+                    ChangePasswordResult.InvalidNewPassword -> {
+                        ChangePasswordState.Failed(ChangePasswordFailure.InvalidNewPassword)
+                    }
+                    ChangePasswordResult.NotProtected -> {
+                        ChangePasswordState.Failed(ChangePasswordFailure.NotProtected)
+                    }
+                    ChangePasswordResult.InvalidDocument -> {
+                        ChangePasswordState.Failed(ChangePasswordFailure.InvalidDocument)
+                    }
+                    ChangePasswordResult.PermissionDenied -> {
+                        ChangePasswordState.Failed(ChangePasswordFailure.PermissionDenied)
+                    }
+                    ChangePasswordResult.InsufficientMemory -> {
+                        ChangePasswordState.Failed(ChangePasswordFailure.InsufficientMemory)
+                    }
+                    ChangePasswordResult.Failed -> {
+                        ChangePasswordState.Failed(ChangePasswordFailure.UnableToSave)
+                    }
+                }
+            } finally {
+                currentPassword.fill('\u0000')
+                newPassword.fill('\u0000')
+            }
+        }
+    }
+
+    fun cancelChangePassword() {
+        changePasswordJob?.cancel()
+        changePasswordState = ChangePasswordState.Idle
+    }
+
+    fun clearChangePasswordResult() {
+        changePasswordState = ChangePasswordState.Idle
     }
 
     fun rejectUnsupportedUri() {
