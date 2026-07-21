@@ -39,8 +39,8 @@ COMPLETED T32-Fill-Forms
 COMPLETED T33-Sign-PDF
 COMPLETED T34-Annotate-PDF
 COMPLETED T35-Recent-Files
-T36-Favorites
-T37-History
+COMPLETED T36-Favorites
+COMPLETED T37-History
 T38-File-Search-Sort
 T39-Share-PDF
 T40-Smart-Home

@@ -516,6 +516,7 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
     private val bookmarkStore = PdfBookmarkStore(application)
     private val recentPdfStore = RecentPdfStore(application)
     private val favoritePdfStore = FavoritePdfStore(application)
+    private val historyStore = PdfHistoryStore(application)
     private val tableOfContentsEngine = PdfTableOfContentsEngine(application)
     private val healthEngine = PdfHealthEngine(application)
     private val imagesToPdfEngine = ImagesToPdfEngine(application.contentResolver, application.cacheDir)
@@ -590,6 +591,9 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
         private set
 
     var favoritePdfs: List<FavoritePdf> by mutableStateOf(favoritePdfStore.load())
+        private set
+
+    var history: List<PdfHistoryEntry> by mutableStateOf(historyStore.load())
         private set
 
     var imagesToPdfState: ImagesToPdfState by mutableStateOf(ImagesToPdfState.Idle)
@@ -823,6 +827,7 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
             ) {
                 ScannerPdfResult.Success -> {
                     releaseScannerCapture()
+                    recordHistory(PdfHistoryOperation.ScanDocument)
                     scannerCaptureState = ScannerCaptureState.Completed(outputUri)
                 }
                 ScannerPdfResult.InvalidImage -> {
@@ -920,6 +925,15 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
         releaseStoredPermissionIfUnused(uri)
     }
 
+    fun clearHistory() {
+        historyStore.clear()
+        history = emptyList()
+    }
+
+    private fun recordHistory(operation: PdfHistoryOperation) {
+        history = historyStore.record(operation)
+    }
+
     private fun openDocument(uri: Uri, removeFailedStoredFile: Boolean) {
         openJob?.cancel()
         searchEngine.close()
@@ -1014,6 +1028,7 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
         imageCreationJob = viewModelScope.launch {
             when (val result = imagesToPdfEngine.create(imageUris, outputUri, layout)) {
                 is ImagesToPdfResult.Success -> {
+                    recordHistory(PdfHistoryOperation.ImagesToPdf)
                     imagesToPdfState = ImagesToPdfState.Idle
                     open(outputUri)
                 }
@@ -1083,6 +1098,7 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
         mergeJob = viewModelScope.launch {
             mergePdfState = when (val result = mergePdfEngine.merge(sourceUris, outputUri)) {
                 is MergePdfResult.Success -> {
+                    recordHistory(PdfHistoryOperation.MergePdf)
                     open(outputUri)
                     MergePdfState.Idle
                 }
@@ -1168,7 +1184,10 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
                     },
                 )
             ) {
-                is SplitPdfResult.Success -> SplitPdfState.Completed(result.outputCount)
+                is SplitPdfResult.Success -> {
+                    recordHistory(PdfHistoryOperation.SplitPdf)
+                    SplitPdfState.Completed(result.outputCount)
+                }
                 SplitPdfResult.InvalidDocument -> {
                     SplitPdfState.Failed(SplitPdfFailure.InvalidDocument)
                 }
@@ -1240,6 +1259,7 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
                 )
             ) {
                 is ExtractPagesResult.Success -> {
+                    recordHistory(PdfHistoryOperation.ExtractPages)
                     open(outputUri)
                     ExtractPagesState.Idle
                 }
@@ -1332,6 +1352,7 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
                 )
             ) {
                 is DeletePagesResult.Success -> {
+                    recordHistory(PdfHistoryOperation.DeletePages)
                     open(outputUri)
                     DeletePagesState.Idle
                 }
@@ -1429,6 +1450,7 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
                 )
             ) {
                 is RearrangePagesResult.Success -> {
+                    recordHistory(PdfHistoryOperation.RearrangePages)
                     open(outputUri)
                     RearrangePagesState.Idle
                 }
@@ -1509,6 +1531,7 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
                 )
             ) {
                 is RotatePagesResult.Success -> {
+                    recordHistory(PdfHistoryOperation.RotatePages)
                     open(outputUri)
                     RotatePagesState.Idle
                 }
@@ -1589,6 +1612,7 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
                 )
             ) {
                 is DuplicatePagesResult.Success -> {
+                    recordHistory(PdfHistoryOperation.DuplicatePages)
                     open(outputUri)
                     DuplicatePagesState.Idle
                 }
@@ -1684,7 +1708,7 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
                     recompressedImageCount = result.recompressedImageCount,
                     targetSizeBytes = result.targetSizeBytes,
                     targetReached = result.targetReached,
-                )
+                ).also { recordHistory(PdfHistoryOperation.CompressPdf) }
                 is CompressPdfResult.NotSmaller -> {
                     CompressPdfState.Failed(CompressPdfFailure.NotSmaller)
                 }
@@ -1772,6 +1796,7 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
                     )
                 ) {
                     is ProtectPdfResult.Success -> ProtectPdfState.Completed(configuring.pageCount)
+                        .also { recordHistory(PdfHistoryOperation.ProtectPdf) }
                     ProtectPdfResult.AlreadyProtected -> {
                         ProtectPdfState.Failed(ProtectPdfFailure.AlreadyProtected)
                     }
@@ -1851,6 +1876,7 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
                     )
                 ) {
                     is RemovePasswordResult.Success -> {
+                        recordHistory(PdfHistoryOperation.RemovePassword)
                         RemovePasswordState.Completed(outputUri, result.pageCount)
                     }
                     RemovePasswordResult.IncorrectPassword -> configuring.copy(passwordError = true)
@@ -1944,6 +1970,7 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
                     )
                 ) {
                     is ChangePasswordResult.Success -> ChangePasswordState.Completed(result.pageCount)
+                        .also { recordHistory(PdfHistoryOperation.ChangePassword) }
                     ChangePasswordResult.IncorrectCurrentPassword -> {
                         configuring.copy(currentPasswordError = true)
                     }
@@ -2044,7 +2071,7 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
                     outputUri,
                     result.pageCount,
                     result.watermarkedPageCount,
-                )
+                ).also { recordHistory(PdfHistoryOperation.TextWatermark) }
                 TextWatermarkResult.PasswordProtected -> {
                     TextWatermarkState.Failed(TextWatermarkFailure.PasswordProtected)
                 }
@@ -2160,7 +2187,7 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
             )) {
                 is ImageWatermarkResult.Success -> ImageWatermarkState.Completed(
                     outputUri, result.pageCount, result.watermarkedPageCount,
-                )
+                ).also { recordHistory(PdfHistoryOperation.ImageWatermark) }
                 ImageWatermarkResult.PasswordProtected ->
                     ImageWatermarkState.Failed(ImageWatermarkFailure.PasswordProtected)
                 ImageWatermarkResult.InvalidDocument ->
@@ -2314,6 +2341,7 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
     ) {
         extractImagesState = when (result) {
             is ExtractImagesResult.Success -> ExtractImagesState.Completed(result.imageCount, destination)
+                .also { recordHistory(PdfHistoryOperation.ExtractImages) }
             ExtractImagesResult.InvalidSelection -> ExtractImagesState.Failed(ExtractImagesFailure.InvalidSelection)
             ExtractImagesResult.InvalidDocument -> ExtractImagesState.Failed(ExtractImagesFailure.InvalidDocument)
             ExtractImagesResult.PasswordProtected -> ExtractImagesState.Failed(ExtractImagesFailure.PasswordProtected)
@@ -2364,7 +2392,7 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
             )) {
                 is FillFormsResult.Success -> FillFormsState.Completed(
                     outputUri, result.pageCount, result.updatedFieldCount,
-                )
+                ).also { recordHistory(PdfHistoryOperation.FillForms) }
                 FillFormsResult.UnsupportedForm -> FillFormsState.Failed(FillFormsFailure.UnsupportedForm)
                 FillFormsResult.InvalidValues -> FillFormsState.Failed(FillFormsFailure.InvalidValues)
                 FillFormsResult.PasswordProtected -> FillFormsState.Failed(FillFormsFailure.PasswordProtected)
@@ -2461,6 +2489,7 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
                     configuring.sourceUri, outputUri, signature, settings, configuring.pageCount,
                 )) {
                     is SignPdfResult.Success -> SignPdfState.Completed(outputUri, result.pageCount)
+                        .also { recordHistory(PdfHistoryOperation.SignPdf) }
                     SignPdfResult.PasswordProtected -> SignPdfState.Failed(SignPdfFailure.PasswordProtected)
                     SignPdfResult.InvalidDocument -> SignPdfState.Failed(SignPdfFailure.InvalidDocument)
                     SignPdfResult.InvalidSignature -> SignPdfState.Failed(SignPdfFailure.InvalidSignature)
@@ -2549,7 +2578,7 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
             )) {
                 is AnnotatePdfResult.Success -> AnnotatePdfState.Completed(
                     outputUri, result.pageCount, result.annotationCount,
-                )
+                ).also { recordHistory(PdfHistoryOperation.AnnotatePdf) }
                 AnnotatePdfResult.PasswordProtected ->
                     AnnotatePdfState.Failed(AnnotatePdfFailure.PasswordProtected)
                 AnnotatePdfResult.InvalidDocument ->
