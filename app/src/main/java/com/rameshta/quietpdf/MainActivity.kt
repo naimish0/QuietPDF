@@ -78,6 +78,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
@@ -114,6 +115,8 @@ import com.rameshta.quietpdf.pdf.PageRotation
 import com.rameshta.quietpdf.pdf.RotatePagesState
 import com.rameshta.quietpdf.pdf.DuplicatePagesState
 import com.rameshta.quietpdf.pdf.CompressPdfState
+import com.rameshta.quietpdf.pdf.ProtectPdfPassword
+import com.rameshta.quietpdf.pdf.ProtectPdfState
 import com.rameshta.quietpdf.pdf.PdfCompressionMode
 import com.rameshta.quietpdf.pdf.PdfCompressionRequest
 import com.rameshta.quietpdf.pdf.TargetFileSize
@@ -145,6 +148,7 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             QuietPDFTheme {
+                var pendingProtectPassword by remember { mutableStateOf<CharArray?>(null) }
                 val picker = rememberLauncherForActivityResult(
                     contract = ActivityResultContracts.OpenDocument(),
                 ) { uri ->
@@ -282,6 +286,26 @@ class MainActivity : ComponentActivity() {
                         viewModel.selectPdfForCompression(uri)
                     }
                 }
+                val createProtectedPdf = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.CreateDocument("application/pdf"),
+                ) { uri ->
+                    val password = pendingProtectPassword
+                    pendingProtectPassword = null
+                    if (uri == null || password == null) {
+                        password?.fill('\u0000')
+                        viewModel.cancelProtectPdf()
+                    } else {
+                        viewModel.protectSelectedPdf(uri, password)
+                    }
+                }
+                val protectPdfPicker = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.OpenDocument(),
+                ) { uri ->
+                    if (uri != null) {
+                        retainReadPermission(uri)
+                        viewModel.selectPdfForProtection(uri)
+                    }
+                }
                 val createScannedPdf = rememberLauncherForActivityResult(
                     contract = ActivityResultContracts.CreateDocument("application/pdf"),
                 ) { uri ->
@@ -380,6 +404,20 @@ class MainActivity : ComponentActivity() {
                     onCancelPdfCompression = viewModel::cancelCompressPdf,
                     onOpenCompressedPdf = viewModel::openCompressedPdf,
                     onDismissPdfCompressionResult = viewModel::clearCompressPdfResult,
+                    protectPdfState = viewModel.protectPdfState,
+                    onProtectPdf = { protectPdfPicker.launch(arrayOf("application/pdf")) },
+                    onConfirmPdfProtection = { password ->
+                        pendingProtectPassword?.fill('\u0000')
+                        pendingProtectPassword = password.copyOf()
+                        password.fill('\u0000')
+                        createProtectedPdf.launch("QuietPDF-protected.pdf")
+                    },
+                    onCancelPdfProtection = {
+                        pendingProtectPassword?.fill('\u0000')
+                        pendingProtectPassword = null
+                        viewModel.cancelProtectPdf()
+                    },
+                    onDismissPdfProtectionResult = viewModel::clearProtectPdfResult,
                     scannerCaptureState = viewModel.scannerCaptureState,
                     onScanDocument = {
                         if (ContextCompat.checkSelfPermission(
@@ -521,6 +559,11 @@ fun QuietPdfApp(
     onCancelPdfCompression: () -> Unit = {},
     onOpenCompressedPdf: () -> Unit = {},
     onDismissPdfCompressionResult: () -> Unit = {},
+    protectPdfState: ProtectPdfState = ProtectPdfState.Idle,
+    onProtectPdf: () -> Unit = {},
+    onConfirmPdfProtection: (CharArray) -> Unit = {},
+    onCancelPdfProtection: () -> Unit = {},
+    onDismissPdfProtectionResult: () -> Unit = {},
     scannerCaptureState: ScannerCaptureState = ScannerCaptureState.Idle,
     onScanDocument: () -> Unit = {},
     onBeginScannerCapture: () -> File? = { null },
@@ -635,6 +678,10 @@ fun QuietPdfApp(
                     onCancelPdfCompression = onCancelPdfCompression,
                     onOpenCompressedPdf = onOpenCompressedPdf,
                     onDismissPdfCompressionResult = onDismissPdfCompressionResult,
+                    protectPdfState = protectPdfState,
+                    onProtectPdf = onProtectPdf,
+                    onCancelPdfProtection = onCancelPdfProtection,
+                    onDismissPdfProtectionResult = onDismissPdfProtectionResult,
                     scannerCaptureState = scannerCaptureState,
                     onScanDocument = onScanDocument,
                     onOpenScannerPdf = onOpenScannerPdf,
@@ -716,6 +763,14 @@ fun QuietPdfApp(
             analysis = compressPdfState.analysis,
             onConfirm = onConfirmPdfCompression,
             onCancel = onCancelPdfCompression,
+        )
+    }
+    if (protectPdfState is ProtectPdfState.Configuring) {
+        ProtectPdfDialog(
+            documentName = protectPdfState.displayName,
+            pageCount = protectPdfState.pageCount,
+            onConfirm = onConfirmPdfProtection,
+            onCancel = onCancelPdfProtection,
         )
     }
 }
@@ -840,6 +895,81 @@ private fun CompressPdfDialog(
 private fun percentageSaved(originalSize: Long, outputSize: Long): Int {
     if (originalSize <= 0L || outputSize >= originalSize) return 0
     return (((originalSize - outputSize) * 100.0) / originalSize).toInt().coerceIn(0, 100)
+}
+
+@Composable
+private fun ProtectPdfDialog(
+    documentName: String,
+    pageCount: Int,
+    onConfirm: (CharArray) -> Unit,
+    onCancel: () -> Unit,
+) {
+    var password by remember(documentName, pageCount) { mutableStateOf("") }
+    var confirmation by remember(documentName, pageCount) { mutableStateOf("") }
+    val passwordIsValid = ProtectPdfPassword.isValid(password)
+    val passwordsMatch = password == confirmation
+    AlertDialog(
+        onDismissRequest = onCancel,
+        title = { Text(stringResource(R.string.protect_pdf_title)) },
+        text = {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                Text(stringResource(R.string.protect_pdf_document_summary, documentName, pageCount))
+                OutlinedTextField(
+                    value = password,
+                    onValueChange = { if (it.length <= ProtectPdfPassword.MAX_LENGTH) password = it },
+                    label = { Text(stringResource(R.string.protect_pdf_password)) },
+                    supportingText = {
+                        Text(stringResource(R.string.protect_pdf_password_help, ProtectPdfPassword.MIN_LENGTH))
+                    },
+                    isError = password.isNotEmpty() && !passwordIsValid,
+                    visualTransformation = PasswordVisualTransformation(),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().testTag("protect_pdf_password"),
+                )
+                OutlinedTextField(
+                    value = confirmation,
+                    onValueChange = { if (it.length <= ProtectPdfPassword.MAX_LENGTH) confirmation = it },
+                    label = { Text(stringResource(R.string.protect_pdf_confirm_password)) },
+                    supportingText = {
+                        if (confirmation.isNotEmpty() && !passwordsMatch) {
+                            Text(stringResource(R.string.protect_pdf_password_mismatch))
+                        }
+                    },
+                    isError = confirmation.isNotEmpty() && !passwordsMatch,
+                    visualTransformation = PasswordVisualTransformation(),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                        .testTag("protect_pdf_confirm_password"),
+                )
+                Text(
+                    text = stringResource(R.string.protect_pdf_security_note),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 12.dp),
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    val passwordChars = password.toCharArray()
+                    password = ""
+                    confirmation = ""
+                    onConfirm(passwordChars)
+                },
+                enabled = passwordIsValid && passwordsMatch,
+                modifier = Modifier.testTag("protect_pdf_confirm"),
+            ) {
+                Text(stringResource(R.string.save_protected_pdf))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onCancel, modifier = Modifier.testTag("protect_pdf_cancel")) {
+                Text(stringResource(R.string.cancel))
+            }
+        },
+        modifier = Modifier.testTag("protect_pdf_dialog"),
+    )
 }
 
 @Composable
@@ -1476,6 +1606,10 @@ private fun OpenPdfContent(
     onCancelPdfCompression: () -> Unit,
     onOpenCompressedPdf: () -> Unit,
     onDismissPdfCompressionResult: () -> Unit,
+    protectPdfState: ProtectPdfState,
+    onProtectPdf: () -> Unit,
+    onCancelPdfProtection: () -> Unit,
+    onDismissPdfProtectionResult: () -> Unit,
     scannerCaptureState: ScannerCaptureState,
     onScanDocument: () -> Unit,
     onOpenScannerPdf: () -> Unit,
@@ -1492,6 +1626,7 @@ private fun OpenPdfContent(
         rotatePagesState is RotatePagesState.Failed ||
         duplicatePagesState is DuplicatePagesState.Failed ||
         compressPdfState is CompressPdfState.Failed || compressPdfState is CompressPdfState.Completed
+        || protectPdfState is ProtectPdfState.Failed || protectPdfState is ProtectPdfState.Completed
         || scannerCaptureState is ScannerCaptureState.Failed ||
         scannerCaptureState is ScannerCaptureState.Completed
     LaunchedEffect(hasResult) {
@@ -1642,6 +1777,21 @@ private fun OpenPdfContent(
             }
             else -> Unit
         }
+        when (protectPdfState) {
+            ProtectPdfState.Preparing -> {
+                OperationProgressContent(R.string.protect_pdf_preparing)
+                return@Column
+            }
+            is ProtectPdfState.Protecting -> {
+                OperationProgressContent(
+                    messageResource = R.string.protect_pdf_protecting,
+                    argument = protectPdfState.pageCount,
+                    onCancel = onCancelPdfProtection,
+                )
+                return@Column
+            }
+            else -> Unit
+        }
         when (state) {
             PdfOpenState.Idle -> IdleContent(
                 onOpenPdf = onOpenPdf,
@@ -1673,6 +1823,9 @@ private fun OpenPdfContent(
                 onCompressPdf = onCompressPdf,
                 onOpenCompressedPdf = onOpenCompressedPdf,
                 onDismissPdfCompressionResult = onDismissPdfCompressionResult,
+                protectPdfState = protectPdfState,
+                onProtectPdf = onProtectPdf,
+                onDismissPdfProtectionResult = onDismissPdfProtectionResult,
                 scannerCaptureState = scannerCaptureState,
                 onScanDocument = onScanDocument,
                 onOpenScannerPdf = onOpenScannerPdf,
@@ -1716,6 +1869,9 @@ private fun IdleContent(
     onCompressPdf: () -> Unit,
     onOpenCompressedPdf: () -> Unit,
     onDismissPdfCompressionResult: () -> Unit,
+    protectPdfState: ProtectPdfState,
+    onProtectPdf: () -> Unit,
+    onDismissPdfProtectionResult: () -> Unit,
     scannerCaptureState: ScannerCaptureState,
     onScanDocument: () -> Unit,
     onOpenScannerPdf: () -> Unit,
@@ -1795,6 +1951,12 @@ private fun IdleContent(
         label = stringResource(R.string.compress_pdf),
         onClick = onCompressPdf,
         testTag = "compress_pdf_button",
+    )
+    Spacer(Modifier.height(4.dp))
+    OpenButton(
+        label = stringResource(R.string.protect_pdf),
+        onClick = onProtectPdf,
+        testTag = "protect_pdf_button",
     )
     if (imagesToPdfState is ImagesToPdfState.Failed) {
         Spacer(Modifier.height(20.dp))
@@ -1960,6 +2122,33 @@ private fun IdleContent(
                 TextButton(onClick = onDismissPdfCompressionResult) {
                     Text(stringResource(R.string.dismiss))
                 }
+            }
+        }
+        else -> Unit
+    }
+    when (protectPdfState) {
+        is ProtectPdfState.Failed -> {
+            Spacer(Modifier.height(20.dp))
+            Text(
+                text = stringResource(protectPdfState.failure.messageResource),
+                color = MaterialTheme.colorScheme.error,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.testTag("protect_pdf_error"),
+            )
+            TextButton(onClick = onDismissPdfProtectionResult) {
+                Text(stringResource(R.string.dismiss))
+            }
+        }
+        is ProtectPdfState.Completed -> {
+            Spacer(Modifier.height(20.dp))
+            Text(
+                text = stringResource(R.string.protect_pdf_completed, protectPdfState.pageCount),
+                color = MaterialTheme.colorScheme.primary,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.testTag("protect_pdf_success"),
+            )
+            TextButton(onClick = onDismissPdfProtectionResult) {
+                Text(stringResource(R.string.dismiss))
             }
         }
         else -> Unit
