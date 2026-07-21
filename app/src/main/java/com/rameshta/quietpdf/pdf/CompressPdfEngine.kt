@@ -11,6 +11,8 @@ import io.legere.pdfiumandroid.core.unlocked.PdfDocumentU
 import io.legere.pdfiumandroid.core.unlocked.PdfiumCoreU
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.math.BigDecimal
+import java.math.RoundingMode
 import java.nio.ByteBuffer
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -27,6 +29,52 @@ enum class PdfCompressionMode(
     HighQuality(2560, 88, 0.95),
     Balanced(1800, 74, 0.78),
     MaximumCompression(1280, 55, 0.60),
+}
+
+sealed interface PdfCompressionRequest {
+    data class Quality(val mode: PdfCompressionMode) : PdfCompressionRequest
+    data class TargetSize(val targetSizeBytes: Long) : PdfCompressionRequest
+}
+
+data class CompressionProgress(
+    val attempt: Int,
+    val totalAttempts: Int,
+    val completedPages: Int,
+    val totalPages: Int,
+)
+
+internal data class CompressionAttempt(
+    val maxImageDimension: Int,
+    val jpegQuality: Int,
+)
+
+object TargetFileSize {
+    private const val BytesPerMegabyte = 1_000_000L
+    const val MinimumTargetBytes = 10_000L
+
+    fun parseMegabytes(input: String, originalSizeBytes: Long): Long? {
+        if (originalSizeBytes <= MinimumTargetBytes) return null
+        val value = input.trim().takeIf { it.isNotEmpty() }?.toBigDecimalOrNull() ?: return null
+        if (value <= BigDecimal.ZERO) return null
+        val bytes = runCatching {
+            value.multiply(BigDecimal.valueOf(BytesPerMegabyte))
+                .setScale(0, RoundingMode.HALF_UP)
+                .longValueExact()
+        }.getOrNull() ?: return null
+        return bytes.takeIf { it in MinimumTargetBytes until originalSizeBytes }
+    }
+}
+
+internal object TargetCompressionPlanner {
+    val attempts: List<CompressionAttempt> = listOf(
+        CompressionAttempt(2560, 88),
+        CompressionAttempt(2200, 82),
+        CompressionAttempt(1800, 74),
+        CompressionAttempt(1500, 64),
+        CompressionAttempt(1280, 55),
+        CompressionAttempt(1024, 45),
+        CompressionAttempt(800, 35),
+    )
 }
 
 data class CompressibleImage(
@@ -94,6 +142,8 @@ sealed interface CompressPdfResult {
         val originalSizeBytes: Long,
         val outputSizeBytes: Long,
         val recompressedImageCount: Int,
+        val targetSizeBytes: Long? = null,
+        val targetReached: Boolean = true,
     ) : CompressPdfResult
     data class NotSmaller(
         val originalSizeBytes: Long,
@@ -101,6 +151,7 @@ sealed interface CompressPdfResult {
         val recompressedImageCount: Int,
     ) : CompressPdfResult
     data object InvalidDocument : CompressPdfResult
+    data object InvalidTargetSize : CompressPdfResult
     data object PermissionDenied : CompressPdfResult
     data object InsufficientMemory : CompressPdfResult
     data object Failed : CompressPdfResult
@@ -164,13 +215,39 @@ class CompressPdfEngine(context: Context) {
         expectedPageCount: Int,
         expectedOriginalSizeBytes: Long,
         onProgress: (completedPages: Int, totalPages: Int) -> Unit = { _, _ -> },
+    ): CompressPdfResult = compress(
+        sourceUri = sourceUri,
+        outputUri = outputUri,
+        request = PdfCompressionRequest.Quality(mode),
+        expectedPageCount = expectedPageCount,
+        expectedOriginalSizeBytes = expectedOriginalSizeBytes,
+    ) { progress -> onProgress(progress.completedPages, progress.totalPages) }
+
+    suspend fun compress(
+        sourceUri: Uri,
+        outputUri: Uri,
+        request: PdfCompressionRequest,
+        expectedPageCount: Int,
+        expectedOriginalSizeBytes: Long,
+        onProgress: (CompressionProgress) -> Unit = {},
     ): CompressPdfResult = withContext(Dispatchers.IO) {
         if (sourceUri == outputUri || expectedPageCount <= 0 || expectedOriginalSizeBytes <= 0L) {
             return@withContext CompressPdfResult.InvalidDocument
         }
+        val targetSize = (request as? PdfCompressionRequest.TargetSize)?.targetSizeBytes
+        if (targetSize != null && targetSize !in TargetFileSize.MinimumTargetBytes until expectedOriginalSizeBytes) {
+            return@withContext CompressPdfResult.InvalidTargetSize
+        }
         val temporary = try {
             File.createTempFile("compress-pdf-", ".pdf", appContext.cacheDir)
         } catch (_: Exception) {
+            cleanupNewPdfOutput(appContext, contentResolver, outputUri)
+            return@withContext CompressPdfResult.Failed
+        }
+        val bestTemporary = try {
+            File.createTempFile("compress-pdf-best-", ".pdf", appContext.cacheDir)
+        } catch (_: Exception) {
+            temporary.delete()
             cleanupNewPdfOutput(appContext, contentResolver, outputUri)
             return@withContext CompressPdfResult.Failed
         }
@@ -200,51 +277,92 @@ class CompressPdfEngine(context: Context) {
             if (sourceDocument.getPageCount() != expectedPageCount) {
                 return@withContext CompressPdfResult.InvalidDocument
             }
-            session = NativePdfCompressor.createSession(sourceDocument.mNativeDocPtr, expectedPageCount)
-            if (session == 0L) return@withContext CompressPdfResult.Failed
-            var recompressedImages = 0
-            withContext(Dispatchers.Main.immediate) { onProgress(0, expectedPageCount) }
-            repeat(expectedPageCount) { pageIndex ->
-                coroutineContext.ensureActive()
-                val compressed = NativePdfCompressor.compressPage(
-                    session,
-                    pageIndex,
-                    mode.maxImageDimension,
-                    mode.jpegQuality,
+            val attempts = when (request) {
+                is PdfCompressionRequest.Quality -> listOf(
+                    CompressionAttempt(request.mode.maxImageDimension, request.mode.jpegQuality),
                 )
-                if (compressed < 0) return@withContext CompressPdfResult.Failed
-                recompressedImages += compressed
-                withContext(Dispatchers.Main.immediate) {
-                    onProgress(pageIndex + 1, expectedPageCount)
-                }
+                is PdfCompressionRequest.TargetSize -> TargetCompressionPlanner.attempts
             }
-            coroutineContext.ensureActive()
-            ParcelFileDescriptor.open(
-                temporary,
-                ParcelFileDescriptor.MODE_CREATE or ParcelFileDescriptor.MODE_TRUNCATE or
-                    ParcelFileDescriptor.MODE_READ_WRITE,
-            ).use { output ->
-                if (NativePdfCompressor.saveSession(session, output.fd) != 0) {
+            var bestSize = Long.MAX_VALUE
+            var bestRecompressedImages = 0
+            for ((attemptIndex, attempt) in attempts.withIndex()) {
+                coroutineContext.ensureActive()
+                session = NativePdfCompressor.createSession(
+                    sourceDocument.mNativeDocPtr,
+                    expectedPageCount,
+                )
+                if (session == 0L) return@withContext CompressPdfResult.Failed
+                var recompressedImages = 0
+                withContext(Dispatchers.Main.immediate) {
+                    onProgress(
+                        CompressionProgress(
+                            attemptIndex + 1,
+                            attempts.size,
+                            0,
+                            expectedPageCount,
+                        ),
+                    )
+                }
+                repeat(expectedPageCount) { pageIndex ->
+                    coroutineContext.ensureActive()
+                    val compressed = NativePdfCompressor.compressPage(
+                        session,
+                        pageIndex,
+                        attempt.maxImageDimension,
+                        attempt.jpegQuality,
+                    )
+                    if (compressed < 0) return@withContext CompressPdfResult.Failed
+                    recompressedImages += compressed
+                    withContext(Dispatchers.Main.immediate) {
+                        onProgress(
+                            CompressionProgress(
+                                attemptIndex + 1,
+                                attempts.size,
+                                pageIndex + 1,
+                                expectedPageCount,
+                            ),
+                        )
+                    }
+                }
+                coroutineContext.ensureActive()
+                ParcelFileDescriptor.open(
+                    temporary,
+                    ParcelFileDescriptor.MODE_CREATE or ParcelFileDescriptor.MODE_TRUNCATE or
+                        ParcelFileDescriptor.MODE_READ_WRITE,
+                ).use { output ->
+                    if (NativePdfCompressor.saveSession(session, output.fd) != 0) {
+                        return@withContext CompressPdfResult.Failed
+                    }
+                }
+                NativePdfCompressor.closeSession(session)
+                session = 0L
+                val candidateSize = temporary.length()
+                val stagedPageCount = ParcelFileDescriptor.open(
+                    temporary,
+                    ParcelFileDescriptor.MODE_READ_ONLY,
+                ).use { descriptor -> PdfRenderer(descriptor).use(PdfRenderer::getPageCount) }
+                if (stagedPageCount != expectedPageCount || candidateSize <= 0L) {
                     return@withContext CompressPdfResult.Failed
                 }
+                if (candidateSize < bestSize && candidateSize < expectedOriginalSizeBytes) {
+                    temporary.inputStream().use { input ->
+                        bestTemporary.outputStream().use { output -> input.copyTo(output) }
+                    }
+                    bestSize = candidateSize
+                    bestRecompressedImages = recompressedImages
+                }
+                if (targetSize != null && bestSize <= targetSize) break
             }
-            val candidateSize = temporary.length()
-            val stagedPageCount = ParcelFileDescriptor.open(
-                temporary,
-                ParcelFileDescriptor.MODE_READ_ONLY,
-            ).use { descriptor -> PdfRenderer(descriptor).use(PdfRenderer::getPageCount) }
-            if (stagedPageCount != expectedPageCount) return@withContext CompressPdfResult.Failed
-            if (candidateSize <= 0L) return@withContext CompressPdfResult.Failed
-            if (candidateSize >= expectedOriginalSizeBytes) {
+            if (bestSize == Long.MAX_VALUE) {
                 return@withContext CompressPdfResult.NotSmaller(
                     expectedOriginalSizeBytes,
-                    candidateSize,
-                    recompressedImages,
+                    temporary.length(),
+                    0,
                 )
             }
             coroutineContext.ensureActive()
             contentResolver.openOutputStream(outputUri, "wt")?.use { output ->
-                temporary.inputStream().use { input -> input.copyTo(output) }
+                bestTemporary.inputStream().use { input -> input.copyTo(output) }
             } ?: return@withContext CompressPdfResult.Failed
             val published = contentResolver.openFileDescriptor(outputUri, "r")
                 ?: return@withContext CompressPdfResult.Failed
@@ -254,14 +372,16 @@ class CompressPdfEngine(context: Context) {
                 if (pages != expectedPageCount) return@withContext CompressPdfResult.Failed
                 size
             }
-            if (publishedSize != candidateSize) return@withContext CompressPdfResult.Failed
+            if (publishedSize != bestSize) return@withContext CompressPdfResult.Failed
             coroutineContext.ensureActive()
             outputCommitted = true
             CompressPdfResult.Success(
                 expectedPageCount,
                 expectedOriginalSizeBytes,
                 publishedSize,
-                recompressedImages,
+                bestRecompressedImages,
+                targetSize,
+                targetSize == null || publishedSize <= targetSize,
             )
         } catch (cancelled: CancellationException) {
             throw cancelled
@@ -278,6 +398,7 @@ class CompressPdfEngine(context: Context) {
             sourceDocument?.let { runCatching { it.close() } }
             sourceDescriptor?.let { runCatching { it.close() } }
             temporary.delete()
+            bestTemporary.delete()
             if (!outputCommitted) cleanupNewPdfOutput(appContext, contentResolver, outputUri)
         }
     }

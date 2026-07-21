@@ -13,6 +13,7 @@ import com.rameshta.quietpdf.pdf.CompressPdfAnalysisResult
 import com.rameshta.quietpdf.pdf.CompressPdfEngine
 import com.rameshta.quietpdf.pdf.CompressPdfResult
 import com.rameshta.quietpdf.pdf.PdfCompressionMode
+import com.rameshta.quietpdf.pdf.PdfCompressionRequest
 import com.rameshta.quietpdf.pdf.PdfSearchEngine
 import com.rameshta.quietpdf.pdf.PdfSearchResult
 import java.io.File
@@ -98,6 +99,43 @@ class CompressPdfEngineTest {
             assertTrue(result is CompressPdfResult.NotSmaller)
             assertFalse(output.exists())
             assertPageCount(source, 1)
+        } finally {
+            source.delete()
+            output.delete()
+        }
+    }
+
+    @Test
+    fun targetSize_savesBestValidatedResultWhenTargetCannotBeReached() {
+        val source = File(context.cacheDir, "target-size-source.pdf")
+        val output = File(context.cacheDir, "target-size-output.pdf")
+        try {
+            writeImagePdf(source)
+            val originalBytes = source.readBytes()
+            val engine = CompressPdfEngine(context)
+            val analysis = runBlocking { engine.analyze(Uri.fromFile(source)) }
+            assertTrue(analysis is CompressPdfAnalysisResult.Ready)
+            val ready = analysis as CompressPdfAnalysisResult.Ready
+            val attempts = mutableListOf<Int>()
+
+            val result = runBlocking {
+                engine.compress(
+                    sourceUri = Uri.fromFile(source),
+                    outputUri = Uri.fromFile(output),
+                    request = PdfCompressionRequest.TargetSize(10_000),
+                    expectedPageCount = ready.analysis.pageCount,
+                    expectedOriginalSizeBytes = ready.analysis.originalSizeBytes,
+                ) { progress -> attempts += progress.attempt }
+            }
+
+            assertTrue(result.toString(), result is CompressPdfResult.Success)
+            val success = result as CompressPdfResult.Success
+            assertEquals(10_000L, success.targetSizeBytes)
+            assertFalse(success.targetReached)
+            assertTrue(success.outputSizeBytes < success.originalSizeBytes)
+            assertEquals(7, attempts.maxOrNull())
+            assertEquals(originalBytes.asList(), source.readBytes().asList())
+            assertPageCount(output, 2)
         } finally {
             source.delete()
             output.delete()

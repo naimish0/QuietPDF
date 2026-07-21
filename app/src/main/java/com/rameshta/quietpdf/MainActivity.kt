@@ -87,6 +87,8 @@ import com.rameshta.quietpdf.pdf.RotatePagesState
 import com.rameshta.quietpdf.pdf.DuplicatePagesState
 import com.rameshta.quietpdf.pdf.CompressPdfState
 import com.rameshta.quietpdf.pdf.PdfCompressionMode
+import com.rameshta.quietpdf.pdf.PdfCompressionRequest
+import com.rameshta.quietpdf.pdf.TargetFileSize
 import com.rameshta.quietpdf.ui.reader.PdfReaderScreen
 import com.rameshta.quietpdf.ui.theme.QuietPDFTheme
 
@@ -434,7 +436,7 @@ fun QuietPdfApp(
     onDismissPageDuplicationFailure: () -> Unit = {},
     compressPdfState: CompressPdfState = CompressPdfState.Idle,
     onCompressPdf: () -> Unit = {},
-    onConfirmPdfCompression: (PdfCompressionMode) -> Unit = {},
+    onConfirmPdfCompression: (PdfCompressionRequest) -> Unit = {},
     onCancelPdfCompression: () -> Unit = {},
     onOpenCompressedPdf: () -> Unit = {},
     onDismissPdfCompressionResult: () -> Unit = {},
@@ -594,17 +596,24 @@ fun QuietPdfApp(
 private fun CompressPdfDialog(
     documentName: String,
     analysis: com.rameshta.quietpdf.pdf.CompressPdfAnalysis,
-    onConfirm: (PdfCompressionMode) -> Unit,
+    onConfirm: (PdfCompressionRequest) -> Unit,
     onCancel: () -> Unit,
 ) {
-    var mode by remember(documentName, analysis) { mutableStateOf(PdfCompressionMode.Balanced) }
+    var selectedMode by remember(documentName, analysis) { mutableStateOf(1) }
+    var targetMegabytes by remember(documentName, analysis) { mutableStateOf("") }
     val context = LocalContext.current
-    val estimatedSize = analysis.estimatedOutputSize(mode)
+    val qualityMode = PdfCompressionMode.entries.getOrNull(selectedMode)
+    val targetSize = TargetFileSize.parseMegabytes(targetMegabytes, analysis.originalSizeBytes)
+    val request = when {
+        qualityMode != null -> PdfCompressionRequest.Quality(qualityMode)
+        targetSize != null -> PdfCompressionRequest.TargetSize(targetSize)
+        else -> null
+    }
     AlertDialog(
         onDismissRequest = onCancel,
         title = { Text(stringResource(R.string.compress_pdf_title)) },
         text = {
-            Column {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                 Text(stringResource(R.string.compress_pdf_document_summary, documentName, analysis.pageCount))
                 Text(
                     text = stringResource(
@@ -619,21 +628,57 @@ private fun CompressPdfDialog(
                         stringResource(R.string.compression_high_quality),
                         stringResource(R.string.compression_balanced),
                         stringResource(R.string.compression_maximum),
+                        stringResource(R.string.compression_target_size),
                     ),
-                    selectedIndex = mode.ordinal,
+                    selectedIndex = selectedMode,
                     tagPrefix = "compression_mode",
-                    onSelect = { mode = PdfCompressionMode.entries[it] },
+                    onSelect = { selectedMode = it },
                 )
-                Text(
-                    text = stringResource(
-                        R.string.compress_pdf_estimated_size,
-                        android.text.format.Formatter.formatShortFileSize(context, estimatedSize),
-                        percentageSaved(analysis.originalSizeBytes, estimatedSize),
-                    ),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(top = 12.dp),
-                )
+                if (qualityMode != null) {
+                    val estimatedSize = analysis.estimatedOutputSize(qualityMode)
+                    Text(
+                        text = stringResource(
+                            R.string.compress_pdf_estimated_size,
+                            android.text.format.Formatter.formatShortFileSize(context, estimatedSize),
+                            percentageSaved(analysis.originalSizeBytes, estimatedSize),
+                        ),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(top = 12.dp),
+                    )
+                } else {
+                    OutlinedTextField(
+                        value = targetMegabytes,
+                        onValueChange = { value ->
+                            if (value.length <= 10 && value.count { it == '.' } <= 1 &&
+                                value.all { it.isDigit() || it == '.' }
+                            ) targetMegabytes = value
+                        },
+                        label = { Text(stringResource(R.string.target_file_size_megabytes)) },
+                        supportingText = {
+                            Text(
+                                if (targetMegabytes.isBlank() || targetSize != null) {
+                                    stringResource(R.string.target_file_size_help)
+                                } else {
+                                    stringResource(R.string.compress_pdf_invalid_target)
+                                },
+                            )
+                        },
+                        isError = targetMegabytes.isNotBlank() && targetSize == null,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        singleLine = true,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 8.dp)
+                            .testTag("target_file_size_input"),
+                    )
+                    Text(
+                        text = stringResource(R.string.target_file_size_best_effort),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
+                }
                 Text(
                     text = if (analysis.compressibleImages.isEmpty()) {
                         stringResource(R.string.compress_pdf_no_eligible_images)
@@ -648,8 +693,8 @@ private fun CompressPdfDialog(
         },
         confirmButton = {
             TextButton(
-                onClick = { onConfirm(mode) },
-                enabled = analysis.compressibleImages.isNotEmpty(),
+                onClick = { request?.let(onConfirm) },
+                enabled = analysis.compressibleImages.isNotEmpty() && request != null,
                 modifier = Modifier.testTag("compress_pdf_confirm"),
             ) {
                 Text(stringResource(R.string.save_compressed_pdf))
@@ -1446,9 +1491,17 @@ private fun OpenPdfContent(
             }
             is CompressPdfState.Compressing -> {
                 OperationProgressContent(
-                    messageResource = R.string.compress_pdf_compressing,
+                    messageResource = if (compressPdfState.totalAttempts > 1) {
+                        R.string.target_file_size_compressing
+                    } else {
+                        R.string.compress_pdf_compressing
+                    },
                     firstArgument = compressPdfState.completedPages,
                     secondArgument = compressPdfState.totalPages,
+                    thirdArgument = compressPdfState.attempt.takeIf {
+                        compressPdfState.totalAttempts > 1
+                    },
+                    fourthArgument = compressPdfState.totalAttempts.takeIf { it > 1 },
                     onCancel = onCancelPdfCompression,
                 )
                 return@Column
@@ -1723,12 +1776,28 @@ private fun IdleContent(
             val context = LocalContext.current
             Spacer(Modifier.height(20.dp))
             Text(
-                text = stringResource(
-                    R.string.compress_pdf_completed,
-                    android.text.format.Formatter.formatShortFileSize(context, compressPdfState.originalSizeBytes),
-                    android.text.format.Formatter.formatShortFileSize(context, compressPdfState.outputSizeBytes),
-                    percentageSaved(compressPdfState.originalSizeBytes, compressPdfState.outputSizeBytes),
-                ),
+                text = when {
+                    compressPdfState.targetSizeBytes == null -> stringResource(
+                        R.string.compress_pdf_completed,
+                        android.text.format.Formatter.formatShortFileSize(context, compressPdfState.originalSizeBytes),
+                        android.text.format.Formatter.formatShortFileSize(context, compressPdfState.outputSizeBytes),
+                        percentageSaved(compressPdfState.originalSizeBytes, compressPdfState.outputSizeBytes),
+                    )
+                    compressPdfState.targetReached -> stringResource(
+                        R.string.target_file_size_reached,
+                        android.text.format.Formatter.formatShortFileSize(context, compressPdfState.originalSizeBytes),
+                        android.text.format.Formatter.formatShortFileSize(context, compressPdfState.outputSizeBytes),
+                        android.text.format.Formatter.formatShortFileSize(context, compressPdfState.targetSizeBytes),
+                        percentageSaved(compressPdfState.originalSizeBytes, compressPdfState.outputSizeBytes),
+                    )
+                    else -> stringResource(
+                        R.string.target_file_size_not_reached,
+                        android.text.format.Formatter.formatShortFileSize(context, compressPdfState.originalSizeBytes),
+                        android.text.format.Formatter.formatShortFileSize(context, compressPdfState.outputSizeBytes),
+                        android.text.format.Formatter.formatShortFileSize(context, compressPdfState.targetSizeBytes),
+                        percentageSaved(compressPdfState.originalSizeBytes, compressPdfState.outputSizeBytes),
+                    )
+                },
                 color = MaterialTheme.colorScheme.primary,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.testTag("compress_pdf_success"),
@@ -1755,6 +1824,8 @@ private fun OperationProgressContent(
     argument: Int? = null,
     firstArgument: Int? = null,
     secondArgument: Int? = null,
+    thirdArgument: Int? = null,
+    fourthArgument: Int? = null,
     onCancel: (() -> Unit)? = null,
 ) {
     CircularProgressIndicator(
@@ -1763,6 +1834,16 @@ private fun OperationProgressContent(
     Spacer(Modifier.height(20.dp))
     Text(
         text = when {
+            firstArgument != null && secondArgument != null &&
+                thirdArgument != null && fourthArgument != null -> {
+                stringResource(
+                    messageResource,
+                    thirdArgument,
+                    fourthArgument,
+                    firstArgument,
+                    secondArgument,
+                )
+            }
             firstArgument != null && secondArgument != null -> {
                 stringResource(messageResource, firstArgument, secondArgument)
             }
