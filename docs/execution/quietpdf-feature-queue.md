@@ -5,7 +5,7 @@ COMPLETED T6-PDF-Remember-Page
 COMPLETED T7-PDF-Search
 COMPLETED T8-PDF-Bookmarks
 COMPLETED T9-PDF-Table-Of-Contents
-T10-PDF-Health
+COMPLETED T10-PDF-Health
 T11-Images-To-PDF
 T12-Images-PDF-Layout
 T13-Merge-PDF
