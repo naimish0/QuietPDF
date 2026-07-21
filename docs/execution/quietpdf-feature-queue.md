@@ -3,7 +3,7 @@ COMPLETED T4-PDF-Fullscreen
 COMPLETED T5-PDF-Dark-Mode
 COMPLETED T6-PDF-Remember-Page
 COMPLETED T7-PDF-Search
-T8-PDF-Bookmarks
+COMPLETED T8-PDF-Bookmarks
 T9-PDF-Table-Of-Contents
 T10-PDF-Health
 T11-Images-To-PDF
