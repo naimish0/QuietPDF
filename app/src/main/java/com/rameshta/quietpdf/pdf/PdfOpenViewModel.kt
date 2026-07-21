@@ -1,6 +1,7 @@
 package com.rameshta.quietpdf.pdf
 
 import android.app.Application
+import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
 import android.provider.OpenableColumns
@@ -512,6 +513,7 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
     private val readingPositionStore = ReadingPositionStore(application)
     private val searchEngine = PdfSearchEngine(application)
     private val bookmarkStore = PdfBookmarkStore(application)
+    private val recentPdfStore = RecentPdfStore(application)
     private val tableOfContentsEngine = PdfTableOfContentsEngine(application)
     private val healthEngine = PdfHealthEngine(application)
     private val imagesToPdfEngine = ImagesToPdfEngine(application.contentResolver, application.cacheDir)
@@ -580,6 +582,9 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
     }
 
     var state: PdfOpenState by mutableStateOf(PdfOpenState.Idle)
+        private set
+
+    var recentPdfs: List<RecentPdf> by mutableStateOf(recentPdfStore.load())
         private set
 
     var imagesToPdfState: ImagesToPdfState by mutableStateOf(ImagesToPdfState.Idle)
@@ -861,6 +866,26 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun open(uri: Uri) {
+        openDocument(uri, removeFailedRecent = false)
+    }
+
+    fun openRecentPdf(uri: Uri) {
+        if (recentPdfs.none { it.uri == uri }) return
+        openDocument(uri, removeFailedRecent = true)
+    }
+
+    fun removeRecentPdf(uri: Uri) {
+        releaseRecentPermission(uri)
+        recentPdfs = recentPdfStore.remove(uri)
+    }
+
+    fun clearRecentPdfs() {
+        recentPdfs.forEach { releaseRecentPermission(it.uri) }
+        recentPdfStore.clear()
+        recentPdfs = emptyList()
+    }
+
+    private fun openDocument(uri: Uri, removeFailedRecent: Boolean) {
         openJob?.cancel()
         searchEngine.close()
         documentGeneration++
@@ -869,21 +894,47 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
         openJob = viewModelScope.launch {
             val result = withContext(Dispatchers.IO) { opener.open(uri) }
             state = when (result) {
-                is PdfOpenResult.Success -> PdfOpenState.Opened(
-                    uri = result.document.uri,
-                    displayName = result.document.displayName,
-                    pageCount = result.document.pageCount,
-                    initialPageIndex = readingPositionStore.restore(
+                is PdfOpenResult.Success -> {
+                    recentPdfs = recentPdfStore.record(
                         result.document.uri,
+                        result.document.displayName,
                         result.document.pageCount,
-                    ),
-                    bookmarkedPages = bookmarkStore.restore(
-                        result.document.uri,
-                        result.document.pageCount,
-                    ),
-                )
-                is PdfOpenResult.Failure -> PdfOpenState.Failed(result.reason)
+                    )
+                    PdfOpenState.Opened(
+                        uri = result.document.uri,
+                        displayName = result.document.displayName,
+                        pageCount = result.document.pageCount,
+                        initialPageIndex = readingPositionStore.restore(
+                            result.document.uri,
+                            result.document.pageCount,
+                        ),
+                        bookmarkedPages = bookmarkStore.restore(
+                            result.document.uri,
+                            result.document.pageCount,
+                        ),
+                    )
+                }
+                is PdfOpenResult.Failure -> {
+                    if (removeFailedRecent) {
+                        releaseRecentPermission(uri)
+                        recentPdfs = recentPdfStore.remove(uri)
+                    }
+                    PdfOpenState.Failed(result.reason)
+                }
             }
+        }
+    }
+
+    private fun releaseRecentPermission(uri: Uri) {
+        try {
+            getApplication<Application>().contentResolver.releasePersistableUriPermission(
+                uri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION,
+            )
+        } catch (_: SecurityException) {
+            // The provider may have supplied only a temporary grant or already revoked access.
+        } catch (_: RuntimeException) {
+            // Some providers do not implement persistable URI permissions.
         }
     }
 

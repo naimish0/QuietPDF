@@ -507,4 +507,16 @@
     <string name="annotate_pdf_permission_denied">QuietPDF lost access to the PDF or save location. Choose the file again.</string>
     <string name="annotate_pdf_memory_error">This PDF needs more memory than is available. Close other apps and try again.</string>
     <string name="annotate_pdf_save_error">The annotated PDF could not be created and reopened safely. The original was not changed; choose another save location.</string>
+    <string name="recent_files">Recent files</string>
+    <string name="recent_file_unnamed">PDF document</string>
+    <string name="recent_file_open">Open %1$s</string>
+    <string name="recent_file_remove">Remove</string>
+    <string name="recent_files_clear">Clear all</string>
+    <string name="recent_files_clear_title">Clear recent files?</string>
+    <string name="recent_files_clear_message">This removes the local recent-files list. Your PDF files will not be deleted.</string>
+    <string name="recent_files_clear_confirm">Clear list</string>
+    <plurals name="recent_file_pages">
+        <item quantity="one">%d page</item>
+        <item quantity="other">%d pages</item>
+    </plurals>
 </resources>
