@@ -144,6 +144,32 @@ enum class DuplicatePagesFailure(@get:StringRes val messageResource: Int) {
     UnableToSave(R.string.duplicate_pages_save_error),
 }
 
+sealed interface CompressPdfState {
+    data object Idle : CompressPdfState
+    data object Preparing : CompressPdfState
+    data class Configuring(
+        val sourceUri: Uri,
+        val displayName: String,
+        val analysis: CompressPdfAnalysis,
+    ) : CompressPdfState
+    data class Compressing(val completedPages: Int, val totalPages: Int) : CompressPdfState
+    data class Completed(
+        val outputUri: Uri,
+        val originalSizeBytes: Long,
+        val outputSizeBytes: Long,
+        val recompressedImageCount: Int,
+    ) : CompressPdfState
+    data class Failed(val failure: CompressPdfFailure) : CompressPdfState
+}
+
+enum class CompressPdfFailure(@get:StringRes val messageResource: Int) {
+    InvalidDocument(R.string.compress_pdf_invalid_document),
+    NotSmaller(R.string.compress_pdf_not_smaller),
+    PermissionDenied(R.string.compress_pdf_permission_denied),
+    InsufficientMemory(R.string.compress_pdf_memory_error),
+    UnableToSave(R.string.compress_pdf_save_error),
+}
+
 enum class RotatePagesFailure(@get:StringRes val messageResource: Int) {
     InvalidDocument(R.string.rotate_pages_invalid_document),
     InvalidSelection(R.string.rotate_pages_invalid_selection),
@@ -215,6 +241,7 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
     private val rearrangePagesEngine = RearrangePagesEngine(application)
     private val rotatePagesEngine = RotatePagesEngine(application)
     private val duplicatePagesEngine = DuplicatePagesEngine(application)
+    private val compressPdfEngine = CompressPdfEngine(application)
     private var openJob: Job? = null
     private var imageCreationJob: Job? = null
     private var mergeJob: Job? = null
@@ -224,6 +251,7 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
     private var rearrangePagesJob: Job? = null
     private var rotatePagesJob: Job? = null
     private var duplicatePagesJob: Job? = null
+    private var compressPdfJob: Job? = null
     private var selectedImageUris: List<Uri> = emptyList()
     private var selectedImageLayout = ImagePdfLayout()
     private var selectedSplitRanges: List<SplitPageRange> = emptyList()
@@ -232,6 +260,7 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
     private var selectedRotatedPageIndices = IntArray(0)
     private var selectedPageRotation = PageRotation.Clockwise90
     private var selectedDuplicatedPageIndices = IntArray(0)
+    private var selectedCompressionMode = PdfCompressionMode.Balanced
     private var documentGeneration = 0L
     private val pageCache = object : LruCache<PageCacheKey, Bitmap>(pageCacheBytes()) {
         override fun sizeOf(key: PageCacheKey, value: Bitmap): Int = value.allocationByteCount
@@ -262,6 +291,9 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
         private set
 
     var duplicatePagesState: DuplicatePagesState by mutableStateOf(DuplicatePagesState.Idle)
+        private set
+
+    var compressPdfState: CompressPdfState by mutableStateOf(CompressPdfState.Idle)
         private set
 
     fun open(uri: Uri) {
@@ -926,6 +958,95 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
         duplicatePagesState = DuplicatePagesState.Idle
     }
 
+    fun selectPdfForCompression(uri: Uri) {
+        compressPdfJob?.cancel()
+        selectedCompressionMode = PdfCompressionMode.Balanced
+        compressPdfState = CompressPdfState.Preparing
+        compressPdfJob = viewModelScope.launch {
+            compressPdfState = when (val result = compressPdfEngine.analyze(uri)) {
+                is CompressPdfAnalysisResult.Ready -> CompressPdfState.Configuring(
+                    sourceUri = uri,
+                    displayName = withContext(Dispatchers.IO) { queryDisplayName(uri) } ?: "PDF",
+                    analysis = result.analysis,
+                )
+                CompressPdfAnalysisResult.InvalidDocument -> {
+                    CompressPdfState.Failed(CompressPdfFailure.InvalidDocument)
+                }
+                CompressPdfAnalysisResult.PermissionDenied -> {
+                    CompressPdfState.Failed(CompressPdfFailure.PermissionDenied)
+                }
+                CompressPdfAnalysisResult.InsufficientMemory -> {
+                    CompressPdfState.Failed(CompressPdfFailure.InsufficientMemory)
+                }
+                CompressPdfAnalysisResult.Failed -> {
+                    CompressPdfState.Failed(CompressPdfFailure.UnableToSave)
+                }
+            }
+        }
+    }
+
+    fun configurePdfCompression(mode: PdfCompressionMode) {
+        if (compressPdfState !is CompressPdfState.Configuring) return
+        selectedCompressionMode = mode
+    }
+
+    fun compressSelectedPdf(outputUri: Uri) {
+        val configuring = compressPdfState as? CompressPdfState.Configuring ?: return
+        val mode = selectedCompressionMode
+        compressPdfJob?.cancel()
+        compressPdfState = CompressPdfState.Compressing(0, configuring.analysis.pageCount)
+        compressPdfJob = viewModelScope.launch {
+            compressPdfState = when (
+                val result = compressPdfEngine.compress(
+                    sourceUri = configuring.sourceUri,
+                    outputUri = outputUri,
+                    mode = mode,
+                    expectedPageCount = configuring.analysis.pageCount,
+                    expectedOriginalSizeBytes = configuring.analysis.originalSizeBytes,
+                ) { completed, total ->
+                    compressPdfState = CompressPdfState.Compressing(completed, total)
+                }
+            ) {
+                is CompressPdfResult.Success -> CompressPdfState.Completed(
+                    outputUri = outputUri,
+                    originalSizeBytes = result.originalSizeBytes,
+                    outputSizeBytes = result.outputSizeBytes,
+                    recompressedImageCount = result.recompressedImageCount,
+                )
+                is CompressPdfResult.NotSmaller -> {
+                    CompressPdfState.Failed(CompressPdfFailure.NotSmaller)
+                }
+                CompressPdfResult.InvalidDocument -> {
+                    CompressPdfState.Failed(CompressPdfFailure.InvalidDocument)
+                }
+                CompressPdfResult.PermissionDenied -> {
+                    CompressPdfState.Failed(CompressPdfFailure.PermissionDenied)
+                }
+                CompressPdfResult.InsufficientMemory -> {
+                    CompressPdfState.Failed(CompressPdfFailure.InsufficientMemory)
+                }
+                CompressPdfResult.Failed -> {
+                    CompressPdfState.Failed(CompressPdfFailure.UnableToSave)
+                }
+            }
+        }
+    }
+
+    fun openCompressedPdf() {
+        val completed = compressPdfState as? CompressPdfState.Completed ?: return
+        compressPdfState = CompressPdfState.Idle
+        open(completed.outputUri)
+    }
+
+    fun cancelCompressPdf() {
+        compressPdfJob?.cancel()
+        compressPdfState = CompressPdfState.Idle
+    }
+
+    fun clearCompressPdfResult() {
+        compressPdfState = CompressPdfState.Idle
+    }
+
     fun rejectUnsupportedUri() {
         openJob?.cancel()
         searchEngine.close()
@@ -1001,6 +1122,7 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
         extractPagesJob?.cancel()
         deletePagesJob?.cancel()
         duplicatePagesJob?.cancel()
+        compressPdfJob?.cancel()
         searchEngine.close()
         super.onCleared()
     }

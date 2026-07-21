@@ -206,4 +206,24 @@
     <string name="duplicate_pages_permission_denied">QuietPDF lost access to the PDF or save location. Choose them again.</string>
     <string name="duplicate_pages_memory_error">This PDF needs more memory than is available. Close other apps or select fewer pages.</string>
     <string name="duplicate_pages_save_error">The duplicated-page PDF could not be created safely. The original was not changed; choose another save location.</string>
+    <string name="compress_pdf">Compress PDF</string>
+    <string name="compress_pdf_title">Compress PDF</string>
+    <string name="compress_pdf_preparing">Analyzing the selected PDF…</string>
+    <string name="compress_pdf_compressing">Processing page %1$d of %2$d…</string>
+    <string name="compress_pdf_document_summary">%1$s contains %2$d pages. Choose how strongly to compress eligible images.</string>
+    <string name="compress_pdf_original_size">Original size: %1$s</string>
+    <string name="compression_quality">Compression</string>
+    <string name="compression_high_quality">High quality</string>
+    <string name="compression_balanced">Balanced</string>
+    <string name="compression_maximum">Maximum</string>
+    <string name="compress_pdf_estimated_size">Estimated output: %1$s · about %2$d%% smaller</string>
+    <string name="compress_pdf_tradeoff">Eligible opaque images on image-only pages will be resized and converted to JPEG. Pages containing text and transparent images remain unchanged to protect document integrity. Text, vectors, annotations, page sizes and rotation are preserved.</string>
+    <string name="compress_pdf_no_eligible_images">No safely compressible image-only pages were found. QuietPDF will not claim savings or create a larger replacement.</string>
+    <string name="save_compressed_pdf">Save compressed PDF</string>
+    <string name="compress_pdf_completed">Compressed successfully: %1$s → %2$s (%3$d%% smaller).</string>
+    <string name="compress_pdf_invalid_document">This file changed or is not a readable PDF. Keep the original and choose it again.</string>
+    <string name="compress_pdf_not_smaller">This PDF is already efficiently encoded for the selected mode. No larger replacement was saved.</string>
+    <string name="compress_pdf_permission_denied">QuietPDF lost access to the PDF or save location. Choose them again.</string>
+    <string name="compress_pdf_memory_error">This PDF needs more memory than is available. Close other apps or try a smaller PDF.</string>
+    <string name="compress_pdf_save_error">The compressed PDF could not be created and validated safely. The original was not changed; choose another save location.</string>
 </resources>

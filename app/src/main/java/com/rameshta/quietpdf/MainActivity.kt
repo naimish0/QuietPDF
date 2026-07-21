@@ -38,6 +38,8 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -45,6 +47,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.res.stringResource
@@ -82,6 +85,8 @@ import com.rameshta.quietpdf.pdf.RearrangePagesState
 import com.rameshta.quietpdf.pdf.PageRotation
 import com.rameshta.quietpdf.pdf.RotatePagesState
 import com.rameshta.quietpdf.pdf.DuplicatePagesState
+import com.rameshta.quietpdf.pdf.CompressPdfState
+import com.rameshta.quietpdf.pdf.PdfCompressionMode
 import com.rameshta.quietpdf.ui.reader.PdfReaderScreen
 import com.rameshta.quietpdf.ui.theme.QuietPDFTheme
 
@@ -219,6 +224,20 @@ class MainActivity : ComponentActivity() {
                         viewModel.selectPdfForPageDuplication(uri)
                     }
                 }
+                val createCompressedPdf = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.CreateDocument("application/pdf"),
+                ) { uri ->
+                    if (uri == null) viewModel.cancelCompressPdf()
+                    else viewModel.compressSelectedPdf(uri)
+                }
+                val compressPdfPicker = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.OpenDocument(),
+                ) { uri ->
+                    if (uri != null) {
+                        retainReadPermission(uri)
+                        viewModel.selectPdfForCompression(uri)
+                    }
+                }
 
                 QuietPdfApp(
                     state = viewModel.state,
@@ -297,6 +316,15 @@ class MainActivity : ComponentActivity() {
                     },
                     onCancelPageDuplication = viewModel::cancelDuplicatePages,
                     onDismissPageDuplicationFailure = viewModel::clearDuplicatePagesFailure,
+                    compressPdfState = viewModel.compressPdfState,
+                    onCompressPdf = { compressPdfPicker.launch(arrayOf("application/pdf")) },
+                    onConfirmPdfCompression = { mode ->
+                        viewModel.configurePdfCompression(mode)
+                        createCompressedPdf.launch("QuietPDF-compressed.pdf")
+                    },
+                    onCancelPdfCompression = viewModel::cancelCompressPdf,
+                    onOpenCompressedPdf = viewModel::openCompressedPdf,
+                    onDismissPdfCompressionResult = viewModel::clearCompressPdfResult,
                 )
             }
         }
@@ -404,6 +432,12 @@ fun QuietPdfApp(
     onConfirmPageDuplication: (IntArray) -> Unit = {},
     onCancelPageDuplication: () -> Unit = {},
     onDismissPageDuplicationFailure: () -> Unit = {},
+    compressPdfState: CompressPdfState = CompressPdfState.Idle,
+    onCompressPdf: () -> Unit = {},
+    onConfirmPdfCompression: (PdfCompressionMode) -> Unit = {},
+    onCancelPdfCompression: () -> Unit = {},
+    onOpenCompressedPdf: () -> Unit = {},
+    onDismissPdfCompressionResult: () -> Unit = {},
 ) {
     if (state is PdfOpenState.Opened) {
         PdfReaderScreen(
@@ -470,6 +504,11 @@ fun QuietPdfApp(
                     onDuplicatePages = onDuplicatePages,
                     onCancelPageDuplication = onCancelPageDuplication,
                     onDismissPageDuplicationFailure = onDismissPageDuplicationFailure,
+                    compressPdfState = compressPdfState,
+                    onCompressPdf = onCompressPdf,
+                    onCancelPdfCompression = onCancelPdfCompression,
+                    onOpenCompressedPdf = onOpenCompressedPdf,
+                    onDismissPdfCompressionResult = onDismissPdfCompressionResult,
                     contentPadding = PaddingValues(24.dp),
                 )
             }
@@ -541,6 +580,93 @@ fun QuietPdfApp(
             onCancel = onCancelPageDuplication,
         )
     }
+    if (compressPdfState is CompressPdfState.Configuring) {
+        CompressPdfDialog(
+            documentName = compressPdfState.displayName,
+            analysis = compressPdfState.analysis,
+            onConfirm = onConfirmPdfCompression,
+            onCancel = onCancelPdfCompression,
+        )
+    }
+}
+
+@Composable
+private fun CompressPdfDialog(
+    documentName: String,
+    analysis: com.rameshta.quietpdf.pdf.CompressPdfAnalysis,
+    onConfirm: (PdfCompressionMode) -> Unit,
+    onCancel: () -> Unit,
+) {
+    var mode by remember(documentName, analysis) { mutableStateOf(PdfCompressionMode.Balanced) }
+    val context = LocalContext.current
+    val estimatedSize = analysis.estimatedOutputSize(mode)
+    AlertDialog(
+        onDismissRequest = onCancel,
+        title = { Text(stringResource(R.string.compress_pdf_title)) },
+        text = {
+            Column {
+                Text(stringResource(R.string.compress_pdf_document_summary, documentName, analysis.pageCount))
+                Text(
+                    text = stringResource(
+                        R.string.compress_pdf_original_size,
+                        android.text.format.Formatter.formatShortFileSize(context, analysis.originalSizeBytes),
+                    ),
+                    modifier = Modifier.padding(top = 12.dp),
+                )
+                LayoutChoiceRow(
+                    label = stringResource(R.string.compression_quality),
+                    options = listOf(
+                        stringResource(R.string.compression_high_quality),
+                        stringResource(R.string.compression_balanced),
+                        stringResource(R.string.compression_maximum),
+                    ),
+                    selectedIndex = mode.ordinal,
+                    tagPrefix = "compression_mode",
+                    onSelect = { mode = PdfCompressionMode.entries[it] },
+                )
+                Text(
+                    text = stringResource(
+                        R.string.compress_pdf_estimated_size,
+                        android.text.format.Formatter.formatShortFileSize(context, estimatedSize),
+                        percentageSaved(analysis.originalSizeBytes, estimatedSize),
+                    ),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(top = 12.dp),
+                )
+                Text(
+                    text = if (analysis.compressibleImages.isEmpty()) {
+                        stringResource(R.string.compress_pdf_no_eligible_images)
+                    } else {
+                        stringResource(R.string.compress_pdf_tradeoff)
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onConfirm(mode) },
+                enabled = analysis.compressibleImages.isNotEmpty(),
+                modifier = Modifier.testTag("compress_pdf_confirm"),
+            ) {
+                Text(stringResource(R.string.save_compressed_pdf))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onCancel, modifier = Modifier.testTag("compress_pdf_cancel")) {
+                Text(stringResource(R.string.cancel))
+            }
+        },
+        modifier = Modifier.testTag("compress_pdf_dialog"),
+    )
+}
+
+private fun percentageSaved(originalSize: Long, outputSize: Long): Int {
+    if (originalSize <= 0L || outputSize >= originalSize) return 0
+    return (((originalSize - outputSize) * 100.0) / originalSize).toInt().coerceIn(0, 100)
 }
 
 @Composable
@@ -1172,11 +1298,32 @@ private fun OpenPdfContent(
     onDuplicatePages: () -> Unit,
     onCancelPageDuplication: () -> Unit,
     onDismissPageDuplicationFailure: () -> Unit,
+    compressPdfState: CompressPdfState,
+    onCompressPdf: () -> Unit,
+    onCancelPdfCompression: () -> Unit,
+    onOpenCompressedPdf: () -> Unit,
+    onDismissPdfCompressionResult: () -> Unit,
     contentPadding: PaddingValues,
 ) {
+    val contentScroll = rememberScrollState()
+    val hasResult = imagesToPdfState is ImagesToPdfState.Failed ||
+        mergePdfState is MergePdfState.Failed ||
+        splitPdfState is SplitPdfState.Failed || splitPdfState is SplitPdfState.Completed ||
+        extractPagesState is ExtractPagesState.Failed ||
+        deletePagesState is DeletePagesState.Failed ||
+        rearrangePagesState is RearrangePagesState.Failed ||
+        rotatePagesState is RotatePagesState.Failed ||
+        duplicatePagesState is DuplicatePagesState.Failed ||
+        compressPdfState is CompressPdfState.Failed || compressPdfState is CompressPdfState.Completed
+    LaunchedEffect(hasResult) {
+        if (hasResult) {
+            withFrameNanos { }
+            contentScroll.scrollTo(contentScroll.maxValue)
+        }
+    }
     Column(
         modifier = Modifier
-            .verticalScroll(rememberScrollState())
+            .verticalScroll(contentScroll)
             .padding(contentPadding),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -1292,6 +1439,22 @@ private fun OpenPdfContent(
             }
             else -> Unit
         }
+        when (compressPdfState) {
+            CompressPdfState.Preparing -> {
+                OperationProgressContent(R.string.compress_pdf_preparing)
+                return@Column
+            }
+            is CompressPdfState.Compressing -> {
+                OperationProgressContent(
+                    messageResource = R.string.compress_pdf_compressing,
+                    firstArgument = compressPdfState.completedPages,
+                    secondArgument = compressPdfState.totalPages,
+                    onCancel = onCancelPdfCompression,
+                )
+                return@Column
+            }
+            else -> Unit
+        }
         when (state) {
             PdfOpenState.Idle -> IdleContent(
                 onOpenPdf = onOpenPdf,
@@ -1319,6 +1482,10 @@ private fun OpenPdfContent(
                 duplicatePagesState = duplicatePagesState,
                 onDuplicatePages = onDuplicatePages,
                 onDismissPageDuplicationFailure = onDismissPageDuplicationFailure,
+                compressPdfState = compressPdfState,
+                onCompressPdf = onCompressPdf,
+                onOpenCompressedPdf = onOpenCompressedPdf,
+                onDismissPdfCompressionResult = onDismissPdfCompressionResult,
             )
             PdfOpenState.Opening -> OpeningContent()
             is PdfOpenState.Opened -> Unit
@@ -1354,6 +1521,10 @@ private fun IdleContent(
     duplicatePagesState: DuplicatePagesState,
     onDuplicatePages: () -> Unit,
     onDismissPageDuplicationFailure: () -> Unit,
+    compressPdfState: CompressPdfState,
+    onCompressPdf: () -> Unit,
+    onOpenCompressedPdf: () -> Unit,
+    onDismissPdfCompressionResult: () -> Unit,
 ) {
     Text(
         text = stringResource(R.string.home_title),
@@ -1417,6 +1588,12 @@ private fun IdleContent(
         label = stringResource(R.string.duplicate_pages),
         onClick = onDuplicatePages,
         testTag = "duplicate_pages_button",
+    )
+    Spacer(Modifier.height(4.dp))
+    OpenButton(
+        label = stringResource(R.string.compress_pdf),
+        onClick = onCompressPdf,
+        testTag = "compress_pdf_button",
     )
     if (imagesToPdfState is ImagesToPdfState.Failed) {
         Spacer(Modifier.height(20.dp))
@@ -1528,6 +1705,47 @@ private fun IdleContent(
         TextButton(onClick = onDismissPageDuplicationFailure) {
             Text(stringResource(R.string.dismiss))
         }
+    }
+    when (compressPdfState) {
+        is CompressPdfState.Failed -> {
+            Spacer(Modifier.height(20.dp))
+            Text(
+                text = stringResource(compressPdfState.failure.messageResource),
+                color = MaterialTheme.colorScheme.error,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.testTag("compress_pdf_error"),
+            )
+            TextButton(onClick = onDismissPdfCompressionResult) {
+                Text(stringResource(R.string.dismiss))
+            }
+        }
+        is CompressPdfState.Completed -> {
+            val context = LocalContext.current
+            Spacer(Modifier.height(20.dp))
+            Text(
+                text = stringResource(
+                    R.string.compress_pdf_completed,
+                    android.text.format.Formatter.formatShortFileSize(context, compressPdfState.originalSizeBytes),
+                    android.text.format.Formatter.formatShortFileSize(context, compressPdfState.outputSizeBytes),
+                    percentageSaved(compressPdfState.originalSizeBytes, compressPdfState.outputSizeBytes),
+                ),
+                color = MaterialTheme.colorScheme.primary,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.testTag("compress_pdf_success"),
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(
+                    onClick = onOpenCompressedPdf,
+                    modifier = Modifier.testTag("open_compressed_pdf"),
+                ) {
+                    Text(stringResource(R.string.open_pdf))
+                }
+                TextButton(onClick = onDismissPdfCompressionResult) {
+                    Text(stringResource(R.string.dismiss))
+                }
+            }
+        }
+        else -> Unit
     }
 }
 

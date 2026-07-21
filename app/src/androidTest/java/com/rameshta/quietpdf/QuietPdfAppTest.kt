@@ -54,6 +54,11 @@ import com.rameshta.quietpdf.pdf.RearrangePagesState
 import com.rameshta.quietpdf.pdf.PageRotation
 import com.rameshta.quietpdf.pdf.RotatePagesFailure
 import com.rameshta.quietpdf.pdf.RotatePagesState
+import com.rameshta.quietpdf.pdf.CompressPdfAnalysis
+import com.rameshta.quietpdf.pdf.CompressPdfFailure
+import com.rameshta.quietpdf.pdf.CompressPdfState
+import com.rameshta.quietpdf.pdf.CompressibleImage
+import com.rameshta.quietpdf.pdf.PdfCompressionMode
 import com.rameshta.quietpdf.ui.theme.QuietPDFTheme
 import org.junit.Rule
 import org.junit.Assert.assertEquals
@@ -575,6 +580,102 @@ class QuietPdfAppTest {
     }
 
     @Test
+    fun compressPdf_buttonStartsSelection() {
+        val selections = AtomicInteger()
+        setContent(
+            state = PdfOpenState.Idle,
+            onCompressPdf = { selections.incrementAndGet() },
+        )
+        composeRule.onNodeWithTag("compress_pdf_button").performScrollTo().performClick()
+        assertEquals(1, selections.get())
+    }
+
+    @Test
+    fun compressPdf_dialogDisclosesTradeoffAndReturnsMode() {
+        val selected = AtomicReference<PdfCompressionMode>()
+        setContent(
+            state = PdfOpenState.Idle,
+            compressPdfState = CompressPdfState.Configuring(
+                sourceUri = Uri.parse("content://test/compress"),
+                displayName = "scanned.pdf",
+                analysis = CompressPdfAnalysis(
+                    pageCount = 4,
+                    originalSizeBytes = 2_000_000,
+                    compressibleImages = listOf(CompressibleImage(1_500_000, 3000, 2200)),
+                ),
+            ),
+            onConfirmPdfCompression = selected::set,
+        )
+        composeRule.onNodeWithTag("compress_pdf_dialog").assertIsDisplayed()
+        composeRule.onNodeWithText("Original size", substring = true).assertIsDisplayed()
+        composeRule.onNodeWithText("Estimated output", substring = true).assertIsDisplayed()
+        composeRule.onNodeWithText("Pages containing text", substring = true).assertIsDisplayed()
+        composeRule.onNodeWithTag("compression_mode_2").performClick()
+        composeRule.onNodeWithTag("compress_pdf_confirm").performClick()
+        assertEquals(PdfCompressionMode.MaximumCompression, selected.get())
+    }
+
+    @Test
+    fun compressPdf_progressCanBeCancelled() {
+        val cancellations = AtomicInteger()
+        setContent(
+            state = PdfOpenState.Idle,
+            compressPdfState = CompressPdfState.Compressing(completedPages = 2, totalPages = 5),
+            onCancelPdfCompression = { cancellations.incrementAndGet() },
+        )
+        composeRule.onNodeWithText("Processing page 2 of 5…").assertIsDisplayed()
+        composeRule.onNodeWithTag("operation_cancel").performClick()
+        assertEquals(1, cancellations.get())
+    }
+
+    @Test
+    fun compressPdf_withoutEligibleImagesDoesNotOfferSave() {
+        setContent(
+            state = PdfOpenState.Idle,
+            compressPdfState = CompressPdfState.Configuring(
+                sourceUri = Uri.parse("content://test/text-only"),
+                displayName = "text.pdf",
+                analysis = CompressPdfAnalysis(
+                    pageCount = 1,
+                    originalSizeBytes = 20_000,
+                    compressibleImages = emptyList(),
+                ),
+            ),
+        )
+
+        composeRule.onNodeWithText("No safely compressible", substring = true).assertIsDisplayed()
+        composeRule.onNodeWithTag("compress_pdf_confirm").assertIsNotEnabled()
+    }
+
+    @Test
+    fun compressPdf_resultShowsActualSavingsAndCanBeOpened() {
+        val opens = AtomicInteger()
+        setContent(
+            state = PdfOpenState.Idle,
+            compressPdfState = CompressPdfState.Completed(
+                outputUri = Uri.parse("content://test/compressed"),
+                originalSizeBytes = 2_000_000,
+                outputSizeBytes = 1_000_000,
+                recompressedImageCount = 3,
+            ),
+            onOpenCompressedPdf = { opens.incrementAndGet() },
+        )
+        composeRule.onNodeWithTag("compress_pdf_success").assertIsDisplayed()
+        composeRule.onNodeWithText("50% smaller", substring = true).assertIsDisplayed()
+        composeRule.onNodeWithTag("open_compressed_pdf").performClick()
+        assertEquals(1, opens.get())
+    }
+
+    @Test
+    fun compressPdf_failureIsActionable() {
+        setContent(
+            state = PdfOpenState.Idle,
+            compressPdfState = CompressPdfState.Failed(CompressPdfFailure.NotSmaller),
+        )
+        composeRule.onNodeWithTag("compress_pdf_error").assertIsDisplayed()
+    }
+
+    @Test
     fun openedState_showsNameAndPageCount() {
         setContent(
             PdfOpenState.Opened(
@@ -956,6 +1057,11 @@ class QuietPdfAppTest {
         onRotatePages: () -> Unit = {},
         onConfirmPageRotation: (IntArray, PageRotation) -> Unit = { _, _ -> },
         onCancelPageRotation: () -> Unit = {},
+        compressPdfState: CompressPdfState = CompressPdfState.Idle,
+        onCompressPdf: () -> Unit = {},
+        onConfirmPdfCompression: (PdfCompressionMode) -> Unit = {},
+        onCancelPdfCompression: () -> Unit = {},
+        onOpenCompressedPdf: () -> Unit = {},
     ) {
         composeRule.setContent {
             QuietPDFTheme(dynamicColor = false) {
@@ -998,6 +1104,11 @@ class QuietPdfAppTest {
                     onRotatePages = onRotatePages,
                     onConfirmPageRotation = onConfirmPageRotation,
                     onCancelPageRotation = onCancelPageRotation,
+                    compressPdfState = compressPdfState,
+                    onCompressPdf = onCompressPdf,
+                    onConfirmPdfCompression = onConfirmPdfCompression,
+                    onCancelPdfCompression = onCancelPdfCompression,
+                    onOpenCompressedPdf = onOpenCompressedPdf,
                 )
             }
         }
