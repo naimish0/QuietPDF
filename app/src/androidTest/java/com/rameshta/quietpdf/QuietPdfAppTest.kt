@@ -44,9 +44,12 @@ import com.rameshta.quietpdf.pdf.MergePdfItem
 import com.rameshta.quietpdf.pdf.MergePdfState
 import com.rameshta.quietpdf.pdf.SplitPageRange
 import com.rameshta.quietpdf.pdf.SplitPdfState
+import com.rameshta.quietpdf.pdf.ExtractPagesFailure
+import com.rameshta.quietpdf.pdf.ExtractPagesState
 import com.rameshta.quietpdf.ui.theme.QuietPDFTheme
 import org.junit.Rule
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -268,6 +271,79 @@ class QuietPdfAppTest {
             splitPdfState = SplitPdfState.Completed(outputCount = 3),
         )
         composeRule.onNodeWithTag("split_pdf_success").assertIsDisplayed()
+    }
+
+    @Test
+    fun extractPages_buttonStartsSingleDocumentSelection() {
+        val selections = AtomicInteger()
+        setContent(
+            state = PdfOpenState.Idle,
+            onExtractPages = { selections.incrementAndGet() },
+        )
+
+        composeRule.onNodeWithTag("extract_pages_button")
+            .assertTextEquals("Extract pages")
+            .performClick()
+        assertEquals(1, selections.get())
+    }
+
+    @Test
+    fun extractPages_dialogReturnsExpandedOrderedSelection() {
+        val selected = AtomicReference<IntArray>()
+        setContent(
+            state = PdfOpenState.Idle,
+            extractPagesState = ExtractPagesState.Configuring(
+                sourceUri = Uri.parse("content://test/extract"),
+                displayName = "source.pdf",
+                pageCount = 8,
+            ),
+            onConfirmPageExtraction = selected::set,
+        )
+
+        composeRule.onNodeWithTag("extract_pages_dialog").assertIsDisplayed()
+        composeRule.onNodeWithTag("extract_pages_input").performTextInput("1, 3, 5-7")
+        composeRule.onNodeWithText("5 pages selected.").assertIsDisplayed()
+        composeRule.onNodeWithTag("extract_pages_confirm").performClick()
+        assertArrayEquals(intArrayOf(0, 2, 4, 5, 6), selected.get())
+    }
+
+    @Test
+    fun extractPages_reorderedSelectionCannotBeSaved() {
+        setContent(
+            state = PdfOpenState.Idle,
+            extractPagesState = ExtractPagesState.Configuring(
+                sourceUri = Uri.parse("content://test/extract-invalid"),
+                displayName = "source.pdf",
+                pageCount = 8,
+            ),
+        )
+
+        composeRule.onNodeWithTag("extract_pages_input").performTextInput("5, 2")
+        composeRule.onNodeWithTag("extract_pages_selection_error").assertIsDisplayed()
+        composeRule.onNodeWithTag("extract_pages_confirm").assertIsNotEnabled()
+    }
+
+    @Test
+    fun extractPages_progressCanBeCancelled() {
+        val cancellations = AtomicInteger()
+        setContent(
+            state = PdfOpenState.Idle,
+            extractPagesState = ExtractPagesState.Extracting(selectedPageCount = 4),
+            onCancelPageExtraction = { cancellations.incrementAndGet() },
+        )
+        composeRule.onNodeWithText("Extracting 4 selected pages…").assertIsDisplayed()
+        composeRule.onNodeWithTag("operation_cancel").performClick()
+        assertEquals(1, cancellations.get())
+    }
+
+    @Test
+    fun extractPages_failureIsActionable() {
+        setContent(
+            state = PdfOpenState.Idle,
+            extractPagesState = ExtractPagesState.Failed(ExtractPagesFailure.InvalidDocument),
+        )
+        composeRule.onNodeWithTag("extract_pages_error").assertIsDisplayed()
+        composeRule.onNodeWithText("Dismiss").assertIsDisplayed()
     }
 
     @Test
@@ -634,6 +710,10 @@ class QuietPdfAppTest {
         onSplitPdf: () -> Unit = {},
         onConfirmSplit: (List<SplitPageRange>) -> Unit = {},
         onCancelSplit: () -> Unit = {},
+        extractPagesState: ExtractPagesState = ExtractPagesState.Idle,
+        onExtractPages: () -> Unit = {},
+        onConfirmPageExtraction: (IntArray) -> Unit = {},
+        onCancelPageExtraction: () -> Unit = {},
     ) {
         composeRule.setContent {
             QuietPDFTheme(dynamicColor = false) {
@@ -658,6 +738,10 @@ class QuietPdfAppTest {
                     onSplitPdf = onSplitPdf,
                     onConfirmSplit = onConfirmSplit,
                     onCancelSplit = onCancelSplit,
+                    extractPagesState = extractPagesState,
+                    onExtractPages = onExtractPages,
+                    onConfirmPageExtraction = onConfirmPageExtraction,
+                    onCancelPageExtraction = onCancelPageExtraction,
                 )
             }
         }

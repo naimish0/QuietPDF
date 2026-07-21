@@ -131,4 +131,18 @@
     <string name="split_pdf_permission_denied">QuietPDF lost access to the PDF or output folder. Choose them again.</string>
     <string name="split_pdf_memory_error">This PDF needs more memory than is available. Close other apps and try again.</string>
     <string name="split_pdf_save_error">The split PDFs could not be created safely. Keep the original and choose another folder.</string>
+    <string name="extract_pages">Extract pages</string>
+    <string name="extract_pages_title">Extract pages</string>
+    <string name="extract_pages_preparing">Reading the selected PDF…</string>
+    <string name="extract_pages_extracting">Extracting %1$d selected pages…</string>
+    <string name="extract_pages_document_summary">%1$s contains %2$d pages. Choose pages for one new PDF.</string>
+    <string name="extract_pages_selection_label">Pages to extract</string>
+    <string name="extract_pages_selection_help">Use page numbers and ranges from 1 to %1$d, for example: 1, 3, 5-7</string>
+    <string name="extract_pages_selection_count">%1$d pages selected.</string>
+    <string name="save_extracted_pdf">Save PDF</string>
+    <string name="extract_pages_invalid_document">This file is not a readable PDF. Keep the original and choose another file.</string>
+    <string name="extract_pages_invalid_selection">Enter unique pages in their original order, within this PDF’s page range.</string>
+    <string name="extract_pages_permission_denied">QuietPDF lost access to the PDF or save location. Choose them again.</string>
+    <string name="extract_pages_memory_error">These pages need more memory than is available. Close other apps or select fewer pages.</string>
+    <string name="extract_pages_save_error">The extracted PDF could not be created safely. Keep the original and choose another save location.</string>
 </resources>

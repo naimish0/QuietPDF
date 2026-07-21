@@ -17,7 +17,7 @@ COMPLETED T10-PDF-Health
 COMPLETED T11-Images-To-PDF
 COMPLETED T12-Images-PDF-Layout
 COMPLETED T13-Merge-PDF
-T14-Split-PDF
+COMPLETED T14-Split-PDF
 T15-Extract-Pages
 T16-Delete-Pages
 T17-Rearrange-Pages

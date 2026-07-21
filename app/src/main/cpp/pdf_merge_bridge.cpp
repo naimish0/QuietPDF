@@ -12,6 +12,7 @@ using PdfDocument = void*;
 using CreateDocument = PdfDocument (*)();
 using CloseDocument = void (*)(PdfDocument);
 using ImportPages = int (*)(PdfDocument, PdfDocument, const char*, int);
+using ImportPagesByIndex = int (*)(PdfDocument, PdfDocument, const int*, unsigned long, int);
 using GetPageCount = int (*)(PdfDocument);
 
 struct PdfFileWrite {
@@ -52,6 +53,89 @@ Function loadSymbol(void* library, const char* name) {
 }
 
 }  // namespace
+
+extern "C" JNIEXPORT jint JNICALL
+Java_com_rameshta_quietpdf_pdf_NativePdfPageExtractor_extractPages(
+    JNIEnv* environment,
+    jobject,
+    jlong sourcePointer,
+    jintArray selectedPageIndices,
+    jint outputFileDescriptor
+) {
+    if (sourcePointer == 0 || selectedPageIndices == nullptr || outputFileDescriptor < 0) return -1;
+    const jsize selectedPageCount = environment->GetArrayLength(selectedPageIndices);
+    if (selectedPageCount <= 0) return -2;
+
+    void* library = dlopen("libpdfium.so", RTLD_NOW | RTLD_LOCAL);
+    if (library == nullptr) return -3;
+    const auto createDocument = loadSymbol<CreateDocument>(library, "FPDF_CreateNewDocument");
+    const auto closeDocument = loadSymbol<CloseDocument>(library, "FPDF_CloseDocument");
+    const auto importPagesByIndex = loadSymbol<ImportPagesByIndex>(
+        library,
+        "FPDF_ImportPagesByIndex"
+    );
+    const auto getPageCount = loadSymbol<GetPageCount>(library, "FPDF_GetPageCount");
+    const auto saveAsCopy = loadSymbol<SaveAsCopy>(library, "FPDF_SaveAsCopy");
+    if (createDocument == nullptr || closeDocument == nullptr || importPagesByIndex == nullptr ||
+        getPageCount == nullptr || saveAsCopy == nullptr) {
+        dlclose(library);
+        return -4;
+    }
+
+    auto* wrappedSource = reinterpret_cast<PdfiumAndroidDocument*>(
+        static_cast<intptr_t>(sourcePointer)
+    );
+    const PdfDocument source = wrappedSource->document;
+    const int sourcePageCount = source == nullptr ? 0 : getPageCount(source);
+    jint* indices = environment->GetIntArrayElements(selectedPageIndices, nullptr);
+    if (indices == nullptr) {
+        dlclose(library);
+        return -5;
+    }
+    int previousIndex = -1;
+    bool valid = true;
+    for (jsize index = 0; index < selectedPageCount; ++index) {
+        if (indices[index] <= previousIndex || indices[index] < 0 ||
+            indices[index] >= sourcePageCount) {
+            valid = false;
+            break;
+        }
+        previousIndex = indices[index];
+    }
+    if (!valid) {
+        environment->ReleaseIntArrayElements(selectedPageIndices, indices, JNI_ABORT);
+        dlclose(library);
+        return -6;
+    }
+
+    PdfDocument destination = createDocument();
+    if (destination == nullptr) {
+        environment->ReleaseIntArrayElements(selectedPageIndices, indices, JNI_ABORT);
+        dlclose(library);
+        return -7;
+    }
+    int result = importPagesByIndex(
+        destination,
+        source,
+        indices,
+        static_cast<unsigned long>(selectedPageCount),
+        0
+    ) == 0 ? -8 : 0;
+    environment->ReleaseIntArrayElements(selectedPageIndices, indices, JNI_ABORT);
+    if (result == 0) {
+        if (lseek(outputFileDescriptor, 0, SEEK_SET) < 0 ||
+            ftruncate(outputFileDescriptor, 0) < 0) {
+            result = -9;
+        } else {
+            OutputWriter writer{{1, writeBlock}, outputFileDescriptor};
+            if (saveAsCopy(destination, &writer.base, 0) == 0) result = -10;
+            else if (fsync(outputFileDescriptor) != 0) result = -11;
+        }
+    }
+    closeDocument(destination);
+    dlclose(library);
+    return result;
+}
 
 extern "C" JNIEXPORT jint JNICALL
 Java_com_rameshta_quietpdf_pdf_NativePdfSplitter_splitPart(
