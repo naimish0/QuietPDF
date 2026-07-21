@@ -42,7 +42,7 @@ COMPLETED T35-Recent-Files
 COMPLETED T36-Favorites
 COMPLETED T37-History
 COMPLETED T38-File-Search-Sort
-T39-Share-PDF
+COMPLETED T39-Share-PDF
 T40-Smart-Home
 T41-AdMob
 T42-Production-Hardening

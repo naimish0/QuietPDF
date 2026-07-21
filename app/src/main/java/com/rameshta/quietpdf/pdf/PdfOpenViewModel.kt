@@ -517,6 +517,7 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
     private val recentPdfStore = RecentPdfStore(application)
     private val favoritePdfStore = FavoritePdfStore(application)
     private val historyStore = PdfHistoryStore(application)
+    private val favoriteToolStore = FavoriteToolStore(application)
     private val tableOfContentsEngine = PdfTableOfContentsEngine(application)
     private val healthEngine = PdfHealthEngine(application)
     private val imagesToPdfEngine = ImagesToPdfEngine(application.contentResolver, application.cacheDir)
@@ -594,6 +595,14 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
         private set
 
     var history: List<PdfHistoryEntry> by mutableStateOf(historyStore.load())
+        private set
+
+    var favoriteTools: List<SmartTool> by mutableStateOf(favoriteToolStore.load())
+        private set
+
+    var continueReading: ContinueReadingPdf? by mutableStateOf(
+        recentPdfs.firstOrNull()?.let(::continueReadingFor),
+    )
         private set
 
     var imagesToPdfState: ImagesToPdfState by mutableStateOf(ImagesToPdfState.Idle)
@@ -891,6 +900,7 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
 
     fun removeRecentPdf(uri: Uri) {
         recentPdfs = recentPdfStore.remove(uri)
+        refreshContinueReading()
         releaseStoredPermissionIfUnused(uri)
     }
 
@@ -898,6 +908,7 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
         val removedUris = recentPdfs.map(RecentPdf::uri)
         recentPdfStore.clear()
         recentPdfs = emptyList()
+        continueReading = null
         removedUris.forEach(::releaseStoredPermissionIfUnused)
     }
 
@@ -930,6 +941,10 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
         history = emptyList()
     }
 
+    fun toggleFavoriteTool(tool: SmartTool) {
+        favoriteTools = favoriteToolStore.toggle(tool)
+    }
+
     private fun recordHistory(operation: PdfHistoryOperation) {
         history = historyStore.record(operation)
     }
@@ -956,14 +971,21 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
                             result.document.pageCount,
                         )
                     }
+                    val initialPage = readingPositionStore.restore(
+                        result.document.uri,
+                        result.document.pageCount,
+                    )
+                    continueReading = ContinueReadingPdf(
+                        result.document.uri,
+                        result.document.displayName,
+                        initialPage,
+                        result.document.pageCount,
+                    )
                     PdfOpenState.Opened(
                         uri = result.document.uri,
                         displayName = result.document.displayName,
                         pageCount = result.document.pageCount,
-                        initialPageIndex = readingPositionStore.restore(
-                            result.document.uri,
-                            result.document.pageCount,
-                        ),
+                        initialPageIndex = initialPage,
                         bookmarkedPages = bookmarkStore.restore(
                             result.document.uri,
                             result.document.pageCount,
@@ -976,6 +998,7 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
                         releaseRecentPermission(uri)
                         recentPdfs = recentPdfStore.remove(uri)
                         favoritePdfs = favoritePdfStore.remove(uri)
+                        refreshContinueReading()
                     }
                     PdfOpenState.Failed(result.reason)
                 }
@@ -2623,6 +2646,23 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
     fun rememberPage(pageIndex: Int) {
         val opened = state as? PdfOpenState.Opened ?: return
         readingPositionStore.remember(opened.uri, pageIndex, opened.pageCount)
+        continueReading = ContinueReadingPdf(
+            opened.uri,
+            opened.displayName,
+            pageIndex.coerceIn(0, opened.pageCount - 1),
+            opened.pageCount,
+        )
+    }
+
+    private fun continueReadingFor(recent: RecentPdf): ContinueReadingPdf = ContinueReadingPdf(
+        recent.uri,
+        recent.displayName,
+        readingPositionStore.restore(recent.uri, recent.pageCount),
+        recent.pageCount,
+    )
+
+    private fun refreshContinueReading() {
+        continueReading = recentPdfs.firstOrNull()?.let(::continueReadingFor)
     }
 
     suspend fun search(query: String): PdfSearchResult {
