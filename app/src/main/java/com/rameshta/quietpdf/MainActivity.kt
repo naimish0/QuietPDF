@@ -400,6 +400,10 @@ class MainActivity : ComponentActivity() {
                     onUpdateScannerCrop = viewModel::updateScannerCrop,
                     onResetScannerCrop = viewModel::resetScannerCrop,
                     onUpdateScannerEnhancement = viewModel::updateScannerEnhancement,
+                    onAddScannerPage = viewModel::addScannerPage,
+                    onSelectScannerPage = viewModel::selectScannerPage,
+                    onMoveScannerPage = viewModel::moveScannerPage,
+                    onDeleteScannerPage = viewModel::deleteScannerPage,
                     onSaveScannerPdf = { createScannedPdf.launch("QuietPDF-scan.pdf") },
                     onCancelScannerCapture = viewModel::cancelScannerCapture,
                     onOpenScannerPdf = viewModel::openScannerPdf,
@@ -527,6 +531,10 @@ fun QuietPdfApp(
     onUpdateScannerCrop: (ScannerCropSelection) -> Unit = {},
     onResetScannerCrop: () -> Unit = {},
     onUpdateScannerEnhancement: (ScannerEnhancementSettings) -> Unit = {},
+    onAddScannerPage: () -> Unit = {},
+    onSelectScannerPage: (Int) -> Unit = {},
+    onMoveScannerPage: (Int, Int) -> Unit = { _, _ -> },
+    onDeleteScannerPage: () -> Unit = {},
     onSaveScannerPdf: () -> Unit = {},
     onCancelScannerCapture: () -> Unit = {},
     onOpenScannerPdf: () -> Unit = {},
@@ -561,6 +569,10 @@ fun QuietPdfApp(
             onUpdateCrop = onUpdateScannerCrop,
             onResetCrop = onResetScannerCrop,
             onUpdateEnhancement = onUpdateScannerEnhancement,
+            onAddPage = onAddScannerPage,
+            onSelectPage = onSelectScannerPage,
+            onMovePage = onMoveScannerPage,
+            onDeletePage = onDeleteScannerPage,
             onSavePdf = onSaveScannerPdf,
             onCancel = onCancelScannerCapture,
         )
@@ -2001,6 +2013,10 @@ private fun ScannerCaptureScreen(
     onUpdateCrop: (ScannerCropSelection) -> Unit,
     onResetCrop: () -> Unit,
     onUpdateEnhancement: (ScannerEnhancementSettings) -> Unit,
+    onAddPage: () -> Unit,
+    onSelectPage: (Int) -> Unit,
+    onMovePage: (Int, Int) -> Unit,
+    onDeletePage: () -> Unit,
     onSavePdf: () -> Unit,
     onCancel: () -> Unit,
 ) {
@@ -2041,6 +2057,31 @@ private fun ScannerCaptureScreen(
                     .padding(20.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
+                Text(
+                    text = stringResource(
+                        R.string.scanner_page_position,
+                        state.pageIndex + 1,
+                        state.pageCount,
+                    ),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.testTag("scanner_page_position"),
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+                ) {
+                    TextButton(
+                        enabled = state.pageIndex > 0,
+                        onClick = { onSelectPage(state.pageIndex - 1) },
+                        modifier = Modifier.testTag("scanner_previous_page"),
+                    ) { Text(stringResource(R.string.previous_page)) }
+                    TextButton(
+                        enabled = state.pageIndex < state.pageCount - 1,
+                        onClick = { onSelectPage(state.pageIndex + 1) },
+                        modifier = Modifier.testTag("scanner_next_page"),
+                    ) { Text(stringResource(R.string.next_page)) }
+                }
                 ScannerCropEditor(
                     bitmap = state.preview.bitmap,
                     crop = state.crop,
@@ -2111,11 +2152,33 @@ private fun ScannerCaptureScreen(
                     )
                 }
                 Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
+                ) {
+                    TextButton(
+                        enabled = state.pageIndex > 0,
+                        onClick = { onMovePage(state.pageIndex, state.pageIndex - 1) },
+                        modifier = Modifier.testTag("scanner_move_page_left"),
+                    ) { Text(stringResource(R.string.move_left)) }
+                    TextButton(
+                        enabled = state.pageIndex < state.pageCount - 1,
+                        onClick = { onMovePage(state.pageIndex, state.pageIndex + 1) },
+                        modifier = Modifier.testTag("scanner_move_page_right"),
+                    ) { Text(stringResource(R.string.move_right)) }
+                    TextButton(
+                        onClick = onDeletePage,
+                        modifier = Modifier.testTag("scanner_delete_page"),
+                    ) { Text(stringResource(R.string.delete_page)) }
+                }
+                Row(
                     modifier = Modifier.padding(top = 16.dp),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     TextButton(onClick = onRetake, modifier = Modifier.testTag("scanner_retake")) {
                         Text(stringResource(R.string.scanner_retake))
+                    }
+                    TextButton(onClick = onAddPage, modifier = Modifier.testTag("scanner_add_page")) {
+                        Text(stringResource(R.string.scanner_add_page))
                     }
                     Button(onClick = onSavePdf, modifier = Modifier.testTag("scanner_save_pdf")) {
                         Text(stringResource(R.string.scanner_save_pdf))
