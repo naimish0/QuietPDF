@@ -7,7 +7,6 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Bundle
-import android.os.SystemClock
 import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -73,6 +72,7 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -190,6 +190,7 @@ import com.rameshta.quietpdf.ui.theme.QuietPDFTheme
 import com.rameshta.quietpdf.ads.AdMobController
 import com.rameshta.quietpdf.ads.AdPlacementPolicy
 import com.rameshta.quietpdf.ads.HomeBannerAd
+import com.rameshta.quietpdf.ads.rememberHomeBannerAdSession
 import com.rameshta.quietpdf.ads.FullScreenAdCoordinator
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
@@ -243,23 +244,34 @@ class MainActivity : ComponentActivity(), DefaultLifecycleObserver {
                     adsConsentAllowsRequests = adMobState.canRequestAds
                     fullScreenAds.preload(adMobState.canRequestAds)
                 }
+                var eligibleWorkflowAwaitingExit by rememberSaveable { mutableStateOf(false) }
                 var newestObservedHistory by remember {
                     mutableStateOf(viewModel.history.maxOfOrNull { it.completedEpochMillis } ?: -1L)
                 }
                 LaunchedEffect(viewModel.history) {
-                    viewModel.history.asSequence()
+                    val newEligibleEntries = viewModel.history.asSequence()
                         .filter { it.completedEpochMillis > newestObservedHistory }
                         .filter { it.operation.isInterstitialEligibleWorkflow() }
                         .sortedBy(PdfHistoryEntry::completedEpochMillis)
-                        .forEach { entry ->
-                            fullScreenAds.recordSuccessfulWorkflow(
-                                "${entry.operation.name}:${entry.completedEpochMillis}",
-                            )
-                        }
+                        .toList()
+                    newEligibleEntries.forEach { entry ->
+                        fullScreenAds.recordSuccessfulWorkflow(
+                            "${entry.operation.name}:${entry.completedEpochMillis}",
+                        )
+                    }
+                    if (newEligibleEntries.isNotEmpty()) eligibleWorkflowAwaitingExit = true
                     newestObservedHistory = maxOf(
                         newestObservedHistory,
                         viewModel.history.maxOfOrNull { it.completedEpochMillis } ?: -1L,
                     )
+                }
+                val finishEligibleResult: (() -> Unit) -> Unit = { continueNavigation ->
+                    if (eligibleWorkflowAwaitingExit) {
+                        eligibleWorkflowAwaitingExit = false
+                        finishEligibleWorkflow(continueNavigation)
+                    } else {
+                        continueNavigation()
+                    }
                 }
                 var pendingProtectPassword by remember { mutableStateOf<CharArray?>(null) }
                 var pendingRemovalPassword by remember { mutableStateOf<CharArray?>(null) }
@@ -638,6 +650,10 @@ class MainActivity : ComponentActivity(), DefaultLifecycleObserver {
                     viewModel.resumeImageExtractionAfterShare()
                 }
 
+                val homeBannerAdSession = rememberHomeBannerAdSession(
+                    adUnitId = BuildConfig.ADMOB_HOME_BANNER_ID,
+                    enabled = adMobState.canRequestAds,
+                )
                 QuietPdfApp(
                     state = viewModel.state,
                     recentPdfs = viewModel.recentPdfs,
@@ -653,16 +669,18 @@ class MainActivity : ComponentActivity(), DefaultLifecycleObserver {
                     onToggleFavoritePdf = viewModel::toggleFavoritePdf,
                     onRemoveFavoritePdf = viewModel::removeFavoritePdf,
                     onClearHistory = viewModel::clearHistory,
+                    onRemoveHistoryEntry = viewModel::removeHistoryEntry,
                     onToggleFavoriteTool = viewModel::toggleFavoriteTool,
                     onSharePdf = ::sharePdf,
                     onOpenSettings = {
                         adMobController.showPrivacyOptions(this, ::openAppSettings)
                     },
                     adsCanLoad = adMobState.canRequestAds,
-                    homeBannerContent = {
-                        HomeBannerAd(BuildConfig.ADMOB_HOME_BANNER_ID)
+                    homeBannerContent = homeBannerAdSession?.let { session ->
+                        { HomeBannerAd(session) }
                     },
                     onOpenPdf = { launchExternal(picker, arrayOf("application/pdf")) },
+                    onClosePdf = { finishEligibleResult(viewModel::closePdf) },
                     renderPage = viewModel::renderPage,
                     onPageChanged = viewModel::rememberPage,
                     searchDocument = viewModel::search,
@@ -693,7 +711,7 @@ class MainActivity : ComponentActivity(), DefaultLifecycleObserver {
                     onCancelSplit = viewModel::cancelSplitPdf,
                     onDismissSplitResult = {
                         if (viewModel.splitPdfState is SplitPdfState.Completed) {
-                            finishEligibleWorkflow(viewModel::clearSplitPdfResult)
+                            finishEligibleResult(viewModel::clearSplitPdfResult)
                         } else viewModel.clearSplitPdfResult()
                     },
                     extractPagesState = viewModel.extractPagesState,
@@ -751,7 +769,7 @@ class MainActivity : ComponentActivity(), DefaultLifecycleObserver {
                     onOpenCompressedPdf = viewModel::openCompressedPdf,
                     onDismissPdfCompressionResult = {
                         if (viewModel.compressPdfState is CompressPdfState.Completed) {
-                            finishEligibleWorkflow(viewModel::clearCompressPdfResult)
+                            finishEligibleResult(viewModel::clearCompressPdfResult)
                         } else viewModel.clearCompressPdfResult()
                     },
                     protectPdfState = viewModel.protectPdfState,
@@ -769,7 +787,7 @@ class MainActivity : ComponentActivity(), DefaultLifecycleObserver {
                     },
                     onDismissPdfProtectionResult = {
                         if (viewModel.protectPdfState is ProtectPdfState.Completed) {
-                            finishEligibleWorkflow(viewModel::clearProtectPdfResult)
+                            finishEligibleResult(viewModel::clearProtectPdfResult)
                         } else viewModel.clearProtectPdfResult()
                     },
                     removePasswordState = viewModel.removePasswordState,
@@ -824,7 +842,7 @@ class MainActivity : ComponentActivity(), DefaultLifecycleObserver {
                     onOpenTextWatermarkedPdf = viewModel::openTextWatermarkedPdf,
                     onDismissTextWatermarkResult = {
                         if (viewModel.textWatermarkState is TextWatermarkState.Completed) {
-                            finishEligibleWorkflow(viewModel::clearTextWatermarkResult)
+                            finishEligibleResult(viewModel::clearTextWatermarkResult)
                         } else viewModel.clearTextWatermarkResult()
                     },
                     imageWatermarkState = viewModel.imageWatermarkState,
@@ -846,7 +864,7 @@ class MainActivity : ComponentActivity(), DefaultLifecycleObserver {
                     onOpenImageWatermarkedPdf = viewModel::openImageWatermarkedPdf,
                     onDismissImageWatermarkResult = {
                         if (viewModel.imageWatermarkState is ImageWatermarkState.Completed) {
-                            finishEligibleWorkflow(viewModel::clearImageWatermarkResult)
+                            finishEligibleResult(viewModel::clearImageWatermarkResult)
                         } else viewModel.clearImageWatermarkResult()
                     },
                     extractImagesState = extractImagesState,
@@ -872,7 +890,7 @@ class MainActivity : ComponentActivity(), DefaultLifecycleObserver {
                     },
                     onDismissExtractImagesResult = {
                         if (viewModel.extractImagesState is ExtractImagesState.Completed) {
-                            finishEligibleWorkflow(viewModel::clearExtractImagesResult)
+                            finishEligibleResult(viewModel::clearExtractImagesResult)
                         } else viewModel.clearExtractImagesResult()
                     },
                     fillFormsState = viewModel.fillFormsState,
@@ -888,7 +906,7 @@ class MainActivity : ComponentActivity(), DefaultLifecycleObserver {
                     onOpenFilledFormPdf = viewModel::openFilledFormPdf,
                     onDismissFillFormsResult = {
                         if (viewModel.fillFormsState is FillFormsState.Completed) {
-                            finishEligibleWorkflow(viewModel::clearFillFormsResult)
+                            finishEligibleResult(viewModel::clearFillFormsResult)
                         } else viewModel.clearFillFormsResult()
                     },
                     signPdfState = viewModel.signPdfState,
@@ -913,7 +931,7 @@ class MainActivity : ComponentActivity(), DefaultLifecycleObserver {
                     onOpenSignedPdf = viewModel::openSignedPdf,
                     onDismissSignPdfResult = {
                         if (viewModel.signPdfState is SignPdfState.Completed) {
-                            finishEligibleWorkflow(viewModel::clearSignPdfResult)
+                            finishEligibleResult(viewModel::clearSignPdfResult)
                         } else viewModel.clearSignPdfResult()
                     },
                     annotatePdfState = viewModel.annotatePdfState,
@@ -947,6 +965,7 @@ class MainActivity : ComponentActivity(), DefaultLifecycleObserver {
                     onScannerCameraUnavailable = viewModel::scannerCameraUnavailable,
                     onRetakeScannerCapture = viewModel::retakeScannerCapture,
                     onUpdateScannerCrop = viewModel::updateScannerCrop,
+                    onScannerCropChangeFinished = viewModel::finishScannerCropUpdate,
                     onResetScannerCrop = viewModel::resetScannerCrop,
                     onUpdateScannerEnhancement = viewModel::updateScannerEnhancement,
                     onAddScannerPage = viewModel::addScannerPage,
@@ -958,7 +977,7 @@ class MainActivity : ComponentActivity(), DefaultLifecycleObserver {
                     onOpenScannerPdf = viewModel::openScannerPdf,
                     onDismissScannerResult = {
                         if (viewModel.scannerCaptureState is ScannerCaptureState.Completed) {
-                            finishEligibleWorkflow(viewModel::clearScannerResult)
+                            finishEligibleResult(viewModel::clearScannerResult)
                         } else viewModel.clearScannerResult()
                     },
                 )
@@ -977,25 +996,18 @@ class MainActivity : ComponentActivity(), DefaultLifecycleObserver {
         processIsForeground = true
         if (externalTransitionActive) {
             externalTransitionActive = false
-            processBackgroundStartedAt = null
             return
         }
         if (!processSessionActive) {
             processSessionActive = true
             fullScreenAds.beginSession()
         }
-        val backgroundDuration = processBackgroundStartedAt?.let {
-            (SystemClock.elapsedRealtime() - it).coerceAtLeast(0L)
-        }
         fullScreenAds.showAppOpenIfEligible(
             activity = this,
             consentAllowsAds = adsConsentAllowsRequests,
             safeHomeTransition = isSafeForAppOpen(),
             homeAlreadyInteractive = false,
-            isColdLaunch = processBackgroundStartedAt == null,
-            backgroundDurationMillis = backgroundDuration,
         )
-        processBackgroundStartedAt = null
     }
 
     override fun onStop(owner: LifecycleOwner) {
@@ -1004,7 +1016,6 @@ class MainActivity : ComponentActivity(), DefaultLifecycleObserver {
         if (externalTransitionActive) return
         fullScreenAds.completeSession()
         processSessionActive = false
-        processBackgroundStartedAt = SystemClock.elapsedRealtime()
     }
 
     override fun onResume() {
@@ -1045,7 +1056,10 @@ class MainActivity : ComponentActivity(), DefaultLifecycleObserver {
         fullScreenAds.showInterstitialIfEligible(
             activity = this,
             consentAllowsAds = adsConsentAllowsRequests,
-            protectedWorkflowActive = viewModel.state is PdfOpenState.Opened,
+            // Every caller is a user-initiated Result/created-document exit. The document may
+            // still be marked Opened until continueNavigation runs, but the reading session is
+            // ending and the ad is shown before the safe transition back Home.
+            protectedWorkflowActive = false,
             continueNavigation = clearResult,
         )
     }
@@ -1133,7 +1147,6 @@ class MainActivity : ComponentActivity(), DefaultLifecycleObserver {
         var processAdCoordinator: FullScreenAdCoordinator? = null
         var processIsForeground = false
         var processSessionActive = false
-        var processBackgroundStartedAt: Long? = null
     }
 }
 
@@ -1158,6 +1171,10 @@ private enum class SmartHomeDestination { Home, Files, Tools, History, Search }
 private enum class SmartToolCategory { Create, Organize, Optimize, Secure, EditAndSign, Extract }
 
 private enum class SmartFileFilter { All, Recent, Favorites }
+
+private enum class HistoryFilter { All, Create, Organize, Optimize, Secure, EditAndSign, Extract }
+
+private enum class HistorySortOrder { Newest, Oldest }
 
 private data class SmartToolAction(
     val tool: SmartTool,
@@ -1243,12 +1260,14 @@ fun QuietPdfApp(
     onToggleFavoritePdf: (Uri) -> Unit = {},
     onRemoveFavoritePdf: (Uri) -> Unit = {},
     onClearHistory: () -> Unit = {},
+    onRemoveHistoryEntry: (PdfHistoryEntry) -> Unit = {},
     onToggleFavoriteTool: (SmartTool) -> Unit = {},
     onSharePdf: (Uri) -> Unit = {},
     onOpenSettings: () -> Unit = {},
     adsCanLoad: Boolean = false,
     homeBannerContent: (@Composable () -> Unit)? = null,
     onOpenPdf: () -> Unit,
+    onClosePdf: () -> Unit = {},
     renderPage: suspend (pageIndex: Int, targetWidth: Int) -> PageRenderResult,
     onPageChanged: (pageIndex: Int) -> Unit = {},
     searchDocument: suspend (query: String) -> PdfSearchResult = {
@@ -1385,6 +1404,7 @@ fun QuietPdfApp(
     onScannerCameraUnavailable: () -> Unit = {},
     onRetakeScannerCapture: () -> Unit = {},
     onUpdateScannerCrop: (ScannerCropSelection) -> Unit = {},
+    onScannerCropChangeFinished: () -> Unit = {},
     onResetScannerCrop: () -> Unit = {},
     onUpdateScannerEnhancement: (ScannerEnhancementSettings) -> Unit = {},
     onAddScannerPage: () -> Unit = {},
@@ -1396,10 +1416,55 @@ fun QuietPdfApp(
     onOpenScannerPdf: () -> Unit = {},
     onDismissScannerResult: () -> Unit = {},
 ) {
+    val successfulResultIsVisible = splitPdfState is SplitPdfState.Completed ||
+        compressPdfState is CompressPdfState.Completed ||
+        protectPdfState is ProtectPdfState.Completed ||
+        removePasswordState is RemovePasswordState.Completed ||
+        changePasswordState is ChangePasswordState.Completed ||
+        textWatermarkState is TextWatermarkState.Completed ||
+        imageWatermarkState is ImageWatermarkState.Completed ||
+        extractImagesState is ExtractImagesState.Completed ||
+        fillFormsState is FillFormsState.Completed ||
+        signPdfState is SignPdfState.Completed ||
+        annotatePdfState is AnnotatePdfState.Completed ||
+        scannerCaptureState is ScannerCaptureState.Completed
+    val dismissSuccessfulResult = {
+        when {
+            splitPdfState is SplitPdfState.Completed -> onDismissSplitResult()
+            compressPdfState is CompressPdfState.Completed -> onDismissPdfCompressionResult()
+            protectPdfState is ProtectPdfState.Completed -> onDismissPdfProtectionResult()
+            removePasswordState is RemovePasswordState.Completed -> onDismissPasswordRemovalResult()
+            changePasswordState is ChangePasswordState.Completed -> onDismissPasswordChangeResult()
+            textWatermarkState is TextWatermarkState.Completed -> onDismissTextWatermarkResult()
+            imageWatermarkState is ImageWatermarkState.Completed -> onDismissImageWatermarkResult()
+            extractImagesState is ExtractImagesState.Completed -> onDismissExtractImagesResult()
+            fillFormsState is FillFormsState.Completed -> onDismissFillFormsResult()
+            signPdfState is SignPdfState.Completed -> onDismissSignPdfResult()
+            annotatePdfState is AnnotatePdfState.Completed -> onDismissAnnotatePdfResult()
+            scannerCaptureState is ScannerCaptureState.Completed -> onDismissScannerResult()
+        }
+    }
+    var destination by rememberSaveable { mutableStateOf(SmartHomeDestination.Home) }
+    var destinationHistory by rememberSaveable { mutableStateOf(emptyList<String>()) }
+    val navigateTo: (SmartHomeDestination) -> Unit = { target ->
+        if (target != destination) {
+            if (target == SmartHomeDestination.Home && successfulResultIsVisible) {
+                dismissSuccessfulResult()
+            }
+            val existingIndex = destinationHistory.indexOf(target.name)
+            destinationHistory = if (existingIndex >= 0) {
+                destinationHistory.take(existingIndex)
+            } else {
+                (destinationHistory + destination.name).distinct()
+            }
+            destination = target
+        }
+    }
     if (state is PdfOpenState.Opened) {
         PdfReaderScreen(
             document = state,
             onOpenAnother = onOpenPdf,
+            onCloseDocument = onClosePdf,
             renderPage = renderPage,
             onPageChanged = onPageChanged,
             searchDocument = searchDocument,
@@ -1425,6 +1490,7 @@ fun QuietPdfApp(
             onCameraUnavailable = onScannerCameraUnavailable,
             onRetake = onRetakeScannerCapture,
             onUpdateCrop = onUpdateScannerCrop,
+            onCropChangeFinished = onScannerCropChangeFinished,
             onResetCrop = onResetScannerCrop,
             onUpdateEnhancement = onUpdateScannerEnhancement,
             onAddPage = onAddScannerPage,
@@ -1437,7 +1503,6 @@ fun QuietPdfApp(
         return
     }
 
-    var destination by rememberSaveable { mutableStateOf(SmartHomeDestination.Home) }
     val operationsAreIdle = imagesToPdfState is ImagesToPdfState.Idle &&
         mergePdfState is MergePdfState.Idle && splitPdfState is SplitPdfState.Idle &&
         extractPagesState is ExtractPagesState.Idle && deletePagesState is DeletePagesState.Idle &&
@@ -1448,15 +1513,18 @@ fun QuietPdfApp(
         imageWatermarkState is ImageWatermarkState.Idle && extractImagesState is ExtractImagesState.Idle &&
         fillFormsState is FillFormsState.Idle && signPdfState is SignPdfState.Idle &&
         annotatePdfState is AnnotatePdfState.Idle && scannerCaptureState is ScannerCaptureState.Idle
-    val showHomeBanner = AdPlacementPolicy.showHomeBanner(
-        isHome = destination == SmartHomeDestination.Home,
+    val showBanner = AdPlacementPolicy.showBanner(
+        screenAllowsBanner = operationsAreIdle || successfulResultIsVisible,
         documentIsClosed = state is PdfOpenState.Idle,
-        operationsAreIdle = operationsAreIdle,
         consentAllowsAds = adsCanLoad,
         isConfigured = homeBannerContent != null,
     )
-    BackHandler(destination != SmartHomeDestination.Home) {
-        destination = SmartHomeDestination.Home
+    BackHandler(destinationHistory.isNotEmpty()) {
+        destination = SmartHomeDestination.valueOf(destinationHistory.last())
+        destinationHistory = destinationHistory.dropLast(1)
+    }
+    BackHandler(state is PdfOpenState.Failed) {
+        onClosePdf()
     }
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val useNavigationRail = maxWidth >= 600.dp
@@ -1464,7 +1532,7 @@ fun QuietPdfApp(
             if (useNavigationRail) {
                 SmartHomeNavigationRail(
                     selected = destination,
-                    onSelect = { destination = it },
+                    onSelect = navigateTo,
                 )
             }
             Scaffold(
@@ -1488,11 +1556,19 @@ fun QuietPdfApp(
                 },
                 bottomBar = {
                     Column {
-                        if (showHomeBanner) homeBannerContent?.invoke()
+                        if (showBanner) {
+                            Spacer(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(12.dp)
+                                    .testTag("home_banner_top_spacing"),
+                            )
+                            homeBannerContent?.invoke()
+                        }
                         if (!useNavigationRail) {
                         SmartHomeNavigationBar(
                             selected = destination,
-                            onSelect = { destination = it },
+                            onSelect = navigateTo,
                         )
                         }
                     }
@@ -1528,9 +1604,10 @@ fun QuietPdfApp(
                     onToggleFavoritePdf = onToggleFavoritePdf,
                     onRemoveFavoritePdf = onRemoveFavoritePdf,
                     onClearHistory = onClearHistory,
+                    onRemoveHistoryEntry = onRemoveHistoryEntry,
                     onToggleFavoriteTool = onToggleFavoriteTool,
                     onSharePdf = onSharePdf,
-                    onNavigate = { destination = it },
+                    onNavigate = navigateTo,
                     onOpenPdf = onOpenPdf,
                     imagesToPdfState = imagesToPdfState,
                     onImagesToPdf = onImagesToPdf,
@@ -3454,6 +3531,7 @@ private fun OpenPdfContent(
     onToggleFavoritePdf: (Uri) -> Unit,
     onRemoveFavoritePdf: (Uri) -> Unit,
     onClearHistory: () -> Unit,
+    onRemoveHistoryEntry: (PdfHistoryEntry) -> Unit,
     onToggleFavoriteTool: (SmartTool) -> Unit,
     onSharePdf: (Uri) -> Unit,
     onNavigate: (SmartHomeDestination) -> Unit,
@@ -3891,6 +3969,7 @@ private fun OpenPdfContent(
                 onToggleFavoritePdf = onToggleFavoritePdf,
                 onRemoveFavoritePdf = onRemoveFavoritePdf,
                 onClearHistory = onClearHistory,
+                onRemoveHistoryEntry = onRemoveHistoryEntry,
                 onToggleFavoriteTool = onToggleFavoriteTool,
                 onSharePdf = onSharePdf,
                 onNavigate = onNavigate,
@@ -4183,9 +4262,14 @@ private fun FileOrganizerControls(
 private fun HistorySection(
     history: List<PdfHistoryEntry>,
     onClear: () -> Unit,
+    onRemove: (PdfHistoryEntry) -> Unit = {},
+    onRepeat: (PdfHistoryOperation) -> Unit = {},
 ) {
-    var expanded by remember { mutableStateOf(false) }
+    var expanded by rememberSaveable { mutableStateOf(false) }
     var confirmClear by remember { mutableStateOf(false) }
+    var pendingRemoval by remember { mutableStateOf<PdfHistoryEntry?>(null) }
+    var filter by rememberSaveable { mutableStateOf(HistoryFilter.All) }
+    var sortOrder by rememberSaveable { mutableStateOf(HistorySortOrder.Newest) }
     Row(
         modifier = Modifier.fillMaxWidth().padding(top = 20.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -4193,8 +4277,8 @@ private fun HistorySection(
     ) {
         Text(
             text = stringResource(R.string.history),
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold,
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold,
             modifier = Modifier.testTag("history_title"),
         )
         TextButton(
@@ -4202,13 +4286,70 @@ private fun HistorySection(
             modifier = Modifier.testTag("history_clear"),
         ) { Text(stringResource(R.string.history_clear)) }
     }
-    val displayed = if (expanded) history else history.take(5)
+    Text(
+        text = pluralStringResource(R.plurals.history_entry_count, history.size, history.size),
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.fillMaxWidth().testTag("history_count"),
+    )
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(top = 12.dp)
+            .horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        HistoryFilter.entries.forEach { option ->
+            FilterChip(
+                selected = filter == option,
+                onClick = { filter = option; expanded = false },
+                label = { Text(historyFilterLabel(option)) },
+                modifier = Modifier.testTag("history_filter_${option.name}"),
+            )
+        }
+    }
+    TextButton(
+        onClick = {
+            sortOrder = if (sortOrder == HistorySortOrder.Newest) {
+                HistorySortOrder.Oldest
+            } else {
+                HistorySortOrder.Newest
+            }
+            expanded = false
+        },
+        modifier = Modifier.fillMaxWidth().testTag("history_sort"),
+    ) {
+        Text(
+            stringResource(
+                if (sortOrder == HistorySortOrder.Newest) R.string.history_sort_newest
+                else R.string.history_sort_oldest,
+            ),
+        )
+    }
+    val filtered = history.filter { entry ->
+        filter == HistoryFilter.All || entry.operation.historyFilter() == filter
+    }.let { entries ->
+        if (sortOrder == HistorySortOrder.Newest) {
+            entries.sortedByDescending(PdfHistoryEntry::completedEpochMillis)
+        } else {
+            entries.sortedBy(PdfHistoryEntry::completedEpochMillis)
+        }
+    }
+    val displayed = if (expanded) filtered else filtered.take(5)
     val formatter = remember { DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT) }
+    if (filtered.isEmpty()) {
+        Text(
+            text = stringResource(R.string.history_filter_empty),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp)
+                .testTag("history_filter_empty"),
+        )
+    }
     displayed.forEachIndexed { index, entry ->
         Surface(
-            modifier = Modifier.fillMaxWidth().padding(top = 4.dp).testTag("history_item_$index"),
-            shape = MaterialTheme.shapes.medium,
-            tonalElevation = 1.dp,
+            modifier = Modifier.fillMaxWidth().padding(top = 8.dp).testTag("history_item_$index"),
+            shape = MaterialTheme.shapes.large,
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            tonalElevation = 2.dp,
         ) {
             Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
                 Text(
@@ -4224,22 +4365,52 @@ private fun HistorySection(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                if (expanded && history.size > 5 && index == displayed.lastIndex) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                ) {
                     TextButton(
-                        onClick = { expanded = false },
-                        modifier = Modifier.testTag("history_expand"),
-                    ) { Text(stringResource(R.string.history_show_less)) }
+                        onClick = { onRepeat(entry.operation) },
+                        modifier = Modifier.testTag("history_repeat_$index"),
+                    ) { Text(stringResource(R.string.history_run_again)) }
+                    TextButton(
+                        onClick = { pendingRemoval = entry },
+                        modifier = Modifier.testTag("history_remove_$index"),
+                    ) { Text(stringResource(R.string.history_remove)) }
                 }
             }
         }
     }
-    if (history.size > 5 && !expanded) {
+    if (filtered.size > 5) {
         TextButton(
-            onClick = { expanded = true },
+            onClick = { expanded = !expanded },
             modifier = Modifier.testTag("history_expand"),
         ) {
-            Text(stringResource(R.string.history_show_all))
+            Text(
+                stringResource(
+                    if (expanded) R.string.history_show_less else R.string.history_show_all,
+                ),
+            )
         }
+    }
+    pendingRemoval?.let { entry ->
+        AlertDialog(
+            onDismissRequest = { pendingRemoval = null },
+            title = { Text(stringResource(R.string.history_remove_title)) },
+            text = { Text(stringResource(R.string.history_remove_message)) },
+            confirmButton = {
+                Button(
+                    onClick = { pendingRemoval = null; onRemove(entry) },
+                    modifier = Modifier.testTag("history_remove_confirm"),
+                ) { Text(stringResource(R.string.history_remove_confirm)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingRemoval = null }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            },
+            modifier = Modifier.testTag("history_remove_dialog"),
+        )
     }
     if (confirmClear) {
         AlertDialog(
@@ -4260,6 +4431,33 @@ private fun HistorySection(
             modifier = Modifier.testTag("history_clear_dialog"),
         )
     }
+}
+
+@Composable
+private fun historyFilterLabel(filter: HistoryFilter): String = stringResource(
+    when (filter) {
+        HistoryFilter.All -> R.string.smart_home_category_all
+        HistoryFilter.Create -> R.string.smart_home_category_create
+        HistoryFilter.Organize -> R.string.smart_home_category_organize
+        HistoryFilter.Optimize -> R.string.smart_home_category_optimize
+        HistoryFilter.Secure -> R.string.smart_home_category_secure
+        HistoryFilter.EditAndSign -> R.string.smart_home_category_edit
+        HistoryFilter.Extract -> R.string.smart_home_category_extract
+    },
+)
+
+private fun PdfHistoryOperation.historyFilter(): HistoryFilter = when (this) {
+    PdfHistoryOperation.ScanDocument, PdfHistoryOperation.ImagesToPdf -> HistoryFilter.Create
+    PdfHistoryOperation.MergePdf, PdfHistoryOperation.SplitPdf, PdfHistoryOperation.ExtractPages,
+    PdfHistoryOperation.DeletePages, PdfHistoryOperation.RearrangePages,
+    PdfHistoryOperation.RotatePages, PdfHistoryOperation.DuplicatePages -> HistoryFilter.Organize
+    PdfHistoryOperation.CompressPdf -> HistoryFilter.Optimize
+    PdfHistoryOperation.ProtectPdf, PdfHistoryOperation.RemovePassword,
+    PdfHistoryOperation.ChangePassword -> HistoryFilter.Secure
+    PdfHistoryOperation.TextWatermark, PdfHistoryOperation.ImageWatermark,
+    PdfHistoryOperation.FillForms, PdfHistoryOperation.SignPdf,
+    PdfHistoryOperation.AnnotatePdf -> HistoryFilter.EditAndSign
+    PdfHistoryOperation.ExtractImages -> HistoryFilter.Extract
 }
 
 @Composable
@@ -4417,11 +4615,70 @@ private fun SmartHomeDashboard(
     }
     SmartHomePrimaryActions(onOpenPdf = onOpenPdf, onScanDocument = onScanDocument)
 
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(top = 20.dp, bottom = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = stringResource(R.string.smart_home_recent),
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.testTag("smart_home_recent_title"),
+            )
+            Text(
+                text = pluralStringResource(
+                    R.plurals.smart_home_recent_count,
+                    recentPdfs.size,
+                    recentPdfs.size,
+                ),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.testTag("smart_home_recent_count"),
+            )
+        }
+        TextButton(
+            onClick = { onNavigate(SmartHomeDestination.Files) },
+            modifier = Modifier.testTag("smart_home_recent_see_all"),
+        ) { Text(stringResource(R.string.smart_home_see_all)) }
+    }
+    Surface(
+        modifier = Modifier.fillMaxWidth().testTag("smart_home_recent_container"),
+        shape = MaterialTheme.shapes.extraLarge,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        tonalElevation = 2.dp,
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            if (recentPdfs.isEmpty()) {
+                Text(
+                    text = stringResource(R.string.smart_home_no_recent),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.fillMaxWidth().padding(12.dp)
+                        .testTag("smart_home_recent_empty"),
+                )
+            } else {
+                recentPdfs.take(3).forEachIndexed { index, recent ->
+                    SmartRecentFileRow(
+                        recent = recent,
+                        isFavorite = favoritePdfs.any { it.uri == recent.uri },
+                        onOpen = onOpenRecent,
+                        onShare = onSharePdf,
+                        onToggleFavorite = onToggleFavoritePdf,
+                        onRemove = onRemoveRecentPdf,
+                        index = index,
+                    )
+                }
+            }
+        }
+    }
+
     val quickTools = favoriteTools.mapNotNull { favorite ->
         tools.firstOrNull { it.tool == favorite }
     }.ifEmpty { tools.filter { it.tool in FavoriteToolStore.DEFAULT_TOOLS } }.take(4)
     Row(
-        modifier = Modifier.fillMaxWidth().padding(top = 20.dp),
+        modifier = Modifier.fillMaxWidth().padding(top = 24.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
@@ -4444,39 +4701,15 @@ private fun SmartHomeDashboard(
             rowTools.forEach { tool ->
                 QuickToolCard(
                     tool = tool,
+                    isFavorite = tool.tool in favoriteTools,
+                    favoriteLimitReached = tool.tool !in favoriteTools &&
+                        favoriteTools.size >= FavoriteToolStore.MAX_FAVORITES,
                     onToggleFavorite = onToggleFavoriteTool,
                     testTag = "favorite_${tool.testTag}",
                     modifier = Modifier.weight(1f),
                 )
             }
             if (rowTools.size == 1) Spacer(Modifier.weight(1f))
-        }
-    }
-
-    SmartToolSectionTitle(R.string.smart_home_recent, "smart_home_recent_title")
-    if (recentPdfs.isEmpty()) {
-        Text(
-            text = stringResource(R.string.smart_home_no_recent),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.fillMaxWidth().testTag("smart_home_recent_empty"),
-        )
-    } else {
-        recentPdfs.take(3).forEachIndexed { index, recent ->
-            SmartRecentFileRow(
-                recent = recent,
-                isFavorite = favoritePdfs.any { it.uri == recent.uri },
-                onOpen = onOpenRecent,
-                onShare = onSharePdf,
-                onToggleFavorite = onToggleFavoritePdf,
-                onRemove = onRemoveRecentPdf,
-                index = index,
-            )
-        }
-        if (recentPdfs.size > 3) {
-            TextButton(
-                onClick = { onNavigate(SmartHomeDestination.Files) },
-                modifier = Modifier.testTag("smart_home_recent_see_all"),
-            ) { Text(stringResource(R.string.smart_home_see_all)) }
         }
     }
     SmartToolSectionTitle(R.string.smart_home_activity, "smart_home_activity_title")
@@ -4531,10 +4764,22 @@ private fun SearchPdfBanner(onClick: () -> Unit, modifier: Modifier = Modifier) 
 @Composable
 private fun QuickToolCard(
     tool: SmartToolAction,
+    isFavorite: Boolean,
+    favoriteLimitReached: Boolean,
     onToggleFavorite: (SmartTool) -> Unit,
     testTag: String,
     modifier: Modifier = Modifier,
 ) {
+    val context = LocalContext.current
+    val limitMessage = stringResource(R.string.smart_home_favorite_tool_limit_message)
+    val favoriteDescription = stringResource(
+        when {
+            isFavorite -> R.string.smart_home_remove_favorite_tool_description
+            favoriteLimitReached -> R.string.smart_home_favorite_tool_limit_description
+            else -> R.string.smart_home_add_favorite_tool_description
+        },
+        tool.label,
+    )
     Surface(
         onClick = tool.onClick,
         modifier = modifier.heightIn(min = 112.dp).testTag(testTag),
@@ -4553,9 +4798,18 @@ private fun QuickToolCard(
             ) {
                 Text(smartToolSymbol(tool.tool), style = MaterialTheme.typography.titleLarge)
                 TextButton(
-                    onClick = { onToggleFavorite(tool.tool) },
-                    modifier = Modifier.size(48.dp).testTag("favorite_tool_${tool.tool.name}"),
-                ) { Text("★") }
+                    onClick = {
+                        if (favoriteLimitReached) {
+                            Toast.makeText(context, limitMessage, Toast.LENGTH_SHORT).show()
+                        } else {
+                            onToggleFavorite(tool.tool)
+                        }
+                    },
+                    modifier = Modifier.size(48.dp).semantics {
+                        contentDescription = favoriteDescription
+                        selected = isFavorite
+                    }.testTag("favorite_tool_${tool.tool.name}"),
+                ) { Text(if (isFavorite) "★" else "☆") }
             }
             Text(
                 text = tool.label,
@@ -4616,28 +4870,47 @@ private fun SmartRecentFileRow(
     index: Int,
 ) {
     var expanded by remember(recent.uri) { mutableStateOf(false) }
+    val favoriteDescription = stringResource(R.string.smart_home_recent_favorite_indicator)
     val lastOpened = remember(recent.lastOpenedEpochMillis) {
         DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
             .format(Date(recent.lastOpenedEpochMillis))
     }
     Surface(
-        modifier = Modifier.fillMaxWidth().padding(top = 8.dp).testTag("smart_recent_$index"),
+        onClick = { onOpen(recent.uri) },
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+            .testTag("smart_recent_$index"),
         shape = MaterialTheme.shapes.large,
-        tonalElevation = 1.dp,
+        color = MaterialTheme.colorScheme.surface,
+        tonalElevation = 2.dp,
     ) {
         Row(
-            modifier = Modifier.padding(12.dp),
+            modifier = Modifier.fillMaxWidth().heightIn(min = 76.dp).padding(12.dp),
             verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            Surface(
+                modifier = Modifier.size(48.dp),
+                shape = MaterialTheme.shapes.medium,
+                color = MaterialTheme.colorScheme.primaryContainer,
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Text(
+                        text = "PDF",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    )
+                }
+            }
             Column(
-                modifier = Modifier.weight(1f).clickable { onOpen(recent.uri) }
-                    .padding(vertical = 4.dp),
+                modifier = Modifier.weight(1f).padding(vertical = 4.dp),
             ) {
                 Text(
                     text = recent.displayName ?: stringResource(R.string.recent_file_unnamed),
+                    style = MaterialTheme.typography.titleSmall,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    fontWeight = FontWeight.Medium,
+                    fontWeight = FontWeight.SemiBold,
                 )
                 Text(
                     text = pluralStringResource(
@@ -4651,6 +4924,13 @@ private fun SmartRecentFileRow(
                     text = lastOpened,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            if (isFavorite) {
+                Text(
+                    text = "★",
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.semantics { contentDescription = favoriteDescription },
                 )
             }
             Box {
@@ -4745,6 +5025,9 @@ private fun SmartToolsContent(
                     rowTools.forEach { tool ->
                         QuickToolCard(
                             tool = tool,
+                            isFavorite = tool.tool in favoriteTools,
+                            favoriteLimitReached = tool.tool !in favoriteTools &&
+                                favoriteTools.size >= FavoriteToolStore.MAX_FAVORITES,
                             onToggleFavorite = onToggleFavoriteTool,
                             testTag = tool.testTag,
                             modifier = Modifier.weight(1f),
@@ -4875,6 +5158,7 @@ private fun IdleContent(
     onToggleFavoritePdf: (Uri) -> Unit,
     onRemoveFavoritePdf: (Uri) -> Unit,
     onClearHistory: () -> Unit,
+    onRemoveHistoryEntry: (PdfHistoryEntry) -> Unit,
     onToggleFavoriteTool: (SmartTool) -> Unit,
     onSharePdf: (Uri) -> Unit,
     onNavigate: (SmartHomeDestination) -> Unit,
@@ -5182,13 +5466,13 @@ private fun IdleContent(
         }
     }
     if (destination == SmartHomeDestination.History) {
-        Text(
-            text = stringResource(R.string.smart_home_nav_history),
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.fillMaxWidth().testTag("smart_history_title"),
-        )
         if (history.isEmpty()) {
+            Text(
+                text = stringResource(R.string.smart_home_nav_history),
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.fillMaxWidth().testTag("smart_history_title"),
+            )
             Text(
                 text = stringResource(R.string.smart_home_history_empty),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -5197,14 +5481,27 @@ private fun IdleContent(
                 textAlign = TextAlign.Center,
             )
         } else {
-            HistorySection(history = history, onClear = onClearHistory)
+            HistorySection(
+                history = history,
+                onClear = onClearHistory,
+                onRemove = onRemoveHistoryEntry,
+                onRepeat = { operation ->
+                    operation.suggestedSmartTool()?.let { tool ->
+                        toolActions.firstOrNull { it.tool == tool }?.onClick?.invoke()
+                    }
+                },
+            )
         }
     }
     if (destination == SmartHomeDestination.Home && legacyHomeSections &&
         (favoritePdfs.isNotEmpty() || recentPdfs.isNotEmpty() || history.isNotEmpty())
     ) {
         if (history.isNotEmpty()) {
-            HistorySection(history = history, onClear = onClearHistory)
+            HistorySection(
+                history = history,
+                onClear = onClearHistory,
+                onRemove = onRemoveHistoryEntry,
+            )
         }
         toolActions.filterNot { it.tool == SmartTool.ScanDocument }.forEach { tool ->
             SmartToolRow(tool, tool.tool in favoriteTools, onToggleFavoriteTool)
@@ -5771,6 +6068,7 @@ private fun ScannerCaptureScreen(
     onCameraUnavailable: () -> Unit,
     onRetake: () -> Unit,
     onUpdateCrop: (ScannerCropSelection) -> Unit,
+    onCropChangeFinished: () -> Unit,
     onResetCrop: () -> Unit,
     onUpdateEnhancement: (ScannerEnhancementSettings) -> Unit,
     onAddPage: () -> Unit,
@@ -5780,6 +6078,7 @@ private fun ScannerCaptureScreen(
     onSavePdf: () -> Unit,
     onCancel: () -> Unit,
 ) {
+    BackHandler(onBack = onCancel)
     Scaffold(
         topBar = {
             TopAppBar(
@@ -5846,6 +6145,7 @@ private fun ScannerCaptureScreen(
                     bitmap = state.preview.bitmap,
                     crop = state.crop,
                     onCropChanged = onUpdateCrop,
+                    onCropChangeFinished = onCropChangeFinished,
                     modifier = Modifier.testTag("scanner_review_image"),
                 )
                 Spacer(Modifier.height(16.dp))
@@ -6058,9 +6358,13 @@ private fun ScannerCropEditor(
     bitmap: Bitmap,
     crop: ScannerCropSelection,
     onCropChanged: (ScannerCropSelection) -> Unit,
+    onCropChangeFinished: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var editorSize by remember { mutableStateOf(IntSize.Zero) }
+    val latestCrop by rememberUpdatedState(crop)
+    val latestOnCropChanged by rememberUpdatedState(onCropChanged)
+    val latestOnCropChangeFinished by rememberUpdatedState(onCropChangeFinished)
     val density = LocalDensity.current
     val handleRadius = with(density) { 24.dp.roundToPx() }
     val lineColor = MaterialTheme.colorScheme.primary
@@ -6078,7 +6382,7 @@ private fun ScannerCropEditor(
     fun move(index: Int, deltaX: Float, deltaY: Float): Boolean {
         if (editorSize.width <= 0 || editorSize.height <= 0) return false
         val point = crop.points[index]
-        val updated = crop.moveCorner(
+        val updated = crop.moveCornerConstrained(
             index,
             ScannerCropPoint(
                 point.x + deltaX / editorSize.width,
@@ -6087,6 +6391,7 @@ private fun ScannerCropEditor(
         )
         if (updated == crop) return false
         onCropChanged(updated)
+        onCropChangeFinished()
         return true
     }
     Box(
@@ -6156,26 +6461,40 @@ private fun ScannerCropEditor(
                         )
                     }
                     .testTag("scanner_crop_corner_$index")
-                    .pointerInput(index, crop, editorSize) {
-                        var workingCrop = crop
-                        detectDragGestures { change, dragAmount ->
-                            change.consume()
-                            if (editorSize.width <= 0 || editorSize.height <= 0) {
-                                return@detectDragGestures
-                            }
-                            val current = workingCrop.points[index]
-                            val updated = workingCrop.moveCorner(
-                                index,
-                                ScannerCropPoint(
-                                    current.x + dragAmount.x / editorSize.width,
-                                    current.y + dragAmount.y / editorSize.height,
-                                ),
-                            )
-                            if (updated != workingCrop) {
-                                workingCrop = updated
-                                onCropChanged(updated)
-                            }
-                        }
+                    .pointerInput(index, editorSize) {
+                        var workingCrop = latestCrop
+                        var cropChanged = false
+                        detectDragGestures(
+                            onDragStart = {
+                                workingCrop = latestCrop
+                                cropChanged = false
+                            },
+                            onDragEnd = {
+                                if (cropChanged) latestOnCropChangeFinished()
+                            },
+                            onDragCancel = {
+                                if (cropChanged) latestOnCropChangeFinished()
+                            },
+                            onDrag = { change, dragAmount ->
+                                change.consume()
+                                if (editorSize.width <= 0 || editorSize.height <= 0) {
+                                    return@detectDragGestures
+                                }
+                                val current = workingCrop.points[index]
+                                val updated = workingCrop.moveCornerConstrained(
+                                    index,
+                                    ScannerCropPoint(
+                                        current.x + dragAmount.x / editorSize.width,
+                                        current.y + dragAmount.y / editorSize.height,
+                                    ),
+                                )
+                                if (updated != workingCrop) {
+                                    workingCrop = updated
+                                    cropChanged = true
+                                    latestOnCropChanged(updated)
+                                }
+                            },
+                        )
                     },
             )
         }

@@ -30,35 +30,31 @@ import com.google.android.gms.ads.LoadAdError
 import com.rameshta.quietpdf.R
 
 @Composable
-fun HomeBannerAd(adUnitId: String, modifier: Modifier = Modifier) {
-    if (adUnitId.isBlank()) return
+fun rememberHomeBannerAdSession(adUnitId: String, enabled: Boolean): HomeBannerAdSession? {
     val context = LocalContext.current
-    var status by remember(adUnitId) { mutableStateOf(BannerStatus.Loading) }
-    if (status == BannerStatus.Failed) return
+    val session = remember(context, adUnitId, enabled) {
+        if (enabled && adUnitId.isNotBlank()) HomeBannerAdSession(context, adUnitId) else null
+    }
+    DisposableEffect(session) {
+        onDispose { session?.destroy() }
+    }
+    return session
+}
+
+@Composable
+fun HomeBannerAd(session: HomeBannerAdSession, modifier: Modifier = Modifier) {
+    if (session.status == BannerStatus.Failed) return
+    val context = LocalContext.current
 
     BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
         val widthDp = maxWidth.value.toInt().coerceAtLeast(1)
         val adSize = remember(context, widthDp) {
             AdSize.getInlineAdaptiveBannerAdSize(widthDp, 60)
         }
-        val adView = remember(context, adUnitId, widthDp) {
-            AdView(context).apply {
-                this.adUnitId = adUnitId
-                setAdSize(adSize)
-                adListener = object : AdListener() {
-                    override fun onAdLoaded() {
-                        status = BannerStatus.Loaded
-                    }
-
-                    override fun onAdFailedToLoad(error: LoadAdError) {
-                        status = BannerStatus.Failed
-                    }
-                }
-                loadAd(AdRequest.Builder().build())
-            }
-        }
+        val adView = remember(session, widthDp) { session.adView(widthDp, adSize) }
         DisposableEffect(adView) {
-            onDispose { adView.destroy() }
+            adView.resume()
+            onDispose { adView.pause() }
         }
         Surface(
             modifier = Modifier.fillMaxWidth().testTag("home_banner_ad"),
@@ -73,12 +69,56 @@ fun HomeBannerAd(adUnitId: String, modifier: Modifier = Modifier) {
                 )
                 AndroidView(
                     factory = { adView },
-                    modifier = Modifier.fillMaxWidth().height(adSize.height.dp)
-                        .alpha(if (status == BannerStatus.Loaded) 1f else 0f),
+                    // Inline adaptive sizes report their final creative height only after the
+                    // request is resolved. Using AdSize.height here can collapse the AndroidView
+                    // to zero even though the SDK successfully loaded an ad.
+                    modifier = Modifier.fillMaxWidth().height(MaxInlineBannerHeight)
+                        .alpha(if (session.status == BannerStatus.Loaded) 1f else 0f),
                 )
             }
         }
     }
 }
 
-private enum class BannerStatus { Loading, Loaded, Failed }
+class HomeBannerAdSession internal constructor(
+    private val context: android.content.Context,
+    private val adUnitId: String,
+) {
+    internal var status by mutableStateOf(BannerStatus.Loading)
+        private set
+
+    private var retainedAdView: AdView? = null
+    private var retainedWidthDp: Int? = null
+
+    internal fun adView(widthDp: Int, adSize: AdSize): AdView {
+        retainedAdView?.takeIf { retainedWidthDp == widthDp }?.let { return it }
+        retainedAdView?.destroy()
+        status = BannerStatus.Loading
+        return AdView(context).apply {
+            this.adUnitId = this@HomeBannerAdSession.adUnitId
+            setAdSize(adSize)
+            adListener = object : AdListener() {
+                override fun onAdLoaded() {
+                    status = BannerStatus.Loaded
+                }
+
+                override fun onAdFailedToLoad(error: LoadAdError) {
+                    status = BannerStatus.Failed
+                }
+            }
+            loadAd(AdRequest.Builder().build())
+            retainedAdView = this
+            retainedWidthDp = widthDp
+        }
+    }
+
+    internal fun destroy() {
+        retainedAdView?.destroy()
+        retainedAdView = null
+        retainedWidthDp = null
+    }
+}
+
+private val MaxInlineBannerHeight = 60.dp
+
+internal enum class BannerStatus { Loading, Loaded, Failed }

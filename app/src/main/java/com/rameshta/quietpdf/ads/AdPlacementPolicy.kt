@@ -1,11 +1,10 @@
 package com.rameshta.quietpdf.ads
 
 object AdPlacementPolicy {
-    fun showHomeBanner(
-        isHome: Boolean,
+    fun showBanner(
+        screenAllowsBanner: Boolean,
         documentIsClosed: Boolean,
-        operationsAreIdle: Boolean,
         consentAllowsAds: Boolean,
         isConfigured: Boolean,
-    ): Boolean = isHome && documentIsClosed && operationsAreIdle && consentAllowsAds && isConfigured
+    ): Boolean = screenAllowsBanner && documentIsClosed && consentAllowsAds && isConfigured
 }

@@ -1,6 +1,10 @@
 package com.rameshta.quietpdf
 
 import android.net.Uri
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.junit4.v2.createComposeRule
@@ -10,6 +14,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.rameshta.quietpdf.pdf.ContinueReadingPdf
+import com.rameshta.quietpdf.pdf.FavoriteToolStore
 import com.rameshta.quietpdf.pdf.PageRenderResult
 import com.rameshta.quietpdf.pdf.PageRenderFailure
 import com.rameshta.quietpdf.pdf.PdfOpenState
@@ -65,9 +70,9 @@ class SmartHomeUiTest {
     fun favoriteToolsUsePersistedOrderAndSearchBannerOpensDedicatedSearch() {
         setSmartHome(favoriteTools = listOf(SmartTool.ProtectPdf, SmartTool.MergePdf))
 
-        composeRule.onNodeWithTag("favorite_protect_pdf_button").assertIsDisplayed()
-        composeRule.onNodeWithTag("favorite_merge_pdf_button").assertIsDisplayed()
-        composeRule.onNodeWithTag("smart_home_search_action").performClick()
+        composeRule.onNodeWithTag("favorite_protect_pdf_button").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("favorite_merge_pdf_button").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("smart_home_search_action").performScrollTo().performClick()
         composeRule.onNodeWithTag("smart_search_title").assertIsDisplayed()
         composeRule.onNodeWithTag("file_search_field").assertIsDisplayed()
     }
@@ -78,6 +83,47 @@ class SmartHomeUiTest {
         composeRule.onNodeWithTag("smart_home_nav_History").performClick()
         composeRule.onNodeWithTag("smart_history_title").assertIsDisplayed()
         composeRule.onNodeWithTag("smart_history_empty").assertIsDisplayed()
+    }
+
+    @Test
+    fun toolFavoriteIconReflectsStateAndTogglesImmediately() {
+        composeRule.setContent {
+            var favorites by remember { mutableStateOf(listOf(SmartTool.ImagesToPdf)) }
+            QuietPDFTheme(dynamicColor = false) {
+                QuietPdfApp(
+                    state = PdfOpenState.Idle,
+                    favoriteTools = favorites,
+                    legacyHomeSections = false,
+                    onToggleFavoriteTool = { tool ->
+                        favorites = if (tool in favorites) favorites - tool else favorites + tool
+                    },
+                    onOpenPdf = {},
+                    renderPage = { _, _ ->
+                        PageRenderResult.Failed(PageRenderFailure.UnableToRender)
+                    },
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag("smart_home_nav_Tools").performClick()
+        composeRule.onNodeWithTag("favorite_tool_ProtectPdf").performScrollTo()
+            .assertTextEquals("☆").performClick()
+        composeRule.onNodeWithTag("favorite_tool_ProtectPdf").assertTextEquals("★")
+        composeRule.onNodeWithContentDescription(
+            "Protect PDF: remove from favorite tools",
+        ).assertIsDisplayed()
+    }
+
+    @Test
+    fun fullFavoriteListExplainsWhyAnotherToolCannotBeAdded() {
+        setSmartHome(favoriteTools = FavoriteToolStore.DEFAULT_TOOLS)
+
+        composeRule.onNodeWithTag("smart_home_nav_Tools").performClick()
+        composeRule.onNodeWithTag("favorite_tool_ProtectPdf").performScrollTo()
+            .assertTextEquals("☆")
+        composeRule.onNodeWithContentDescription(
+            "Protect PDF: favorite limit reached; remove another favorite first",
+        ).assertIsDisplayed()
     }
 
     private fun setSmartHome(

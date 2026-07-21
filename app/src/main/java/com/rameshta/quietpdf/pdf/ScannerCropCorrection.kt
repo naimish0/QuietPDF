@@ -30,15 +30,44 @@ data class ScannerCropSelection(
         get() = listOf(topLeft, topRight, bottomRight, bottomLeft)
 
     fun moveCorner(index: Int, point: ScannerCropPoint): ScannerCropSelection {
-        val clamped = point.clamped()
-        val candidate = when (index) {
-            0 -> copy(topLeft = clamped)
-            1 -> copy(topRight = clamped)
-            2 -> copy(bottomRight = clamped)
-            3 -> copy(bottomLeft = clamped)
-            else -> return this
-        }
+        val candidate = withCorner(index, point.clamped()) ?: return this
         return candidate.takeIf(ScannerCropGeometry::isValid) ?: this
+    }
+
+    fun moveCornerConstrained(index: Int, point: ScannerCropPoint): ScannerCropSelection {
+        val start = points.getOrNull(index) ?: return this
+        val target = point.clamped()
+        val direct = withCorner(index, target) ?: return this
+        if (ScannerCropGeometry.isValid(direct)) return direct
+
+        var validFraction = 0f
+        var invalidFraction = 1f
+        var best = this
+        repeat(14) {
+            val fraction = (validFraction + invalidFraction) / 2f
+            val candidate = withCorner(
+                index,
+                ScannerCropPoint(
+                    x = start.x + (target.x - start.x) * fraction,
+                    y = start.y + (target.y - start.y) * fraction,
+                ),
+            ) ?: return this
+            if (ScannerCropGeometry.isValid(candidate)) {
+                validFraction = fraction
+                best = candidate
+            } else {
+                invalidFraction = fraction
+            }
+        }
+        return best
+    }
+
+    private fun withCorner(index: Int, point: ScannerCropPoint): ScannerCropSelection? = when (index) {
+        0 -> copy(topLeft = point)
+        1 -> copy(topRight = point)
+        2 -> copy(bottomRight = point)
+        3 -> copy(bottomLeft = point)
+        else -> null
     }
 
     companion object {

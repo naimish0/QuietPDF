@@ -4,9 +4,14 @@ import android.graphics.Bitmap
 import android.graphics.RectF
 import android.graphics.Color as AndroidColor
 import android.net.Uri
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toPixelMap
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertCountEquals
@@ -25,7 +30,9 @@ import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.swipeLeft
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.espresso.Espresso.pressBack
 import com.rameshta.quietpdf.pdf.PageRenderResult
+import com.rameshta.quietpdf.pdf.PageRenderFailure
 import com.rameshta.quietpdf.pdf.PdfOpenFailure
 import com.rameshta.quietpdf.pdf.PdfOpenState
 import com.rameshta.quietpdf.pdf.PdfSearchMatch
@@ -1237,7 +1244,9 @@ class QuietPdfAppTest {
         }
 
         composeRule.onNodeWithTag("reset_zoom_1").performClick()
-        composeRule.onAllNodesWithTag("reset_zoom_1").assertCountEquals(0)
+        val fitDescription = composeRule.onNodeWithTag("pdf_page_1")
+            .fetchSemanticsNode().config[SemanticsProperties.StateDescription]
+        assertEquals("100% zoom", fitDescription)
     }
 
     @Test
@@ -1261,6 +1270,56 @@ class QuietPdfAppTest {
         }
 
         composeRule.onNodeWithTag("reset_zoom_1").assertIsDisplayed()
+    }
+
+    @Test
+    fun incrementalPinchDeltasAccumulateAndPinchInReturnsToFit() {
+        setContent(
+            PdfOpenState.Opened(
+                uri = Uri.parse("content://test/incremental-pinch-document"),
+                displayName = "incremental-pinch.pdf",
+                pageCount = 1,
+            ),
+        )
+
+        composeRule.onNodeWithTag("pdf_page_1").performTouchInput {
+            down(0, center - Offset(40f, 0f))
+            down(1, center + Offset(40f, 0f))
+            updatePointerTo(0, center - Offset(80f, 0f))
+            updatePointerTo(1, center + Offset(80f, 0f))
+            move()
+            updatePointerTo(0, center - Offset(120f, 0f))
+            updatePointerTo(1, center + Offset(120f, 0f))
+            move()
+            updatePointerTo(0, center - Offset(160f, 0f))
+            updatePointerTo(1, center + Offset(160f, 0f))
+            move()
+            up(1)
+            up(0)
+        }
+
+        val zoomDescription = composeRule.onNodeWithTag("pdf_page_1")
+            .fetchSemanticsNode().config[SemanticsProperties.StateDescription]
+        assertEquals("400% zoom", zoomDescription)
+
+        composeRule.onNodeWithTag("pdf_page_1").performTouchInput {
+            down(0, center - Offset(160f, 0f))
+            down(1, center + Offset(160f, 0f))
+            updatePointerTo(0, center - Offset(80f, 0f))
+            updatePointerTo(1, center + Offset(80f, 0f))
+            move()
+            updatePointerTo(0, center - Offset(40f, 0f))
+            updatePointerTo(1, center + Offset(40f, 0f))
+            move()
+            updatePointerTo(0, center - Offset(5f, 0f))
+            updatePointerTo(1, center + Offset(5f, 0f))
+            move()
+            up(1)
+            up(0)
+        }
+        val fitDescription = composeRule.onNodeWithTag("pdf_page_1")
+            .fetchSemanticsNode().config[SemanticsProperties.StateDescription]
+        assertEquals("100% zoom", fitDescription)
     }
 
     @Test
@@ -1300,14 +1359,17 @@ class QuietPdfAppTest {
             ),
         )
 
-        composeRule.onNodeWithTag("fullscreen_button").performClick()
-        composeRule.onNodeWithTag("reader_fullscreen").assertIsDisplayed()
-        composeRule.waitUntil(timeoutMillis = 5_000) {
-            composeRule.onAllNodesWithTag("reader_top_bar").fetchSemanticsNodes().isEmpty()
-        }
-
         composeRule.mainClock.autoAdvance = false
         try {
+            composeRule.onNodeWithTag("fullscreen_button").performClick()
+            composeRule.mainClock.advanceTimeByFrame()
+            composeRule.onNodeWithTag("reader_fullscreen").assertIsDisplayed()
+            composeRule.onAllNodesWithTag("reader_top_bar").assertCountEquals(0)
+
+            composeRule.mainClock.autoAdvance = true
+            composeRule.onNodeWithTag("pdf_page_1").assertIsDisplayed()
+            composeRule.mainClock.autoAdvance = false
+            composeRule.mainClock.advanceTimeByFrame()
             composeRule.onNodeWithTag("pdf_page_1").performTouchInput { click() }
             composeRule.mainClock.advanceTimeBy(500)
             composeRule.onNodeWithTag("reader_top_bar").assertIsDisplayed()
@@ -1515,6 +1577,45 @@ class QuietPdfAppTest {
     }
 
     @Test
+    fun scannerBackCancelsWorkflowAndReturnsInsideApplication() {
+        val cancels = AtomicInteger()
+        val bitmap = Bitmap.createBitmap(300, 400, Bitmap.Config.ARGB_8888)
+        try {
+            composeRule.setContent {
+                var scannerState by remember {
+                    mutableStateOf<ScannerCaptureState>(
+                        ScannerCaptureState.Review(
+                            ScannerCapturePreview(bitmap, sourceWidth = 2400, sourceHeight = 3200),
+                        ),
+                    )
+                }
+                QuietPDFTheme(dynamicColor = false) {
+                    QuietPdfApp(
+                        state = PdfOpenState.Idle,
+                        legacyHomeSections = false,
+                        scannerCaptureState = scannerState,
+                        onCancelScannerCapture = {
+                            cancels.incrementAndGet()
+                            scannerState = ScannerCaptureState.Idle
+                        },
+                        onOpenPdf = {},
+                        renderPage = { _, _ ->
+                            PageRenderResult.Failed(PageRenderFailure.UnableToRender)
+                        },
+                    )
+                }
+            }
+
+            composeRule.onNodeWithTag("scanner_review_image").assertIsDisplayed()
+            pressBack()
+            composeRule.onNodeWithTag("smart_home_search_action").assertIsDisplayed()
+            assertEquals(1, cancels.get())
+        } finally {
+            bitmap.recycle()
+        }
+    }
+
+    @Test
     fun scannerCapture_reviewCanRetakeOrSaveSinglePagePdf() {
         val retakes = AtomicInteger()
         val saves = AtomicInteger()
@@ -1552,6 +1653,53 @@ class QuietPdfAppTest {
             assertEquals(1, resets.get())
             assertEquals(ScannerColorMode.Grayscale, enhancementUpdates[0].mode)
             assertEquals(false, enhancementUpdates[1].shadowReduction)
+        } finally {
+            bitmap.recycle()
+        }
+    }
+
+    @Test
+    fun scannerCropDragStaysActiveAcrossIncrementalUpdatesAndCommitsOnce() {
+        val updates = AtomicInteger()
+        val finishes = AtomicInteger()
+        val bitmap = Bitmap.createBitmap(300, 400, Bitmap.Config.ARGB_8888)
+        try {
+            composeRule.setContent {
+                var review by remember {
+                    mutableStateOf(
+                        ScannerCaptureState.Review(
+                            ScannerCapturePreview(bitmap, sourceWidth = 2400, sourceHeight = 3200),
+                        ),
+                    )
+                }
+                QuietPDFTheme(dynamicColor = false) {
+                    QuietPdfApp(
+                        state = PdfOpenState.Idle,
+                        onOpenPdf = {},
+                        scannerCaptureState = review,
+                        onUpdateScannerCrop = { crop ->
+                            updates.incrementAndGet()
+                            review = review.copy(crop = crop)
+                        },
+                        onScannerCropChangeFinished = finishes::incrementAndGet,
+                        renderPage = { _, _ ->
+                            PageRenderResult.Failed(PageRenderFailure.UnableToRender)
+                        },
+                    )
+                }
+            }
+
+            composeRule.onNodeWithTag("scanner_crop_corner_0").performTouchInput {
+                down(center)
+                repeat(10) { step ->
+                    updatePointerTo(0, center + Offset((step + 1) * 8f, (step + 1) * 6f))
+                    move()
+                }
+                up()
+            }
+
+            assertTrue("Crop drag restarted before processing enough deltas", updates.get() >= 4)
+            assertEquals(1, finishes.get())
         } finally {
             bitmap.recycle()
         }

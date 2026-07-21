@@ -80,8 +80,6 @@ class FullScreenAdCoordinator(
         consentAllowsAds: Boolean,
         safeHomeTransition: Boolean,
         homeAlreadyInteractive: Boolean,
-        isColdLaunch: Boolean,
-        backgroundDurationMillis: Long?,
     ): Boolean {
         discardExpiredAppOpen()
         val ad = appOpen
@@ -90,8 +88,6 @@ class FullScreenAdCoordinator(
                 adAvailableAndFresh = ad != null,
                 safeHomeTransition = safeHomeTransition,
                 homeAlreadyInteractive = homeAlreadyInteractive,
-                isColdLaunch = isColdLaunch,
-                backgroundDurationMillis = backgroundDurationMillis,
             )
         ) {
             preload(consentAllowsAds)

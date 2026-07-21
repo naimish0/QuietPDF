@@ -76,19 +76,18 @@ class FullScreenAdPolicyTest {
     fun consentOrUnavailableAppOpenNeverStartsFullScreenState() {
         store.completedSessionCount = 2
         assertFalse(
-            policy.tryBeginAppOpen(false, true, true, false, true, null),
+            policy.tryBeginAppOpen(false, true, true, false),
         )
         assertFalse(
-            policy.tryBeginAppOpen(true, false, true, false, true, null),
+            policy.tryBeginAppOpen(true, false, true, false),
         )
         assertFalse(policy.isFullScreenAdActive)
     }
 
     @Test
-    fun appOpenHonorsHomeReadinessResumeThresholdIntervalAndDailyLimit() {
+    fun appOpenHonorsHomeReadinessAndFourHourIntervalWithoutItsOwnDailyLimit() {
         store.completedSessionCount = 2
         assertFalse(policy.tryAppOpen(homeInteractive = true))
-        assertFalse(policy.tryAppOpen(isCold = false, background = 60_000L))
         assertTrue(policy.tryAppOpen())
         policy.onAdShown(FullScreenAdFormat.AppOpen)
         policy.release(FullScreenAdFormat.AppOpen)
@@ -103,7 +102,29 @@ class FullScreenAdPolicyTest {
 
         clock.elapsed += FullScreenAdPolicy.SHARED_COOLDOWN_MILLIS
         clock.wall += FullScreenAdPolicy.APP_OPEN_INTERVAL_MILLIS
-        assertFalse(policy.tryAppOpen())
+        assertTrue(policy.tryAppOpen())
+    }
+
+    @Test
+    fun combinedDailyLimitBlocksTheThirteenthFullScreenAdAcrossProcesses() {
+        repeat(FullScreenAdPolicy.MAX_FULL_SCREEN_ADS_PER_DAY) { impression ->
+            val processPolicy = FullScreenAdPolicy(store, clock)
+            processPolicy.recordSuccessfulWorkflow("$impression-a")
+            processPolicy.recordSuccessfulWorkflow("$impression-b")
+            assertTrue(processPolicy.tryInterstitial())
+            processPolicy.onAdShown(FullScreenAdFormat.Interstitial)
+            processPolicy.release(FullScreenAdFormat.Interstitial)
+            clock.elapsed += FullScreenAdPolicy.SHARED_COOLDOWN_MILLIS
+            clock.wall += FullScreenAdPolicy.SHARED_COOLDOWN_MILLIS
+        }
+
+        val nextProcess = FullScreenAdPolicy(store, clock)
+        nextProcess.recordSuccessfulWorkflow("blocked-a")
+        nextProcess.recordSuccessfulWorkflow("blocked-b")
+        assertFalse(nextProcess.tryInterstitial())
+        store.completedSessionCount = 2
+        assertFalse(nextProcess.tryAppOpen())
+        assertEquals(FullScreenAdPolicy.MAX_FULL_SCREEN_ADS_PER_DAY, store.fullScreenDayCount)
     }
 
     @Test
@@ -124,9 +145,7 @@ class FullScreenAdPolicyTest {
 
     private fun FullScreenAdPolicy.tryAppOpen(
         homeInteractive: Boolean = false,
-        isCold: Boolean = true,
-        background: Long? = null,
-    ) = tryBeginAppOpen(true, true, true, homeInteractive, isCold, background)
+    ) = tryBeginAppOpen(true, true, true, homeInteractive)
 
     private class FakeClock(
         var elapsed: Long = 1_000_000L,
@@ -140,8 +159,8 @@ class FullScreenAdPolicyTest {
         override var successfulWorkflowCount = 0
         override var completedSessionCount = 0
         override var lastAppOpenWallMillis = Long.MIN_VALUE
-        override var appOpenDayKey = Int.MIN_VALUE
-        override var appOpenDayCount = 0
         override var lastFullScreenWallMillis = Long.MIN_VALUE
+        override var fullScreenDayKey = Int.MIN_VALUE
+        override var fullScreenDayCount = 0
     }
 }

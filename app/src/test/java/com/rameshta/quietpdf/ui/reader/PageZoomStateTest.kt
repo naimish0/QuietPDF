@@ -47,4 +47,18 @@ class PageZoomStateTest {
         assertFalse(reset.isZoomed)
         assertEquals(Offset.Zero, reset.offset)
     }
+
+    @Test
+    fun sequentialPinchDeltasAccumulateAndReturnToFit() {
+        var state = PageZoomState()
+        listOf(2f, 1.5f, 4f / 3f).forEach { delta ->
+            state = state.transform(delta, Offset.Zero, viewport)
+        }
+        assertEquals(PageZoomState.MaximumScale, state.scale, 0.001f)
+
+        listOf(0.5f, 0.5f).forEach { delta ->
+            state = state.transform(delta, Offset.Zero, viewport)
+        }
+        assertEquals(PageZoomState(), state)
+    }
 }

@@ -17,13 +17,17 @@ import kotlinx.coroutines.withContext
 import kotlin.coroutines.coroutineContext
 
 sealed interface SplitPdfResult {
-    data class Success(val outputCount: Int) : SplitPdfResult
+    data class Success(val outputs: List<SplitPdfOutput>) : SplitPdfResult {
+        val outputCount: Int get() = outputs.size
+    }
     data object InvalidDocument : SplitPdfResult
     data object InvalidPlan : SplitPdfResult
     data object PermissionDenied : SplitPdfResult
     data object InsufficientMemory : SplitPdfResult
     data object Failed : SplitPdfResult
 }
+
+data class SplitPdfOutput(val uri: Uri, val pageCount: Int)
 
 class SplitPdfEngine(context: Context) {
     private val appContext = context.applicationContext
@@ -139,7 +143,11 @@ class SplitPdfEngine(context: Context) {
                 } ?: throw OutputFailureException()
                 if (publishedPages != range.pageCount) throw OutputFailureException()
             }
-            SplitPdfResult.Success(ranges.size)
+            SplitPdfResult.Success(
+                createdOutputs.zip(ranges) { uri, range ->
+                    SplitPdfOutput(uri, range.pageCount)
+                },
+            )
         } catch (cancelled: CancellationException) {
             createdOutputs.asReversed().forEach { runCatching { deleteOutput(it) } }
             throw cancelled

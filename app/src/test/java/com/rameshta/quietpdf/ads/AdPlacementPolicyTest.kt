@@ -6,12 +6,11 @@ import org.junit.Test
 
 class AdPlacementPolicyTest {
     @Test
-    fun bannerIsAllowedOnlyOnAnIdleConsentedConfiguredHome() {
+    fun bannerIsAllowedOnAnIdleConsentedConfiguredNavigationScreen() {
         assertTrue(
-            AdPlacementPolicy.showHomeBanner(
-                isHome = true,
+            AdPlacementPolicy.showBanner(
+                screenAllowsBanner = true,
                 documentIsClosed = true,
-                operationsAreIdle = true,
                 consentAllowsAds = true,
                 isConfigured = true,
             ),
@@ -20,16 +19,15 @@ class AdPlacementPolicyTest {
 
     @Test
     fun everySafetyGateIndependentlySuppressesTheBanner() {
-        val allowed = listOf(true, true, true, true, true)
+        val allowed = listOf(true, true, true, true)
         allowed.indices.forEach { disabledIndex ->
             val values = allowed.toMutableList().also { it[disabledIndex] = false }
             assertFalse(
-                AdPlacementPolicy.showHomeBanner(
-                    isHome = values[0],
+                AdPlacementPolicy.showBanner(
+                    screenAllowsBanner = values[0],
                     documentIsClosed = values[1],
-                    operationsAreIdle = values[2],
-                    consentAllowsAds = values[3],
-                    isConfigured = values[4],
+                    consentAllowsAds = values[2],
+                    isConfigured = values[3],
                 ),
             )
         }

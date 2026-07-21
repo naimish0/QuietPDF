@@ -51,12 +51,14 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -114,6 +116,7 @@ import kotlin.math.min
 fun PdfReaderScreen(
     document: PdfOpenState.Opened,
     onOpenAnother: () -> Unit,
+    onCloseDocument: () -> Unit,
     renderPage: suspend (pageIndex: Int, targetWidth: Int) -> PageRenderResult,
     onPageChanged: (pageIndex: Int) -> Unit,
     searchDocument: suspend (query: String) -> PdfSearchResult,
@@ -219,10 +222,7 @@ fun PdfReaderScreen(
         }
     }
 
-    BackHandler(
-        enabled = healthDialogVisible || tableOfContentsDialogVisible || bookmarkDialogVisible ||
-            isFullscreen || searchActive,
-    ) {
+    BackHandler {
         if (healthDialogVisible) {
             healthJob?.cancel()
             healthDialogVisible = false
@@ -233,14 +233,20 @@ fun PdfReaderScreen(
             bookmarkDialogVisible = false
         } else if (searchActive) {
             closeSearch()
-        } else {
+        } else if (isFullscreen) {
             isFullscreen = false
             chromeVisible = true
+        } else {
+            onCloseDocument()
         }
     }
 
     val onPageTap = {
         if (isFullscreen && !searchActive) chromeVisible = !chromeVisible
+    }
+    val updateFullscreen: (Boolean) -> Unit = { enabled ->
+        isFullscreen = enabled
+        chromeVisible = !enabled
     }
     val navigateToPage: (Int) -> Unit = { requestedPage ->
         val page = requestedPage.coerceIn(0, document.pageCount - 1)
@@ -345,10 +351,7 @@ fun PdfReaderScreen(
                         onModeSelected = { readerMode = it },
                         onOpenAnother = onOpenAnother,
                         isFullscreen = true,
-                        onFullscreenChange = {
-                            isFullscreen = it
-                            chromeVisible = true
-                        },
+                        onFullscreenChange = updateFullscreen,
                         nightAppearance = nightAppearance,
                         onNightAppearanceChange = { nightAppearance = it },
                         onSearchRequested = { searchActive = true },
@@ -385,10 +388,7 @@ fun PdfReaderScreen(
                         onModeSelected = { readerMode = it },
                         onOpenAnother = onOpenAnother,
                         isFullscreen = false,
-                        onFullscreenChange = {
-                            isFullscreen = it
-                            chromeVisible = true
-                        },
+                        onFullscreenChange = updateFullscreen,
                         nightAppearance = nightAppearance,
                         onNightAppearanceChange = { nightAppearance = it },
                         onSearchRequested = { searchActive = true },
@@ -1072,7 +1072,8 @@ private fun PdfPageItem(
     selectedSearchMatch: PdfSearchMatch? = null,
 ) {
     val pageNumber = pageIndex + 1
-    var zoomState by remember(documentIdentity, pageIndex) { mutableStateOf(PageZoomState()) }
+    val zoomStateState = remember(documentIdentity, pageIndex) { mutableStateOf(PageZoomState()) }
+    val zoomState by zoomStateState
     Column(
         modifier = modifier,
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -1123,8 +1124,7 @@ private fun PdfPageItem(
                         bitmap = result.bitmap,
                         pageNumber = pageNumber,
                         pageCount = pageCount,
-                        zoomState = zoomState,
-                        onZoomStateChange = { zoomState = it },
+                        zoomStateState = zoomStateState,
                         fitToViewport = fitToViewport,
                         onPageTap = onPageTap,
                         nightAppearance = nightAppearance,
@@ -1190,14 +1190,14 @@ private fun RenderedPage(
     bitmap: Bitmap,
     pageNumber: Int,
     pageCount: Int,
-    zoomState: PageZoomState,
-    onZoomStateChange: (PageZoomState) -> Unit,
+    zoomStateState: MutableState<PageZoomState>,
     fitToViewport: Boolean,
     onPageTap: () -> Unit,
     nightAppearance: Boolean,
     searchMatches: List<PdfSearchMatch>,
     selectedSearchMatch: PdfSearchMatch?,
 ) {
+    val zoomState by zoomStateState
     val description = stringResource(R.string.page_content_description, pageNumber, pageCount)
     val zoomDescription = stringResource(R.string.zoom_state, (zoomState.scale * 100).roundToInt())
     val zoomInLabel = stringResource(R.string.zoom_in)
@@ -1205,21 +1205,60 @@ private fun RenderedPage(
     val resetLabel = stringResource(R.string.reset_zoom)
     var viewport by remember { mutableStateOf(IntSize.Zero) }
     val viewportSize = Size(viewport.width.toFloat(), viewport.height.toFloat())
+    val latestOnPageTap by rememberUpdatedState(onPageTap)
     val transformableState = rememberTransformableState { centroid, zoomChange, panChange, _ ->
-        onZoomStateChange(
-            zoomState.transform(
-                zoomChange = zoomChange,
-                panChange = panChange,
-                viewportSize = viewportSize,
-                centroid = centroid,
-            ),
+        zoomStateState.value = zoomStateState.value.transform(
+            zoomChange = zoomChange,
+            panChange = panChange,
+            viewportSize = viewportSize,
+            centroid = centroid,
         )
     }
 
     Box(
         modifier = (if (fitToViewport) Modifier.fillMaxSize() else Modifier.fillMaxWidth())
             .clipToBounds()
-            .onSizeChanged { viewport = it },
+            .onSizeChanged { viewport = it }
+            .transformable(
+                state = transformableState,
+                canPan = { zoomStateState.value.isZoomed },
+                lockRotationOnZoomPan = true,
+            )
+            .pointerInput(viewport) {
+                detectTapGestures(
+                    onTap = { latestOnPageTap() },
+                    onDoubleTap = { position ->
+                        zoomStateState.value = zoomStateState.value.toggle(viewportSize, position)
+                    },
+                )
+            }
+            .semantics {
+                contentDescription = description
+                stateDescription = zoomDescription
+                customActions = listOf(
+                    CustomAccessibilityAction(zoomInLabel) {
+                        zoomStateState.value = zoomStateState.value.transform(
+                            zoomChange = 1.5f,
+                            panChange = Offset.Zero,
+                            viewportSize = viewportSize,
+                        )
+                        true
+                    },
+                    CustomAccessibilityAction(zoomOutLabel) {
+                        zoomStateState.value = zoomStateState.value.transform(
+                            zoomChange = 1f / 1.5f,
+                            panChange = Offset.Zero,
+                            viewportSize = viewportSize,
+                        )
+                        true
+                    },
+                    CustomAccessibilityAction(resetLabel) {
+                        zoomStateState.value = PageZoomState()
+                        true
+                    },
+                )
+            }
+            .testTag("pdf_page_$pageNumber"),
         contentAlignment = Alignment.Center,
     ) {
         Box(
@@ -1229,43 +1268,7 @@ private fun RenderedPage(
                     scaleY = zoomState.scale
                     translationX = zoomState.offset.x
                     translationY = zoomState.offset.y
-                }
-                .transformable(
-                    state = transformableState,
-                    canPan = { zoomState.isZoomed },
-                    lockRotationOnZoomPan = true,
-                )
-                .pointerInput(viewport, zoomState.isZoomed) {
-                    detectTapGestures(
-                        onTap = { onPageTap() },
-                        onDoubleTap = { position ->
-                            onZoomStateChange(zoomState.toggle(viewportSize, position))
-                        },
-                    )
-                }
-                .semantics {
-                    contentDescription = description
-                    stateDescription = zoomDescription
-                    customActions = listOf(
-                        CustomAccessibilityAction(zoomInLabel) {
-                            onZoomStateChange(
-                                zoomState.transform(1.5f, Offset.Zero, viewportSize),
-                            )
-                            true
-                        },
-                        CustomAccessibilityAction(zoomOutLabel) {
-                            onZoomStateChange(
-                                zoomState.transform(1f / 1.5f, Offset.Zero, viewportSize),
-                            )
-                            true
-                        },
-                        CustomAccessibilityAction(resetLabel) {
-                            onZoomStateChange(PageZoomState())
-                            true
-                        },
-                    )
-                }
-                .testTag("pdf_page_$pageNumber"),
+                },
         ) {
             Image(
                 bitmap = bitmap.asImageBitmap(),
@@ -1314,7 +1317,7 @@ private fun RenderedPage(
 
         if (zoomState.isZoomed) {
             TextButton(
-                onClick = { onZoomStateChange(PageZoomState()) },
+                onClick = { zoomStateState.value = PageZoomState() },
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .padding(8.dp)

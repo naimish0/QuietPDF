@@ -17,9 +17,9 @@ interface FullScreenAdPersistence {
     var successfulWorkflowCount: Int
     var completedSessionCount: Int
     var lastAppOpenWallMillis: Long
-    var appOpenDayKey: Int
-    var appOpenDayCount: Int
     var lastFullScreenWallMillis: Long
+    var fullScreenDayKey: Int
+    var fullScreenDayCount: Int
 }
 
 enum class FullScreenAdFormat { Interstitial, AppOpen }
@@ -65,6 +65,7 @@ class FullScreenAdPolicy(
         if (persistence.successfulWorkflowCount < WORKFLOWS_PER_INTERSTITIAL) return false
         if (sessionInterstitialCount >= MAX_INTERSTITIALS_PER_SESSION) return false
         if (!sharedCooldownPassed()) return false
+        if (!dailyFullScreenLimitAllowsAd()) return false
         activeFormat = FullScreenAdFormat.Interstitial
         return true
     }
@@ -74,22 +75,18 @@ class FullScreenAdPolicy(
         adAvailableAndFresh: Boolean,
         safeHomeTransition: Boolean,
         homeAlreadyInteractive: Boolean,
-        isColdLaunch: Boolean,
-        backgroundDurationMillis: Long?,
     ): Boolean {
         if (!consentAllowsAds || !adAvailableAndFresh || !safeHomeTransition ||
             homeAlreadyInteractive || isFullScreenAdActive
         ) return false
         if (persistence.completedSessionCount < REQUIRED_PRIOR_SESSIONS) return false
-        if (!isColdLaunch && (backgroundDurationMillis ?: 0L) < MIN_BACKGROUND_MILLIS) return false
         if (!sharedCooldownPassed()) return false
         val now = clock.currentTimeMillis()
         val lastAppOpen = persistence.lastAppOpenWallMillis
         if (lastAppOpen != Long.MIN_VALUE && now - lastAppOpen < APP_OPEN_INTERVAL_MILLIS) {
             return false
         }
-        refreshDailyCount(now)
-        if (persistence.appOpenDayCount >= MAX_APP_OPEN_PER_DAY) return false
+        if (!dailyFullScreenLimitAllowsAd(now)) return false
         activeFormat = FullScreenAdFormat.AppOpen
         return true
     }
@@ -97,7 +94,10 @@ class FullScreenAdPolicy(
     fun onAdShown(format: FullScreenAdFormat) {
         if (activeFormat != format) return
         lastFullScreenElapsedMillis = clock.elapsedRealtime()
-        persistence.lastFullScreenWallMillis = clock.currentTimeMillis()
+        val now = clock.currentTimeMillis()
+        persistence.lastFullScreenWallMillis = now
+        refreshFullScreenDailyCount(now)
+        persistence.fullScreenDayCount++
         when (format) {
             FullScreenAdFormat.Interstitial -> {
                 sessionInterstitialCount++
@@ -105,9 +105,6 @@ class FullScreenAdPolicy(
                 completionIds.clear()
             }
             FullScreenAdFormat.AppOpen -> {
-                val now = clock.currentTimeMillis()
-                refreshDailyCount(now)
-                persistence.appOpenDayCount++
                 persistence.lastAppOpenWallMillis = now
             }
         }
@@ -127,11 +124,16 @@ class FullScreenAdPolicy(
         return inSessionPassed && acrossProcessPassed
     }
 
-    private fun refreshDailyCount(now: Long) {
+    private fun dailyFullScreenLimitAllowsAd(now: Long = clock.currentTimeMillis()): Boolean {
+        refreshFullScreenDailyCount(now)
+        return persistence.fullScreenDayCount < MAX_FULL_SCREEN_ADS_PER_DAY
+    }
+
+    private fun refreshFullScreenDailyCount(now: Long) {
         val dayKey = calendarDayKey(now)
-        if (persistence.appOpenDayKey != dayKey) {
-            persistence.appOpenDayKey = dayKey
-            persistence.appOpenDayCount = 0
+        if (persistence.fullScreenDayKey != dayKey) {
+            persistence.fullScreenDayKey = dayKey
+            persistence.fullScreenDayCount = 0
         }
     }
 
@@ -144,9 +146,8 @@ class FullScreenAdPolicy(
         const val WORKFLOWS_PER_INTERSTITIAL = 2
         const val MAX_INTERSTITIALS_PER_SESSION = 3
         const val REQUIRED_PRIOR_SESSIONS = 2
-        const val MAX_APP_OPEN_PER_DAY = 2
+        const val MAX_FULL_SCREEN_ADS_PER_DAY = 12
         const val SHARED_COOLDOWN_MILLIS = 3 * 60 * 1000L
-        const val MIN_BACKGROUND_MILLIS = 5 * 60 * 1000L
         const val APP_OPEN_INTERVAL_MILLIS = 4 * 60 * 60 * 1000L
         const val APP_OPEN_EXPIRY_MILLIS = 4 * 60 * 60 * 1000L
         private const val MAX_PENDING_WORKFLOWS = 100

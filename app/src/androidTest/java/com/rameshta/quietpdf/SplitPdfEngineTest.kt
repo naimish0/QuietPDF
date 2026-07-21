@@ -13,6 +13,7 @@ import com.rameshta.quietpdf.pdf.PdfSearchEngine
 import com.rameshta.quietpdf.pdf.PdfSearchResult
 import com.rameshta.quietpdf.pdf.SplitPageRange
 import com.rameshta.quietpdf.pdf.SplitPdfEngine
+import com.rameshta.quietpdf.pdf.SplitPdfOutput
 import com.rameshta.quietpdf.pdf.SplitPdfResult
 import java.io.File
 import kotlinx.coroutines.runBlocking
@@ -53,7 +54,15 @@ class SplitPdfEngineTest {
                 )
             }
 
-            assertEquals(SplitPdfResult.Success(outputCount = 2), result)
+            assertEquals(
+                SplitPdfResult.Success(
+                    listOf(
+                        SplitPdfOutput(Uri.fromFile(firstOutput), 2),
+                        SplitPdfOutput(Uri.fromFile(secondOutput), 3),
+                    ),
+                ),
+                result,
+            )
             assertEquals(listOf(1 to 2, 2 to 2), progress)
             assertPdf(
                 firstOutput,

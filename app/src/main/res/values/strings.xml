@@ -528,6 +528,18 @@
     <string name="history_clear_title">Clear history?</string>
     <string name="history_clear_message">This removes the private local operation history. Your files will not be deleted.</string>
     <string name="history_clear_confirm">Clear history</string>
+    <plurals name="history_entry_count">
+        <item quantity="one">%1$d completed operation</item>
+        <item quantity="other">%1$d completed operations</item>
+    </plurals>
+    <string name="history_sort_newest">Newest first</string>
+    <string name="history_sort_oldest">Oldest first</string>
+    <string name="history_filter_empty">No completed operations match this filter.</string>
+    <string name="history_run_again">Run again</string>
+    <string name="history_remove">Remove</string>
+    <string name="history_remove_title">Remove history entry?</string>
+    <string name="history_remove_message">This removes only the local history entry. Your generated files will not be deleted.</string>
+    <string name="history_remove_confirm">Remove entry</string>
     <string name="history_scan_document">Scanned document</string>
     <string name="history_images_to_pdf">Created PDF from images</string>
     <string name="history_merge_pdf">Merged PDFs</string>
@@ -575,6 +587,8 @@
     <string name="smart_home_remove_favorite_tool">Remove from favorite tools</string>
     <string name="smart_home_add_favorite_tool_description">%1$s: add to favorite tools</string>
     <string name="smart_home_remove_favorite_tool_description">%1$s: remove from favorite tools</string>
+    <string name="smart_home_favorite_tool_limit_description">%1$s: favorite limit reached; remove another favorite first</string>
+    <string name="smart_home_favorite_tool_limit_message">You can keep up to 4 favorite tools. Remove one before adding another.</string>
     <string name="smart_home_favorite_limit">Choose up to four favorite tools</string>
     <string name="smart_home_discovery">What would you like to do?</string>
     <string name="smart_home_category_all">All</string>
@@ -588,6 +602,11 @@
     <string name="smart_home_add_watermark">Add watermark</string>
     <string name="smart_home_recent">Recent files</string>
     <string name="smart_home_see_all">See all</string>
+    <string name="smart_home_recent_favorite_indicator">Favorite PDF</string>
+    <plurals name="smart_home_recent_count">
+        <item quantity="one">%1$d recent PDF</item>
+        <item quantity="other">%1$d recent PDFs</item>
+    </plurals>
     <string name="smart_home_no_recent">No recent PDFs yet. Open a PDF to start your private recent-files list.</string>
     <string name="smart_home_history_summary">%1$d completed operations</string>
     <string name="smart_home_history_empty">No completed operations yet</string>

@@ -61,6 +61,18 @@ class PdfHistoryStoreTest {
     }
 
     @Test
+    fun removeDeletesOnlyTheSelectedHistoryEvent() {
+        store.record(PdfHistoryOperation.MergePdf)
+        store.record(PdfHistoryOperation.ProtectPdf)
+        val selected = store.load().first()
+
+        val remaining = store.remove(selected)
+
+        assertEquals(listOf(PdfHistoryOperation.MergePdf), remaining.map { it.operation })
+        assertEquals(remaining, store.load())
+    }
+
+    @Test
     fun corruptStoredDataRecoversAsAnEmptyList() {
         context.getSharedPreferences(PdfHistoryStore.PREFERENCES_NAME, Context.MODE_PRIVATE)
             .edit().putString("entries", "not-json").commit()

@@ -4,6 +4,7 @@ import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -44,7 +45,7 @@ class HistoryUiTest {
         composeRule.onAllNodesWithTag("history_item_5").assertCountEquals(0)
         composeRule.onNodeWithTag("history_expand").performScrollTo().performClick()
         composeRule.onNodeWithTag("history_item_6").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithText("Show less").assertIsDisplayed()
+        composeRule.onNodeWithText("Show less").performScrollTo().assertIsDisplayed()
     }
 
     @Test
@@ -62,6 +63,52 @@ class HistoryUiTest {
     }
 
     @Test
+    fun historyCanFilterAndRemoveOneEntryWithoutDeletingFiles() {
+        val removed = AtomicInteger()
+        setContent(
+            listOf(
+                PdfHistoryEntry(PdfHistoryOperation.MergePdf, 2_000L),
+                PdfHistoryEntry(PdfHistoryOperation.ProtectPdf, 1_000L),
+            ),
+            onRemove = { removed.incrementAndGet() },
+        )
+
+        composeRule.onNodeWithTag("history_filter_Secure").performScrollTo().performClick()
+        composeRule.onNodeWithText("Protected PDF").performScrollTo().assertIsDisplayed()
+        composeRule.onAllNodesWithText("Merged PDFs").assertCountEquals(0)
+        composeRule.onNodeWithTag("history_remove_0").performScrollTo().performClick()
+        composeRule.onNodeWithTag("history_remove_dialog").assertIsDisplayed()
+        composeRule.onNodeWithText("will not be deleted", substring = true).assertIsDisplayed()
+        composeRule.onNodeWithTag("history_remove_confirm").performClick()
+        assertEquals(1, removed.get())
+    }
+
+    @Test
+    fun dedicatedHistoryCanRunTheCompletedToolAgain() {
+        val repeats = AtomicInteger()
+        composeRule.setContent {
+            QuietPDFTheme(dynamicColor = false) {
+                QuietPdfApp(
+                    state = PdfOpenState.Idle,
+                    history = listOf(
+                        PdfHistoryEntry(PdfHistoryOperation.CompressPdf, 1_000L),
+                    ),
+                    legacyHomeSections = false,
+                    onCompressPdf = { repeats.incrementAndGet() },
+                    onOpenPdf = {},
+                    renderPage = { _, _ ->
+                        PageRenderResult.Failed(PageRenderFailure.UnableToRender)
+                    },
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag("smart_home_nav_History").performClick()
+        composeRule.onNodeWithTag("history_repeat_0").performScrollTo().performClick()
+        assertEquals(1, repeats.get())
+    }
+
+    @Test
     fun emptyHistoryDoesNotAddAnEmptySection() {
         setContent(emptyList())
         composeRule.onAllNodesWithTag("history_title").assertCountEquals(0)
@@ -70,6 +117,7 @@ class HistoryUiTest {
     private fun setContent(
         history: List<PdfHistoryEntry>,
         onClear: () -> Unit = {},
+        onRemove: (PdfHistoryEntry) -> Unit = {},
     ) {
         composeRule.setContent {
             QuietPDFTheme(dynamicColor = false) {
@@ -77,6 +125,7 @@ class HistoryUiTest {
                     state = PdfOpenState.Idle,
                     history = history,
                     onClearHistory = onClear,
+                    onRemoveHistoryEntry = onRemove,
                     onOpenPdf = {},
                     renderPage = { _, _ -> PageRenderResult.Failed(PageRenderFailure.UnableToRender) },
                 )

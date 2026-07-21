@@ -75,6 +75,16 @@ class PdfHistoryStore(
         preferences.edit().remove(ENTRIES_KEY).apply()
     }
 
+    @Synchronized
+    fun remove(entry: PdfHistoryEntry): List<PdfHistoryEntry> {
+        val updated = load().toMutableList().also { entries ->
+            val index = entries.indexOf(entry)
+            if (index >= 0) entries.removeAt(index)
+        }
+        persist(updated)
+        return updated
+    }
+
     private fun persist(entries: List<PdfHistoryEntry>) {
         val array = JSONArray().apply {
             entries.take(MAX_ENTRIES).forEach { entry ->

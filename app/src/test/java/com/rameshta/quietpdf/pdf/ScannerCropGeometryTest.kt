@@ -32,6 +32,19 @@ class ScannerCropGeometryTest {
     }
 
     @Test
+    fun constrainedCornerMovementStopsAtNearestValidBoundary() {
+        val crop = ScannerCropSelection.fullImage(inset = 0.05f)
+
+        val moved = crop.moveCornerConstrained(0, ScannerCropPoint(0.95f, 0.95f))
+
+        assertTrue(ScannerCropGeometry.isValid(moved))
+        assertTrue(moved.topLeft.x > crop.topLeft.x)
+        assertTrue(moved.topLeft.y > crop.topLeft.y)
+        assertTrue(moved.topLeft.x < 0.95f)
+        assertTrue(moved.topLeft.y < 0.95f)
+    }
+
+    @Test
     fun perspectiveCropUsesLongestOpposingEdges() {
         val crop = ScannerCropSelection(
             topLeft = ScannerCropPoint(0.2f, 0.1f),
