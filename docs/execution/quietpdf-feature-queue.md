@@ -1,3 +1,11 @@
+# QuietPDF Feature Queue
+
+Process this list sequentially. Feature branch names must exactly match the pending queue entry. The
+user creates each feature branch manually; Codex must not create it. Codex implements and verifies
+the feature on that branch, creates one focused commit, pushes it, opens and merges a pull request,
+pulls and verifies `main`, and only then marks the item `COMPLETED`. Codex waits for the user-created
+next branch before starting the next feature.
+
 COMPLETED T3-PDF-Reader-Modes
 COMPLETED T4-PDF-Fullscreen
 COMPLETED T5-PDF-Dark-Mode
@@ -7,7 +15,7 @@ COMPLETED T8-PDF-Bookmarks
 COMPLETED T9-PDF-Table-Of-Contents
 COMPLETED T10-PDF-Health
 COMPLETED T11-Images-To-PDF
-T12-Images-PDF-Layout
+COMPLETED T12-Images-PDF-Layout
 T13-Merge-PDF
 T14-Split-PDF
 T15-Extract-Pages

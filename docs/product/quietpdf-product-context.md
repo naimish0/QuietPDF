@@ -770,7 +770,7 @@ Run broader regression, accessibility, release and performance validation during
 
 ## Feature-Branch Workflow
 
-Every feature must use an independent branch, for example:
+Every feature must use an independent user-created branch, for example:
 
 - `T0-PDF-Open`
 - `T1-PDF-Read`
@@ -796,20 +796,23 @@ Rules:
 
 ### Feature Execution
 
-1. Start from a clean `main`.
-2. Pull `main` using fast-forward-only behavior.
+1. The user creates the exact feature branch from an updated, clean `main`.
+2. Verify that the current branch exactly matches the first pending queue item. Never create the
+   feature branch on the user's behalf.
 3. Configure and verify the required repository-local Git identity.
-4. Create the exact assigned feature branch.
-5. Implement only the assigned feature.
-6. Add focused tests.
-7. Run the relevant verification.
-8. Review the diff for unrelated changes.
-9. Verify the required Git identity again.
-10. Create one intentional feature commit.
-11. Push the feature branch without force-pushing.
-12. Merge the completed feature into `main`.
-13. Pull and verify the updated `main`.
-14. Only then create the next feature branch.
+4. Implement only the assigned feature.
+5. Add focused tests.
+6. Run the relevant verification.
+7. Review the diff for unrelated changes.
+8. Verify the required Git identity again.
+9. Create one intentional feature commit.
+10. Push the feature branch without force-pushing.
+11. Open a focused pull request for the feature branch.
+12. Merge the pull request into `main` only after required checks and scoped verification pass.
+13. Check out `main`, pull it using fast-forward-only behavior, and verify the merged result.
+14. Mark the queue item `COMPLETED` only after the merge and verification, then push that queue-only
+    status update and pull `main` again.
+15. Do not create the next feature branch. Continue only after the user creates the exact next branch.
 
 ### Never
 
@@ -817,6 +820,9 @@ Rules:
     - Name: `Naimish Gupta`
     - Email: `naimishgupta983842377@gmail.com`
 - Configure Git identity globally.
+- Create a feature branch; feature branches are created manually by the user.
+- Start feature work while on `main` or on a branch that does not exactly match the first pending
+  queue item.
 - Mix multiple queued features in one branch.
 - Begin the next feature before the current feature is merged.
 - Force-push.
@@ -827,7 +833,8 @@ Rules:
 - Continue after a genuine licensing or security blocker.
 - Bypass branch protection.
 
-If `main` is protected and requires a pull request, push the feature branch and stop until the pull request is successfully merged.
+Every feature must be merged through a pull request. Never bypass branch protection or replace the
+pull-request merge with a direct feature merge into local `main`.
 
 When an external runner owns Git operations, Codex must not independently stage, commit, switch branches, merge, pull, or push. The external runner must still use the required Git identity for every commit.
 
