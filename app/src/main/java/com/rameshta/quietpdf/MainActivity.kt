@@ -7,6 +7,7 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Bundle
+import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -14,7 +15,9 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Arrangement
@@ -34,11 +37,17 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationRail
+import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Checkbox
@@ -61,6 +70,7 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.asImageBitmap
@@ -155,9 +165,12 @@ import com.rameshta.quietpdf.pdf.PdfAnnotationItem
 import com.rameshta.quietpdf.pdf.RecentPdf
 import com.rameshta.quietpdf.pdf.FavoritePdf
 import com.rameshta.quietpdf.pdf.PdfHistoryEntry
+import com.rameshta.quietpdf.pdf.PdfHistoryOperation
 import com.rameshta.quietpdf.pdf.PdfFileOrganizer
 import com.rameshta.quietpdf.pdf.PdfFileSortOrder
 import com.rameshta.quietpdf.pdf.PdfShareIntentFactory
+import com.rameshta.quietpdf.pdf.ContinueReadingPdf
+import com.rameshta.quietpdf.pdf.SmartTool
 import com.rameshta.quietpdf.pdf.PdfCompressionMode
 import com.rameshta.quietpdf.pdf.PdfCompressionRequest
 import com.rameshta.quietpdf.pdf.TargetFileSize
@@ -178,6 +191,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -576,6 +590,9 @@ class MainActivity : ComponentActivity() {
                     recentPdfs = viewModel.recentPdfs,
                     favoritePdfs = viewModel.favoritePdfs,
                     history = viewModel.history,
+                    continueReading = viewModel.continueReading,
+                    favoriteTools = viewModel.favoriteTools,
+                    legacyHomeSections = false,
                     onOpenRecentPdf = viewModel::openRecentPdf,
                     onRemoveRecentPdf = viewModel::removeRecentPdf,
                     onClearRecentPdfs = viewModel::clearRecentPdfs,
@@ -583,7 +600,9 @@ class MainActivity : ComponentActivity() {
                     onToggleFavoritePdf = viewModel::toggleFavoritePdf,
                     onRemoveFavoritePdf = viewModel::removeFavoritePdf,
                     onClearHistory = viewModel::clearHistory,
+                    onToggleFavoriteTool = viewModel::toggleFavoriteTool,
                     onSharePdf = ::sharePdf,
+                    onOpenSettings = ::openAppSettings,
                     onOpenPdf = { picker.launch(arrayOf("application/pdf")) },
                     renderPage = viewModel::renderPage,
                     onPageChanged = viewModel::rememberPage,
@@ -905,6 +924,19 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun openAppSettings() {
+        try {
+            startActivity(
+                Intent(
+                    Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                    Uri.parse("package:$packageName"),
+                ),
+            )
+        } catch (_: RuntimeException) {
+            Toast.makeText(this, R.string.smart_home_settings_unavailable, Toast.LENGTH_LONG).show()
+        }
+    }
+
     private fun retainDirectoryPermission(uri: Uri) {
         try {
             contentResolver.takePersistableUriPermission(
@@ -921,6 +953,71 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+private enum class SmartHomeDestination { Home, Files, Tools }
+
+private enum class SmartToolCategory { Create, Organize, Optimize, Secure, EditAndSign, Extract }
+
+private data class SmartToolAction(
+    val tool: SmartTool,
+    val label: String,
+    val category: SmartToolCategory,
+    val testTag: String,
+    val onClick: () -> Unit,
+)
+
+@Composable
+private fun SmartHomeNavigationBar(
+    selected: SmartHomeDestination,
+    onSelect: (SmartHomeDestination) -> Unit,
+) {
+    NavigationBar(modifier = Modifier.testTag("smart_home_bottom_navigation")) {
+        SmartHomeDestination.entries.forEach { destination ->
+            val label = smartHomeDestinationLabel(destination)
+            NavigationBarItem(
+                selected = selected == destination,
+                onClick = { if (selected != destination) onSelect(destination) },
+                icon = { Text(navigationSymbol(destination)) },
+                label = { Text(label) },
+                modifier = Modifier.testTag("smart_home_nav_${destination.name}"),
+            )
+        }
+    }
+}
+
+@Composable
+private fun SmartHomeNavigationRail(
+    selected: SmartHomeDestination,
+    onSelect: (SmartHomeDestination) -> Unit,
+) {
+    NavigationRail(modifier = Modifier.testTag("smart_home_navigation_rail")) {
+        SmartHomeDestination.entries.forEach { destination ->
+            val label = smartHomeDestinationLabel(destination)
+            NavigationRailItem(
+                selected = selected == destination,
+                onClick = { if (selected != destination) onSelect(destination) },
+                icon = { Text(navigationSymbol(destination)) },
+                label = { Text(label) },
+                modifier = Modifier.testTag("smart_home_nav_${destination.name}"),
+            )
+        }
+    }
+}
+
+@Composable
+private fun smartHomeDestinationLabel(destination: SmartHomeDestination): String = stringResource(
+    when (destination) {
+        SmartHomeDestination.Home -> R.string.smart_home_nav_home
+        SmartHomeDestination.Files -> R.string.smart_home_nav_files
+        SmartHomeDestination.Tools -> R.string.smart_home_nav_tools
+    },
+)
+
+private fun navigationSymbol(destination: SmartHomeDestination): String = when (destination) {
+    SmartHomeDestination.Home -> "⌂"
+    SmartHomeDestination.Files -> "▤"
+    SmartHomeDestination.Tools -> "◆"
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun QuietPdfApp(
@@ -928,6 +1025,9 @@ fun QuietPdfApp(
     recentPdfs: List<RecentPdf> = emptyList(),
     favoritePdfs: List<FavoritePdf> = emptyList(),
     history: List<PdfHistoryEntry> = emptyList(),
+    continueReading: ContinueReadingPdf? = null,
+    favoriteTools: List<SmartTool> = emptyList(),
+    legacyHomeSections: Boolean = true,
     onOpenRecentPdf: (Uri) -> Unit = {},
     onRemoveRecentPdf: (Uri) -> Unit = {},
     onClearRecentPdfs: () -> Unit = {},
@@ -935,7 +1035,9 @@ fun QuietPdfApp(
     onToggleFavoritePdf: (Uri) -> Unit = {},
     onRemoveFavoritePdf: (Uri) -> Unit = {},
     onClearHistory: () -> Unit = {},
+    onToggleFavoriteTool: (SmartTool) -> Unit = {},
     onSharePdf: (Uri) -> Unit = {},
+    onOpenSettings: () -> Unit = {},
     onOpenPdf: () -> Unit,
     renderPage: suspend (pageIndex: Int, targetWidth: Int) -> PageRenderResult,
     onPageChanged: (pageIndex: Int) -> Unit = {},
@@ -1125,10 +1227,46 @@ fun QuietPdfApp(
         return
     }
 
-    Scaffold(
-        topBar = { TopAppBar(title = { Text(stringResource(R.string.app_name)) }) },
-    ) { innerPadding ->
-        Box(
+    var destination by rememberSaveable { mutableStateOf(SmartHomeDestination.Home) }
+    BackHandler(destination != SmartHomeDestination.Home) {
+        destination = SmartHomeDestination.Home
+    }
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val useNavigationRail = maxWidth >= 600.dp
+        Row(modifier = Modifier.fillMaxSize()) {
+            if (useNavigationRail) {
+                SmartHomeNavigationRail(
+                    selected = destination,
+                    onSelect = { destination = it },
+                )
+            }
+            Scaffold(
+                modifier = Modifier.weight(1f),
+                topBar = {
+                    TopAppBar(
+                        title = { Text(stringResource(R.string.app_name)) },
+                        actions = {
+                            TextButton(
+                                onClick = { destination = SmartHomeDestination.Files },
+                                modifier = Modifier.testTag("smart_home_search_action"),
+                            ) { Text(stringResource(R.string.smart_home_search)) }
+                            TextButton(
+                                onClick = onOpenSettings,
+                                modifier = Modifier.testTag("smart_home_settings_action"),
+                            ) { Text(stringResource(R.string.smart_home_settings)) }
+                        },
+                    )
+                },
+                bottomBar = {
+                    if (!useNavigationRail) {
+                        SmartHomeNavigationBar(
+                            selected = destination,
+                            onSelect = { destination = it },
+                        )
+                    }
+                },
+            ) { innerPadding ->
+                Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
@@ -1144,9 +1282,13 @@ fun QuietPdfApp(
             ) {
                 OpenPdfContent(
                     state = state,
+                    destination = destination,
+                    legacyHomeSections = legacyHomeSections,
                     recentPdfs = recentPdfs,
                     favoritePdfs = favoritePdfs,
                     history = history,
+                    continueReading = continueReading,
+                    favoriteTools = favoriteTools,
                     onOpenRecentPdf = onOpenRecentPdf,
                     onRemoveRecentPdf = onRemoveRecentPdf,
                     onClearRecentPdfs = onClearRecentPdfs,
@@ -1154,7 +1296,9 @@ fun QuietPdfApp(
                     onToggleFavoritePdf = onToggleFavoritePdf,
                     onRemoveFavoritePdf = onRemoveFavoritePdf,
                     onClearHistory = onClearHistory,
+                    onToggleFavoriteTool = onToggleFavoriteTool,
                     onSharePdf = onSharePdf,
+                    onNavigate = { destination = it },
                     onOpenPdf = onOpenPdf,
                     imagesToPdfState = imagesToPdfState,
                     onImagesToPdf = onImagesToPdf,
@@ -1240,6 +1384,8 @@ fun QuietPdfApp(
                     onDismissScannerResult = onDismissScannerResult,
                     contentPadding = PaddingValues(24.dp),
                 )
+            }
+                }
             }
         }
     }
@@ -3062,9 +3208,13 @@ private fun LayoutChoiceRow(
 @Composable
 private fun OpenPdfContent(
     state: PdfOpenState,
+    destination: SmartHomeDestination,
+    legacyHomeSections: Boolean,
     recentPdfs: List<RecentPdf>,
     favoritePdfs: List<FavoritePdf>,
     history: List<PdfHistoryEntry>,
+    continueReading: ContinueReadingPdf?,
+    favoriteTools: List<SmartTool>,
     onOpenRecentPdf: (Uri) -> Unit,
     onRemoveRecentPdf: (Uri) -> Unit,
     onClearRecentPdfs: () -> Unit,
@@ -3072,7 +3222,9 @@ private fun OpenPdfContent(
     onToggleFavoritePdf: (Uri) -> Unit,
     onRemoveFavoritePdf: (Uri) -> Unit,
     onClearHistory: () -> Unit,
+    onToggleFavoriteTool: (SmartTool) -> Unit,
     onSharePdf: (Uri) -> Unit,
+    onNavigate: (SmartHomeDestination) -> Unit,
     onOpenPdf: () -> Unit,
     imagesToPdfState: ImagesToPdfState,
     onImagesToPdf: () -> Unit,
@@ -3158,7 +3310,14 @@ private fun OpenPdfContent(
     onDismissScannerResult: () -> Unit,
     contentPadding: PaddingValues,
 ) {
-    val contentScroll = rememberScrollState()
+    val homeScroll = rememberScrollState()
+    val filesScroll = rememberScrollState()
+    val toolsScroll = rememberScrollState()
+    val contentScroll = when (destination) {
+        SmartHomeDestination.Home -> homeScroll
+        SmartHomeDestination.Files -> filesScroll
+        SmartHomeDestination.Tools -> toolsScroll
+    }
     val hasResult = imagesToPdfState is ImagesToPdfState.Failed ||
         mergePdfState is MergePdfState.Failed ||
         splitPdfState is SplitPdfState.Failed || splitPdfState is SplitPdfState.Completed ||
@@ -3481,10 +3640,14 @@ private fun OpenPdfContent(
         }
         when (state) {
             PdfOpenState.Idle -> IdleContent(
+                destination = destination,
+                legacyHomeSections = legacyHomeSections,
                 onOpenPdf = onOpenPdf,
                 recentPdfs = recentPdfs,
                 favoritePdfs = favoritePdfs,
                 history = history,
+                continueReading = continueReading,
+                favoriteTools = favoriteTools,
                 onOpenRecentPdf = onOpenRecentPdf,
                 onRemoveRecentPdf = onRemoveRecentPdf,
                 onClearRecentPdfs = onClearRecentPdfs,
@@ -3492,7 +3655,9 @@ private fun OpenPdfContent(
                 onToggleFavoritePdf = onToggleFavoritePdf,
                 onRemoveFavoritePdf = onRemoveFavoritePdf,
                 onClearHistory = onClearHistory,
+                onToggleFavoriteTool = onToggleFavoriteTool,
                 onSharePdf = onSharePdf,
+                onNavigate = onNavigate,
                 onImagesToPdf = onImagesToPdf,
                 imagesToPdfState = imagesToPdfState,
                 onDismissImagesToPdfFailure = onDismissImagesToPdfFailure,
@@ -3823,15 +3988,21 @@ private fun HistorySection(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                if (expanded && history.size > 5 && index == displayed.lastIndex) {
+                    TextButton(
+                        onClick = { expanded = false },
+                        modifier = Modifier.testTag("history_expand"),
+                    ) { Text(stringResource(R.string.history_show_less)) }
+                }
             }
         }
     }
-    if (history.size > 5) {
+    if (history.size > 5 && !expanded) {
         TextButton(
-            onClick = { expanded = !expanded },
+            onClick = { expanded = true },
             modifier = Modifier.testTag("history_expand"),
         ) {
-            Text(stringResource(if (expanded) R.string.history_show_less else R.string.history_show_all))
+            Text(stringResource(R.string.history_show_all))
         }
     }
     if (confirmClear) {
@@ -3856,11 +4027,480 @@ private fun HistorySection(
 }
 
 @Composable
+private fun SmartHomeDashboard(
+    continueReading: ContinueReadingPdf?,
+    recentPdfs: List<RecentPdf>,
+    favoritePdfs: List<FavoritePdf>,
+    history: List<PdfHistoryEntry>,
+    favoriteTools: List<SmartTool>,
+    tools: List<SmartToolAction>,
+    onOpenPdf: () -> Unit,
+    onScanDocument: () -> Unit,
+    onResume: (Uri) -> Unit,
+    onOpenRecent: (Uri) -> Unit,
+    onSharePdf: (Uri) -> Unit,
+    onToggleFavoritePdf: (Uri) -> Unit,
+    onRemoveRecentPdf: (Uri) -> Unit,
+    onToggleFavoriteTool: (SmartTool) -> Unit,
+    onNavigate: (SmartHomeDestination) -> Unit,
+) {
+    val privacyDescription = stringResource(R.string.smart_home_privacy_description)
+    Surface(
+        modifier = Modifier.fillMaxWidth().testTag("smart_home_privacy"),
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.secondaryContainer,
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                text = "🛡",
+                modifier = Modifier.semantics {
+                    contentDescription = privacyDescription
+                },
+            )
+            Text(
+                text = stringResource(R.string.smart_home_privacy),
+                style = MaterialTheme.typography.labelLarge,
+            )
+        }
+    }
+    Spacer(Modifier.height(16.dp))
+    if (continueReading != null) {
+        var actionsExpanded by remember(continueReading.uri) { mutableStateOf(false) }
+        Surface(
+            modifier = Modifier.fillMaxWidth().testTag("continue_reading_card"),
+            shape = MaterialTheme.shapes.extraLarge,
+            tonalElevation = 3.dp,
+        ) {
+            Column(modifier = Modifier.padding(20.dp)) {
+                Text(
+                    text = stringResource(R.string.smart_home_continue_reading),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = continueReading.displayName ?: stringResource(R.string.recent_file_unnamed),
+                    style = MaterialTheme.typography.titleLarge,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = stringResource(
+                        R.string.smart_home_page_progress,
+                        continueReading.currentPageIndex + 1,
+                        continueReading.pageCount,
+                    ),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                LinearProgressIndicator(
+                    progress = {
+                        (continueReading.currentPageIndex + 1).toFloat() / continueReading.pageCount
+                    },
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp)
+                        .testTag("continue_reading_progress"),
+                )
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    Box {
+                        TextButton(
+                            onClick = { actionsExpanded = true },
+                            modifier = Modifier.testTag("continue_reading_actions"),
+                        ) { Text(stringResource(R.string.smart_home_file_actions)) }
+                        DropdownMenu(
+                            expanded = actionsExpanded,
+                            onDismissRequest = { actionsExpanded = false },
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.share_pdf)) },
+                                onClick = { actionsExpanded = false; onSharePdf(continueReading.uri) },
+                            )
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        stringResource(
+                                            if (favoritePdfs.any { it.uri == continueReading.uri }) {
+                                                R.string.favorite_file_remove
+                                            } else R.string.favorite_file_add,
+                                        ),
+                                    )
+                                },
+                                onClick = {
+                                    actionsExpanded = false
+                                    onToggleFavoritePdf(continueReading.uri)
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.recent_file_remove)) },
+                                onClick = {
+                                    actionsExpanded = false
+                                    onRemoveRecentPdf(continueReading.uri)
+                                },
+                            )
+                        }
+                    }
+                    Button(
+                        onClick = { onResume(continueReading.uri) },
+                        modifier = Modifier.testTag("continue_reading_resume"),
+                    ) { Text(stringResource(R.string.smart_home_resume)) }
+                }
+            }
+        }
+    } else {
+        Text(
+            text = stringResource(R.string.smart_home_new_title),
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.fillMaxWidth().testTag("smart_home_new_user"),
+        )
+        Text(
+            text = stringResource(R.string.smart_home_new_message),
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+        )
+        Text(
+            text = stringResource(R.string.home_title),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+        )
+    }
+    SmartHomePrimaryActions(onOpenPdf = onOpenPdf, onScanDocument = onScanDocument)
+
+    val favorites = favoriteTools.mapNotNull { favorite -> tools.firstOrNull { it.tool == favorite } }
+    if (favorites.isNotEmpty()) {
+        SmartToolSectionTitle(R.string.smart_home_favorite_tools, "favorite_tools_title")
+        Text(
+            text = stringResource(R.string.smart_home_favorite_limit),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        favorites.take(4).forEach { tool ->
+            SmartToolRow(
+                tool = tool,
+                isFavorite = true,
+                onToggleFavorite = onToggleFavoriteTool,
+                testTag = "favorite_${tool.testTag}",
+            )
+        }
+    }
+    val suggested = history.asSequence().mapNotNull { it.operation.suggestedSmartTool() }
+        .distinct().filterNot { it in favoriteTools }.mapNotNull { suggestedTool ->
+            tools.firstOrNull { it.tool == suggestedTool }
+        }.take(3).toList()
+    if (suggested.isNotEmpty()) {
+        SmartToolSectionTitle(R.string.smart_home_suggested_tools, "suggested_tools_title")
+        suggested.forEach { tool ->
+            SmartToolRow(
+                tool = tool,
+                isFavorite = false,
+                onToggleFavorite = onToggleFavoriteTool,
+                testTag = "suggested_${tool.testTag}",
+            )
+        }
+    }
+
+    SmartToolSectionTitle(R.string.smart_home_recent, "smart_home_recent_title")
+    if (recentPdfs.isEmpty()) {
+        Text(
+            text = stringResource(R.string.smart_home_no_recent),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.fillMaxWidth().testTag("smart_home_recent_empty"),
+        )
+    } else {
+        recentPdfs.take(3).forEachIndexed { index, recent ->
+            SmartRecentFileRow(
+                recent = recent,
+                isFavorite = favoritePdfs.any { it.uri == recent.uri },
+                onOpen = onOpenRecent,
+                onShare = onSharePdf,
+                onToggleFavorite = onToggleFavoritePdf,
+                onRemove = onRemoveRecentPdf,
+                index = index,
+            )
+        }
+        if (recentPdfs.size > 3) {
+            TextButton(
+                onClick = { onNavigate(SmartHomeDestination.Files) },
+                modifier = Modifier.testTag("smart_home_recent_see_all"),
+            ) { Text(stringResource(R.string.smart_home_see_all)) }
+        }
+    }
+    SmartToolSectionTitle(R.string.smart_home_activity, "smart_home_activity_title")
+    Text(
+        text = stringResource(
+            R.string.smart_home_activity_summary,
+            (recentPdfs.map { it.uri } + favoritePdfs.map { it.uri }).distinct().size,
+            favoritePdfs.size,
+        ),
+        modifier = Modifier.fillMaxWidth(),
+    )
+    Text(
+        text = if (history.isEmpty()) stringResource(R.string.smart_home_history_empty)
+        else stringResource(R.string.smart_home_history_summary, history.size),
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.fillMaxWidth(),
+    )
+    TextButton(
+        onClick = { onNavigate(SmartHomeDestination.Files) },
+        modifier = Modifier.testTag("smart_home_view_history"),
+    ) { Text(stringResource(R.string.smart_home_view_history)) }
+}
+
+@Composable
+private fun SmartHomePrimaryActions(onOpenPdf: () -> Unit, onScanDocument: () -> Unit) {
+    var locked by remember { mutableStateOf(false) }
+    LaunchedEffect(locked) {
+        if (locked) {
+            delay(600L)
+            locked = false
+        }
+    }
+    SmartToolSectionTitle(R.string.smart_home_primary_actions, "smart_home_primary_actions")
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Button(
+            enabled = !locked,
+            onClick = { locked = true; onOpenPdf() },
+            modifier = Modifier.weight(1f).heightIn(min = 56.dp).testTag("open_pdf_button"),
+        ) { Text(stringResource(R.string.open_pdf)) }
+        Button(
+            enabled = !locked,
+            onClick = { locked = true; onScanDocument() },
+            modifier = Modifier.weight(1f).heightIn(min = 56.dp).testTag("scan_document_button"),
+        ) { Text(stringResource(R.string.scan_document)) }
+    }
+}
+
+@Composable
+private fun SmartRecentFileRow(
+    recent: RecentPdf,
+    isFavorite: Boolean,
+    onOpen: (Uri) -> Unit,
+    onShare: (Uri) -> Unit,
+    onToggleFavorite: (Uri) -> Unit,
+    onRemove: (Uri) -> Unit,
+    index: Int,
+) {
+    var expanded by remember(recent.uri) { mutableStateOf(false) }
+    val lastOpened = remember(recent.lastOpenedEpochMillis) {
+        DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
+            .format(Date(recent.lastOpenedEpochMillis))
+    }
+    Surface(
+        modifier = Modifier.fillMaxWidth().padding(top = 8.dp).testTag("smart_recent_$index"),
+        shape = MaterialTheme.shapes.large,
+        tonalElevation = 1.dp,
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(
+                modifier = Modifier.weight(1f).clickable { onOpen(recent.uri) }
+                    .padding(vertical = 4.dp),
+            ) {
+                Text(
+                    text = recent.displayName ?: stringResource(R.string.recent_file_unnamed),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    fontWeight = FontWeight.Medium,
+                )
+                Text(
+                    text = pluralStringResource(
+                        R.plurals.recent_file_pages,
+                        recent.pageCount,
+                        recent.pageCount,
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Text(
+                    text = lastOpened,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Box {
+                TextButton(
+                    onClick = { expanded = true },
+                    modifier = Modifier.testTag("smart_recent_actions_$index"),
+                ) { Text("⋮") }
+                DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.share_pdf)) },
+                        onClick = { expanded = false; onShare(recent.uri) },
+                    )
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                stringResource(
+                                    if (isFavorite) R.string.favorite_file_remove
+                                    else R.string.favorite_file_add,
+                                ),
+                            )
+                        },
+                        onClick = { expanded = false; onToggleFavorite(recent.uri) },
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.recent_file_remove)) },
+                        onClick = { expanded = false; onRemove(recent.uri) },
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SmartToolsContent(
+    tools: List<SmartToolAction>,
+    favoriteTools: List<SmartTool>,
+    onToggleFavoriteTool: (SmartTool) -> Unit,
+) {
+    var query by rememberSaveable { mutableStateOf("") }
+    var category by rememberSaveable { mutableStateOf<SmartToolCategory?>(null) }
+    Text(
+        text = stringResource(R.string.smart_home_discovery),
+        style = MaterialTheme.typography.headlineSmall,
+        fontWeight = FontWeight.SemiBold,
+        modifier = Modifier.fillMaxWidth().testTag("smart_tools_title"),
+    )
+    OutlinedTextField(
+        value = query,
+        onValueChange = { query = it },
+        label = { Text(stringResource(R.string.smart_home_search)) },
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth().padding(top = 12.dp).testTag("smart_tool_search"),
+    )
+    Row(
+        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        ToolCategoryChip(null, category) { category = null }
+        SmartToolCategory.entries.forEach { option ->
+            ToolCategoryChip(option, category) { category = option }
+        }
+    }
+    val visibleTools = tools.filter { tool ->
+        (category == null || tool.category == category) &&
+            (query.isBlank() || tool.label.contains(query.trim(), ignoreCase = true))
+    }
+    if (visibleTools.isEmpty()) {
+        Text(
+            text = stringResource(R.string.smart_home_no_tools),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.fillMaxWidth().padding(top = 16.dp)
+                .testTag("smart_tool_no_results"),
+            textAlign = TextAlign.Center,
+        )
+    } else {
+        visibleTools.forEach { tool ->
+            SmartToolRow(tool, tool.tool in favoriteTools, onToggleFavoriteTool)
+        }
+    }
+}
+
+@Composable
+private fun ToolCategoryChip(
+    option: SmartToolCategory?,
+    selectedCategory: SmartToolCategory?,
+    onClick: () -> Unit,
+) {
+    val label = stringResource(
+        when (option) {
+            null -> R.string.smart_home_category_all
+            SmartToolCategory.Create -> R.string.smart_home_category_create
+            SmartToolCategory.Organize -> R.string.smart_home_category_organize
+            SmartToolCategory.Optimize -> R.string.smart_home_category_optimize
+            SmartToolCategory.Secure -> R.string.smart_home_category_secure
+            SmartToolCategory.EditAndSign -> R.string.smart_home_category_edit
+            SmartToolCategory.Extract -> R.string.smart_home_category_extract
+        },
+    )
+    FilterChip(
+        selected = selectedCategory == option,
+        onClick = onClick,
+        label = { Text(label) },
+        modifier = Modifier.testTag("smart_tool_category_${option?.name ?: "All"}"),
+    )
+}
+
+@Composable
+private fun SmartToolRow(
+    tool: SmartToolAction,
+    isFavorite: Boolean,
+    onToggleFavorite: (SmartTool) -> Unit,
+    testTag: String = tool.testTag,
+) {
+    val favoriteDescription = stringResource(
+        if (isFavorite) R.string.smart_home_remove_favorite_tool_description
+        else R.string.smart_home_add_favorite_tool_description,
+        tool.label,
+    )
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Button(
+            onClick = tool.onClick,
+            modifier = Modifier.weight(1f).heightIn(min = 56.dp).testTag(testTag),
+        ) { Text(tool.label) }
+        TextButton(
+            onClick = { onToggleFavorite(tool.tool) },
+            modifier = Modifier
+                .semantics {
+                    contentDescription = favoriteDescription
+                }
+                .testTag("favorite_tool_${tool.tool.name}"),
+        ) { Text(if (isFavorite) "★" else "☆") }
+    }
+}
+
+@Composable
+private fun SmartToolSectionTitle(resource: Int, testTag: String) {
+    Text(
+        text = stringResource(resource),
+        style = MaterialTheme.typography.titleMedium,
+        fontWeight = FontWeight.SemiBold,
+        modifier = Modifier.fillMaxWidth().padding(top = 20.dp, bottom = 4.dp).testTag(testTag),
+    )
+}
+
+private fun PdfHistoryOperation.suggestedSmartTool(): SmartTool? = when (this) {
+    PdfHistoryOperation.ScanDocument -> SmartTool.ScanDocument
+    PdfHistoryOperation.ImagesToPdf -> SmartTool.ImagesToPdf
+    PdfHistoryOperation.MergePdf -> SmartTool.MergePdf
+    PdfHistoryOperation.SplitPdf -> SmartTool.SplitPdf
+    PdfHistoryOperation.ExtractPages -> SmartTool.ExtractPages
+    PdfHistoryOperation.DeletePages -> SmartTool.DeletePages
+    PdfHistoryOperation.RearrangePages -> SmartTool.RearrangePages
+    PdfHistoryOperation.RotatePages -> SmartTool.RotatePages
+    PdfHistoryOperation.DuplicatePages -> SmartTool.DuplicatePages
+    PdfHistoryOperation.CompressPdf -> SmartTool.CompressPdf
+    PdfHistoryOperation.ProtectPdf -> SmartTool.ProtectPdf
+    PdfHistoryOperation.RemovePassword -> SmartTool.RemovePassword
+    PdfHistoryOperation.ChangePassword -> SmartTool.ChangePassword
+    PdfHistoryOperation.TextWatermark -> SmartTool.TextWatermark
+    PdfHistoryOperation.ImageWatermark -> SmartTool.ImageWatermark
+    PdfHistoryOperation.ExtractImages -> SmartTool.ExtractImages
+    PdfHistoryOperation.FillForms -> SmartTool.FillForms
+    PdfHistoryOperation.SignPdf -> SmartTool.SignPdf
+    PdfHistoryOperation.AnnotatePdf -> SmartTool.AnnotatePdf
+}
+
+@Composable
 private fun IdleContent(
+    destination: SmartHomeDestination,
+    legacyHomeSections: Boolean,
     onOpenPdf: () -> Unit,
     recentPdfs: List<RecentPdf>,
     favoritePdfs: List<FavoritePdf>,
     history: List<PdfHistoryEntry>,
+    continueReading: ContinueReadingPdf?,
+    favoriteTools: List<SmartTool>,
     onOpenRecentPdf: (Uri) -> Unit,
     onRemoveRecentPdf: (Uri) -> Unit,
     onClearRecentPdfs: () -> Unit,
@@ -3868,7 +4508,9 @@ private fun IdleContent(
     onToggleFavoritePdf: (Uri) -> Unit,
     onRemoveFavoritePdf: (Uri) -> Unit,
     onClearHistory: () -> Unit,
+    onToggleFavoriteTool: (SmartTool) -> Unit,
     onSharePdf: (Uri) -> Unit,
+    onNavigate: (SmartHomeDestination) -> Unit,
     onImagesToPdf: () -> Unit,
     imagesToPdfState: ImagesToPdfState,
     onDismissImagesToPdfFailure: () -> Unit,
@@ -3935,8 +4577,8 @@ private fun IdleContent(
     onOpenScannerPdf: () -> Unit,
     onDismissScannerResult: () -> Unit,
 ) {
-    var fileQuery by remember { mutableStateOf("") }
-    var fileSortOrder by remember { mutableStateOf(PdfFileSortOrder.Newest) }
+    var fileQuery by rememberSaveable { mutableStateOf("") }
+    var fileSortOrder by rememberSaveable { mutableStateOf(PdfFileSortOrder.Newest) }
     val unnamedPdfName = stringResource(R.string.recent_file_unnamed)
     val organizedFavorites = PdfFileOrganizer.organize(
         files = favoritePdfs,
@@ -3954,27 +4596,115 @@ private fun IdleContent(
         pageCount = RecentPdf::pageCount,
         timestamp = RecentPdf::lastOpenedEpochMillis,
     )
-    Text(
-        text = stringResource(R.string.home_title),
-        style = MaterialTheme.typography.headlineSmall,
-        fontWeight = FontWeight.SemiBold,
-        textAlign = TextAlign.Center,
+    val toolActions = listOf(
+        SmartToolAction(SmartTool.ScanDocument, stringResource(R.string.scan_document), SmartToolCategory.Create, "tool_scan_document_button", onScanDocument),
+        SmartToolAction(SmartTool.ImagesToPdf, stringResource(R.string.images_to_pdf), SmartToolCategory.Create, "images_to_pdf_button", onImagesToPdf),
+        SmartToolAction(SmartTool.MergePdf, stringResource(R.string.merge_pdf), SmartToolCategory.Organize, "merge_pdf_button", onMergePdfs),
+        SmartToolAction(SmartTool.SplitPdf, stringResource(R.string.split_pdf), SmartToolCategory.Organize, "split_pdf_button", onSplitPdf),
+        SmartToolAction(SmartTool.RearrangePages, stringResource(R.string.rearrange_pages), SmartToolCategory.Organize, "rearrange_pages_button", onRearrangePages),
+        SmartToolAction(SmartTool.ExtractPages, stringResource(R.string.extract_pages), SmartToolCategory.Organize, "extract_pages_button", onExtractPages),
+        SmartToolAction(SmartTool.DeletePages, stringResource(R.string.delete_pages), SmartToolCategory.Organize, "delete_pages_button", onDeletePages),
+        SmartToolAction(SmartTool.RotatePages, stringResource(R.string.rotate_pages), SmartToolCategory.Organize, "rotate_pages_button", onRotatePages),
+        SmartToolAction(SmartTool.DuplicatePages, stringResource(R.string.duplicate_pages), SmartToolCategory.Organize, "duplicate_pages_button", onDuplicatePages),
+        SmartToolAction(SmartTool.CompressPdf, stringResource(R.string.compress_pdf), SmartToolCategory.Optimize, "compress_pdf_button", onCompressPdf),
+        SmartToolAction(SmartTool.TargetFileSize, stringResource(R.string.smart_home_target_size), SmartToolCategory.Optimize, "target_file_size_button", onCompressPdf),
+        SmartToolAction(SmartTool.ProtectPdf, stringResource(R.string.protect_pdf), SmartToolCategory.Secure, "protect_pdf_button", onProtectPdf),
+        SmartToolAction(SmartTool.RemovePassword, stringResource(R.string.remove_password), SmartToolCategory.Secure, "remove_password_button", onRemovePassword),
+        SmartToolAction(SmartTool.ChangePassword, stringResource(R.string.change_password), SmartToolCategory.Secure, "change_password_button", onChangePassword),
+        SmartToolAction(SmartTool.FillForms, stringResource(R.string.fill_forms), SmartToolCategory.EditAndSign, "fill_forms_button", onFillForms),
+        SmartToolAction(SmartTool.SignPdf, stringResource(R.string.sign_pdf), SmartToolCategory.EditAndSign, "sign_pdf_button", onSignPdf),
+        SmartToolAction(SmartTool.AnnotatePdf, stringResource(R.string.annotate_pdf), SmartToolCategory.EditAndSign, "annotate_pdf_button", onAnnotatePdf),
+        SmartToolAction(SmartTool.TextWatermark, stringResource(R.string.text_watermark), SmartToolCategory.EditAndSign, "text_watermark_button", onTextWatermark),
+        SmartToolAction(SmartTool.ImageWatermark, stringResource(R.string.image_watermark), SmartToolCategory.EditAndSign, "image_watermark_button", onImageWatermark),
+        SmartToolAction(SmartTool.ExtractImages, stringResource(R.string.extract_images), SmartToolCategory.Extract, "extract_images_button", onExtractImages),
     )
-    Spacer(Modifier.height(12.dp))
-    Text(
-        text = stringResource(R.string.home_description),
-        style = MaterialTheme.typography.bodyLarge,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        textAlign = TextAlign.Center,
-    )
-    if (favoritePdfs.isNotEmpty() || recentPdfs.isNotEmpty()) {
+    if (destination == SmartHomeDestination.Home && !legacyHomeSections) {
+        SmartHomeDashboard(
+            continueReading = continueReading,
+            recentPdfs = recentPdfs,
+            favoritePdfs = favoritePdfs,
+            history = history,
+            favoriteTools = favoriteTools,
+            tools = toolActions,
+            onOpenPdf = onOpenPdf,
+            onScanDocument = onScanDocument,
+            onResume = onOpenRecentPdf,
+            onOpenRecent = onOpenRecentPdf,
+            onSharePdf = onSharePdf,
+            onToggleFavoritePdf = onToggleFavoritePdf,
+            onRemoveRecentPdf = onRemoveRecentPdf,
+            onToggleFavoriteTool = onToggleFavoriteTool,
+            onNavigate = onNavigate,
+        )
+        SmartToolsContent(
+            tools = toolActions,
+            favoriteTools = favoriteTools,
+            onToggleFavoriteTool = onToggleFavoriteTool,
+        )
+    }
+    if (destination == SmartHomeDestination.Home && legacyHomeSections) {
+        Text(
+            text = stringResource(R.string.home_title),
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.SemiBold,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Text(
+            text = stringResource(R.string.home_description),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+        )
+        SmartHomePrimaryActions(onOpenPdf = onOpenPdf, onScanDocument = onScanDocument)
+        if (favoritePdfs.isEmpty() && recentPdfs.isEmpty() && history.isEmpty()) {
+            toolActions.filterNot { it.tool == SmartTool.ScanDocument }.forEach { tool ->
+                SmartToolRow(tool, tool.tool in favoriteTools, onToggleFavoriteTool)
+            }
+        }
+    }
+    if (destination == SmartHomeDestination.Tools) {
+        SmartToolsContent(
+            tools = toolActions,
+            favoriteTools = favoriteTools,
+            onToggleFavoriteTool = onToggleFavoriteTool,
+        )
+    }
+    if (destination == SmartHomeDestination.Files ||
+        (destination == SmartHomeDestination.Home && legacyHomeSections)
+    ) {
+        if (destination == SmartHomeDestination.Files) {
+            Text(
+                text = stringResource(R.string.smart_home_nav_files),
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.fillMaxWidth().testTag("smart_files_title"),
+            )
+        }
+        if (destination == SmartHomeDestination.Files &&
+            favoritePdfs.isEmpty() && recentPdfs.isEmpty() && history.isEmpty()
+        ) {
+            Text(
+                text = stringResource(R.string.smart_home_files_empty),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth().padding(top = 16.dp)
+                    .testTag("smart_files_empty"),
+            )
+            Button(
+                onClick = onOpenPdf,
+                modifier = Modifier.padding(top = 12.dp).heightIn(min = 48.dp)
+                    .testTag("smart_files_open"),
+            ) { Text(stringResource(R.string.open_pdf)) }
+        }
+        if (favoritePdfs.isNotEmpty() || recentPdfs.isNotEmpty()) {
         FileOrganizerControls(
             query = fileQuery,
             onQueryChange = { fileQuery = it },
             sortOrder = fileSortOrder,
             onSortOrderChange = { fileSortOrder = it },
         )
-    }
+        }
     if (organizedFavorites.isNotEmpty()) {
         FavoriteFilesSection(
             favoritePdfs = organizedFavorites,
@@ -4004,125 +4734,17 @@ private fun IdleContent(
             textAlign = TextAlign.Center,
         )
     }
-    if (history.isNotEmpty()) {
-        HistorySection(history = history, onClear = onClearHistory)
+        if (history.isNotEmpty()) {
+            HistorySection(history = history, onClear = onClearHistory)
+        }
     }
-    Spacer(Modifier.height(24.dp))
-    OpenButton(label = stringResource(R.string.open_pdf), onClick = onOpenPdf)
-    Spacer(Modifier.height(4.dp))
-    OpenButton(
-        label = stringResource(R.string.scan_document),
-        onClick = onScanDocument,
-        testTag = "scan_document_button",
-    )
-    Spacer(Modifier.height(4.dp))
-    OpenButton(
-        label = stringResource(R.string.images_to_pdf),
-        onClick = onImagesToPdf,
-        testTag = "images_to_pdf_button",
-    )
-    Spacer(Modifier.height(4.dp))
-    OpenButton(
-        label = stringResource(R.string.merge_pdf),
-        onClick = onMergePdfs,
-        testTag = "merge_pdf_button",
-    )
-    Spacer(Modifier.height(4.dp))
-    OpenButton(
-        label = stringResource(R.string.split_pdf),
-        onClick = onSplitPdf,
-        testTag = "split_pdf_button",
-    )
-    Spacer(Modifier.height(4.dp))
-    OpenButton(
-        label = stringResource(R.string.extract_pages),
-        onClick = onExtractPages,
-        testTag = "extract_pages_button",
-    )
-    Spacer(Modifier.height(4.dp))
-    OpenButton(
-        label = stringResource(R.string.delete_pages),
-        onClick = onDeletePages,
-        testTag = "delete_pages_button",
-    )
-    Spacer(Modifier.height(4.dp))
-    OpenButton(
-        label = stringResource(R.string.rearrange_pages),
-        onClick = onRearrangePages,
-        testTag = "rearrange_pages_button",
-    )
-    Spacer(Modifier.height(4.dp))
-    OpenButton(
-        label = stringResource(R.string.rotate_pages),
-        onClick = onRotatePages,
-        testTag = "rotate_pages_button",
-    )
-    Spacer(Modifier.height(4.dp))
-    OpenButton(
-        label = stringResource(R.string.duplicate_pages),
-        onClick = onDuplicatePages,
-        testTag = "duplicate_pages_button",
-    )
-    Spacer(Modifier.height(4.dp))
-    OpenButton(
-        label = stringResource(R.string.compress_pdf),
-        onClick = onCompressPdf,
-        testTag = "compress_pdf_button",
-    )
-    Spacer(Modifier.height(4.dp))
-    OpenButton(
-        label = stringResource(R.string.protect_pdf),
-        onClick = onProtectPdf,
-        testTag = "protect_pdf_button",
-    )
-    Spacer(Modifier.height(4.dp))
-    OpenButton(
-        label = stringResource(R.string.remove_password),
-        onClick = onRemovePassword,
-        testTag = "remove_password_button",
-    )
-    Spacer(Modifier.height(4.dp))
-    OpenButton(
-        label = stringResource(R.string.change_password),
-        onClick = onChangePassword,
-        testTag = "change_password_button",
-    )
-    Spacer(Modifier.height(4.dp))
-    OpenButton(
-        label = stringResource(R.string.text_watermark),
-        onClick = onTextWatermark,
-        testTag = "text_watermark_button",
-    )
-    Spacer(Modifier.height(4.dp))
-    OpenButton(
-        label = stringResource(R.string.image_watermark),
-        onClick = onImageWatermark,
-        testTag = "image_watermark_button",
-    )
-    Spacer(Modifier.height(4.dp))
-    OpenButton(
-        label = stringResource(R.string.extract_images),
-        onClick = onExtractImages,
-        testTag = "extract_images_button",
-    )
-    Spacer(Modifier.height(4.dp))
-    OpenButton(
-        label = stringResource(R.string.fill_forms),
-        onClick = onFillForms,
-        testTag = "fill_forms_button",
-    )
-    Spacer(Modifier.height(4.dp))
-    OpenButton(
-        label = stringResource(R.string.sign_pdf),
-        onClick = onSignPdf,
-        testTag = "sign_pdf_button",
-    )
-    Spacer(Modifier.height(4.dp))
-    OpenButton(
-        label = stringResource(R.string.annotate_pdf),
-        onClick = onAnnotatePdf,
-        testTag = "annotate_pdf_button",
-    )
+    if (destination == SmartHomeDestination.Home && legacyHomeSections &&
+        (favoritePdfs.isNotEmpty() || recentPdfs.isNotEmpty() || history.isNotEmpty())
+    ) {
+        toolActions.filterNot { it.tool == SmartTool.ScanDocument }.forEach { tool ->
+            SmartToolRow(tool, tool.tool in favoriteTools, onToggleFavoriteTool)
+        }
+    }
     if (imagesToPdfState is ImagesToPdfState.Failed) {
         Spacer(Modifier.height(20.dp))
         Text(
