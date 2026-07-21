@@ -18,6 +18,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeLeft
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.rameshta.quietpdf.pdf.PageRenderResult
 import com.rameshta.quietpdf.pdf.PdfOpenFailure
@@ -226,6 +227,26 @@ class QuietPdfAppTest {
         composeRule.onNodeWithTag("night_appearance_button").assertTextEquals("Night pages")
     }
 
+    @Test
+    fun rememberedPage_isShownOnOpenAndNewPagesAreReported() {
+        val reportedPage = AtomicInteger(-1)
+        setContent(
+            state = PdfOpenState.Opened(
+                uri = Uri.parse("content://test/remembered-page"),
+                displayName = "remembered.pdf",
+                pageCount = 5,
+                initialPageIndex = 2,
+            ),
+            onPageChanged = reportedPage::set,
+        )
+
+        composeRule.onNodeWithText("Page 3 of 5").assertIsDisplayed()
+        selectReaderMode("SinglePage")
+        composeRule.onNodeWithTag("reader_single_page").performTouchInput { swipeLeft() }
+        composeRule.waitUntil(timeoutMillis = 5_000) { reportedPage.get() == 3 }
+        composeRule.onNodeWithText("Page 4 of 5").assertIsDisplayed()
+    }
+
     private fun selectReaderMode(modeName: String) {
         composeRule.onNodeWithTag("reader_mode_button").performClick()
         composeRule.onNodeWithTag("reader_mode_$modeName").performClick()
@@ -238,6 +259,7 @@ class QuietPdfAppTest {
                 Bitmap.createBitmap(100, 140, Bitmap.Config.ARGB_8888),
             )
         },
+        onPageChanged: (Int) -> Unit = {},
     ) {
         composeRule.setContent {
             QuietPDFTheme(dynamicColor = false) {
@@ -245,6 +267,7 @@ class QuietPdfAppTest {
                     state = state,
                     onOpenPdf = {},
                     renderPage = renderPage,
+                    onPageChanged = onPageChanged,
                 )
             }
         }

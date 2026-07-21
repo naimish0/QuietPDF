@@ -24,6 +24,7 @@ sealed interface PdfOpenState {
         val uri: Uri,
         val displayName: String?,
         val pageCount: Int,
+        val initialPageIndex: Int = 0,
     ) : PdfOpenState
     data class Failed(val failure: PdfOpenFailure) : PdfOpenState
 }
@@ -42,6 +43,7 @@ enum class PageRenderFailure(@get:StringRes val messageResource: Int) {
 class PdfOpenViewModel(application: Application) : AndroidViewModel(application) {
     private val opener = PdfDocumentOpener(application.contentResolver)
     private val pageRenderer = PdfPageRenderer(application.contentResolver)
+    private val readingPositionStore = ReadingPositionStore(application)
     private var openJob: Job? = null
     private var documentGeneration = 0L
     private val pageCache = object : LruCache<PageCacheKey, Bitmap>(pageCacheBytes()) {
@@ -63,6 +65,10 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
                     uri = result.document.uri,
                     displayName = result.document.displayName,
                     pageCount = result.document.pageCount,
+                    initialPageIndex = readingPositionStore.restore(
+                        result.document.uri,
+                        result.document.pageCount,
+                    ),
                 )
                 is PdfOpenResult.Failure -> PdfOpenState.Failed(result.reason)
             }
@@ -74,6 +80,11 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
         documentGeneration++
         pageCache.evictAll()
         state = PdfOpenState.Failed(PdfOpenFailure.Unsupported)
+    }
+
+    fun rememberPage(pageIndex: Int) {
+        val opened = state as? PdfOpenState.Opened ?: return
+        readingPositionStore.remember(opened.uri, pageIndex, opened.pageCount)
     }
 
     suspend fun renderPage(pageIndex: Int, targetWidth: Int): PageRenderResult {

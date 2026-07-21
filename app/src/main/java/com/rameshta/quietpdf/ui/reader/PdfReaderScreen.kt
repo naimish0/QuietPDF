@@ -95,12 +95,17 @@ fun PdfReaderScreen(
     document: PdfOpenState.Opened,
     onOpenAnother: () -> Unit,
     renderPage: suspend (pageIndex: Int, targetWidth: Int) -> PageRenderResult,
+    onPageChanged: (pageIndex: Int) -> Unit,
 ) {
+    val initialPage = document.initialPageIndex.coerceIn(0, document.pageCount - 1)
     var readerMode by remember(document.uri) { mutableStateOf(ReaderMode.VerticalContinuous) }
-    var currentPage by remember(document.uri) { mutableIntStateOf(0) }
-    val verticalState = rememberLazyListState()
-    val horizontalState = rememberLazyListState()
-    val pagerState = rememberPagerState(pageCount = { document.pageCount })
+    var currentPage by remember(document.uri) { mutableIntStateOf(initialPage) }
+    val verticalState = rememberLazyListState(initialFirstVisibleItemIndex = initialPage)
+    val horizontalState = rememberLazyListState(initialFirstVisibleItemIndex = initialPage)
+    val pagerState = rememberPagerState(
+        initialPage = initialPage,
+        pageCount = { document.pageCount },
+    )
     var isFullscreen by remember(document.uri) { mutableStateOf(false) }
     var chromeVisible by remember(document.uri) { mutableStateOf(true) }
     var nightAppearance by remember(document.uri) { mutableStateOf(false) }
@@ -133,7 +138,10 @@ fun PdfReaderScreen(
                 ReaderMode.HorizontalContinuous -> horizontalState.firstVisibleItemIndex
                 ReaderMode.SinglePage -> pagerState.currentPage
             }
-        }.distinctUntilChanged().collect { currentPage = it }
+        }.distinctUntilChanged().collect {
+            currentPage = it
+            onPageChanged(it)
+        }
     }
 
     DisposableEffect(isFullscreen, context) {

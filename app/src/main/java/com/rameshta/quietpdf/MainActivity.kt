@@ -68,6 +68,7 @@ class MainActivity : ComponentActivity() {
                     state = viewModel.state,
                     onOpenPdf = { picker.launch(arrayOf("application/pdf")) },
                     renderPage = viewModel::renderPage,
+                    onPageChanged = viewModel::rememberPage,
                 )
             }
         }
@@ -111,12 +112,14 @@ fun QuietPdfApp(
     state: PdfOpenState,
     onOpenPdf: () -> Unit,
     renderPage: suspend (pageIndex: Int, targetWidth: Int) -> PageRenderResult,
+    onPageChanged: (pageIndex: Int) -> Unit = {},
 ) {
     if (state is PdfOpenState.Opened) {
         PdfReaderScreen(
             document = state,
             onOpenAnother = onOpenPdf,
             renderPage = renderPage,
+            onPageChanged = onPageChanged,
         )
         return
     }
