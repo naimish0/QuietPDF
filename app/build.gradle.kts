@@ -58,6 +58,11 @@ dependencies {
     implementation(libs.androidx.camera.camera2)
     implementation(libs.androidx.camera.lifecycle)
     implementation(libs.androidx.camera.view)
+    implementation(libs.pdfbox.android) {
+        // Password-based AES protection uses Android's JCA provider. Exclude PDFBox's
+        // certificate-encryption stack so this feature does not ship unused crypto code.
+        exclude(group = "org.bouncycastle")
+    }
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

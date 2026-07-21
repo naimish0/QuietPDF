@@ -204,6 +204,28 @@ sealed interface CompressPdfState {
     data class Failed(val failure: CompressPdfFailure) : CompressPdfState
 }
 
+sealed interface ProtectPdfState {
+    data object Idle : ProtectPdfState
+    data object Preparing : ProtectPdfState
+    data class Configuring(
+        val sourceUri: Uri,
+        val displayName: String,
+        val pageCount: Int,
+    ) : ProtectPdfState
+    data class Protecting(val pageCount: Int) : ProtectPdfState
+    data class Completed(val pageCount: Int) : ProtectPdfState
+    data class Failed(val failure: ProtectPdfFailure) : ProtectPdfState
+}
+
+enum class ProtectPdfFailure(@get:StringRes val messageResource: Int) {
+    AlreadyProtected(R.string.protect_pdf_already_protected),
+    InvalidDocument(R.string.protect_pdf_invalid_document),
+    InvalidPassword(R.string.protect_pdf_invalid_password),
+    PermissionDenied(R.string.protect_pdf_permission_denied),
+    InsufficientMemory(R.string.protect_pdf_memory_error),
+    UnableToSave(R.string.protect_pdf_save_error),
+}
+
 enum class CompressPdfFailure(@get:StringRes val messageResource: Int) {
     InvalidDocument(R.string.compress_pdf_invalid_document),
     NotSmaller(R.string.compress_pdf_not_smaller),
@@ -290,6 +312,7 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
     private val rotatePagesEngine = RotatePagesEngine(application)
     private val duplicatePagesEngine = DuplicatePagesEngine(application)
     private val compressPdfEngine = CompressPdfEngine(application)
+    private val protectPdfEngine = ProtectPdfEngine(application)
     private val scannerCaptureEngine = ScannerCaptureEngine(application)
     private val scannerCropCorrectionEngine = ScannerCropCorrectionEngine(application.cacheDir)
     private val scannerEnhancementEngine = ScannerEnhancementEngine(application.cacheDir)
@@ -303,6 +326,7 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
     private var rotatePagesJob: Job? = null
     private var duplicatePagesJob: Job? = null
     private var compressPdfJob: Job? = null
+    private var protectPdfJob: Job? = null
     private var scannerJob: Job? = null
     private var scannerEnhancementJob: Job? = null
     private var scannerCaptureFile: File? = null
@@ -353,6 +377,9 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
         private set
 
     var compressPdfState: CompressPdfState by mutableStateOf(CompressPdfState.Idle)
+        private set
+
+    var protectPdfState: ProtectPdfState by mutableStateOf(ProtectPdfState.Idle)
         private set
 
     var scannerCaptureState: ScannerCaptureState by mutableStateOf(ScannerCaptureState.Idle)
@@ -1338,6 +1365,90 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
 
     fun clearCompressPdfResult() {
         compressPdfState = CompressPdfState.Idle
+    }
+
+    fun selectPdfForProtection(uri: Uri) {
+        protectPdfJob?.cancel()
+        protectPdfState = ProtectPdfState.Preparing
+        protectPdfJob = viewModelScope.launch {
+            protectPdfState = when (val result = protectPdfEngine.analyze(uri)) {
+                is ProtectPdfAnalysisResult.Ready -> ProtectPdfState.Configuring(
+                    sourceUri = uri,
+                    displayName = withContext(Dispatchers.IO) { queryDisplayName(uri) } ?: "PDF",
+                    pageCount = result.pageCount,
+                )
+                ProtectPdfAnalysisResult.AlreadyProtected -> {
+                    ProtectPdfState.Failed(ProtectPdfFailure.AlreadyProtected)
+                }
+                ProtectPdfAnalysisResult.InvalidDocument -> {
+                    ProtectPdfState.Failed(ProtectPdfFailure.InvalidDocument)
+                }
+                ProtectPdfAnalysisResult.PermissionDenied -> {
+                    ProtectPdfState.Failed(ProtectPdfFailure.PermissionDenied)
+                }
+                ProtectPdfAnalysisResult.InsufficientMemory -> {
+                    ProtectPdfState.Failed(ProtectPdfFailure.InsufficientMemory)
+                }
+                ProtectPdfAnalysisResult.Failed -> {
+                    ProtectPdfState.Failed(ProtectPdfFailure.UnableToSave)
+                }
+            }
+        }
+    }
+
+    fun protectSelectedPdf(outputUri: Uri, suppliedPassword: CharArray) {
+        val configuring = protectPdfState as? ProtectPdfState.Configuring
+        if (configuring == null) {
+            suppliedPassword.fill('\u0000')
+            return
+        }
+        val password = suppliedPassword.copyOf()
+        suppliedPassword.fill('\u0000')
+        protectPdfJob?.cancel()
+        protectPdfState = ProtectPdfState.Protecting(configuring.pageCount)
+        protectPdfJob = viewModelScope.launch {
+            try {
+                protectPdfState = when (
+                    protectPdfEngine.protect(
+                        sourceUri = configuring.sourceUri,
+                        outputUri = outputUri,
+                        password = password,
+                        expectedPageCount = configuring.pageCount,
+                    )
+                ) {
+                    is ProtectPdfResult.Success -> ProtectPdfState.Completed(configuring.pageCount)
+                    ProtectPdfResult.AlreadyProtected -> {
+                        ProtectPdfState.Failed(ProtectPdfFailure.AlreadyProtected)
+                    }
+                    ProtectPdfResult.InvalidPassword -> {
+                        ProtectPdfState.Failed(ProtectPdfFailure.InvalidPassword)
+                    }
+                    ProtectPdfResult.InvalidDocument -> {
+                        ProtectPdfState.Failed(ProtectPdfFailure.InvalidDocument)
+                    }
+                    ProtectPdfResult.PermissionDenied -> {
+                        ProtectPdfState.Failed(ProtectPdfFailure.PermissionDenied)
+                    }
+                    ProtectPdfResult.InsufficientMemory -> {
+                        ProtectPdfState.Failed(ProtectPdfFailure.InsufficientMemory)
+                    }
+                    ProtectPdfResult.Failed -> {
+                        ProtectPdfState.Failed(ProtectPdfFailure.UnableToSave)
+                    }
+                }
+            } finally {
+                password.fill('\u0000')
+            }
+        }
+    }
+
+    fun cancelProtectPdf() {
+        protectPdfJob?.cancel()
+        protectPdfState = ProtectPdfState.Idle
+    }
+
+    fun clearProtectPdfResult() {
+        protectPdfState = ProtectPdfState.Idle
     }
 
     fun rejectUnsupportedUri() {

@@ -283,4 +283,22 @@
     <string name="scanner_memory_error">The captured photo needs more memory than is available. Close other apps and retake it.</string>
     <string name="scanner_save_error">The scanned PDF could not be created and validated. The captured photo is still available to retry.</string>
     <string name="scanner_save_permission_denied">QuietPDF lost access to the save location. Choose another location; the captured photo is still available.</string>
+    <string name="protect_pdf">Protect PDF</string>
+    <string name="protect_pdf_title">Protect PDF</string>
+    <string name="protect_pdf_document_summary">%1$s · %2$d pages</string>
+    <string name="protect_pdf_password">Password</string>
+    <string name="protect_pdf_confirm_password">Confirm password</string>
+    <string name="protect_pdf_password_help">Use at least %1$d characters. Passwords are not stored and cannot be recovered.</string>
+    <string name="protect_pdf_password_mismatch">Passwords do not match.</string>
+    <string name="protect_pdf_security_note">The saved copy will require this password to open and uses standards-based AES-256 PDF encryption. The original PDF is not changed.</string>
+    <string name="save_protected_pdf">Save protected PDF</string>
+    <string name="protect_pdf_preparing">Checking whether this PDF can be protected…</string>
+    <string name="protect_pdf_protecting">Encrypting and validating %1$d pages…</string>
+    <string name="protect_pdf_completed">Protected and validated %1$d pages. Keep the password safe—it cannot be recovered.</string>
+    <string name="protect_pdf_already_protected">This PDF already requires a password. Use Change password instead when that feature is available.</string>
+    <string name="protect_pdf_invalid_document">This file changed or is not a readable, unprotected PDF. Keep the original and choose it again.</string>
+    <string name="protect_pdf_invalid_password">Use a password of at least 6 characters that is not only spaces.</string>
+    <string name="protect_pdf_permission_denied">QuietPDF lost access to the PDF or save location. Choose them again.</string>
+    <string name="protect_pdf_memory_error">This PDF needs more memory than is available. Close other apps or try a smaller PDF.</string>
+    <string name="protect_pdf_save_error">The protected PDF could not be created and reopened safely. The original was not changed; choose another save location.</string>
 </resources>

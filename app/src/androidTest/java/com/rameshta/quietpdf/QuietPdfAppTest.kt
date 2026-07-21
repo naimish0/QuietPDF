@@ -22,6 +22,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.swipeLeft
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.rameshta.quietpdf.pdf.PageRenderResult
@@ -57,6 +58,8 @@ import com.rameshta.quietpdf.pdf.RotatePagesState
 import com.rameshta.quietpdf.pdf.CompressPdfAnalysis
 import com.rameshta.quietpdf.pdf.CompressPdfFailure
 import com.rameshta.quietpdf.pdf.CompressPdfState
+import com.rameshta.quietpdf.pdf.ProtectPdfFailure
+import com.rameshta.quietpdf.pdf.ProtectPdfState
 import com.rameshta.quietpdf.pdf.CompressibleImage
 import com.rameshta.quietpdf.pdf.PdfCompressionMode
 import com.rameshta.quietpdf.pdf.PdfCompressionRequest
@@ -743,6 +746,43 @@ class QuietPdfAppTest {
     }
 
     @Test
+    fun protectPdf_buttonStartsSelection() {
+        val selections = AtomicInteger()
+        setContent(state = PdfOpenState.Idle, onProtectPdf = { selections.incrementAndGet() })
+        composeRule.onNodeWithTag("protect_pdf_button").performScrollTo().performClick()
+        assertEquals(1, selections.get())
+    }
+
+    @Test
+    fun protectPdf_requiresMatchingPasswordsAndReturnsPassword() {
+        val selected = AtomicReference<CharArray>()
+        setContent(
+            state = PdfOpenState.Idle,
+            protectPdfState = ProtectPdfState.Configuring(
+                Uri.parse("content://test/protect"), "private.pdf", 3,
+            ),
+            onConfirmPdfProtection = selected::set,
+        )
+        composeRule.onNodeWithText("AES-256", substring = true).assertIsDisplayed()
+        composeRule.onNodeWithTag("protect_pdf_password").performTextInput("secret!")
+        composeRule.onNodeWithTag("protect_pdf_confirm_password").performTextInput("different")
+        composeRule.onNodeWithTag("protect_pdf_confirm").assertIsNotEnabled()
+        composeRule.onNodeWithTag("protect_pdf_confirm_password").performTextClearance()
+        composeRule.onNodeWithTag("protect_pdf_confirm_password").performTextInput("secret!")
+        composeRule.onNodeWithTag("protect_pdf_confirm").performClick()
+        assertArrayEquals("secret!".toCharArray(), selected.get())
+    }
+
+    @Test
+    fun protectPdf_failureIsActionable() {
+        setContent(
+            state = PdfOpenState.Idle,
+            protectPdfState = ProtectPdfState.Failed(ProtectPdfFailure.AlreadyProtected),
+        )
+        composeRule.onNodeWithTag("protect_pdf_error").performScrollTo().assertIsDisplayed()
+    }
+
+    @Test
     fun openedState_showsNameAndPageCount() {
         setContent(
             PdfOpenState.Opened(
@@ -1231,6 +1271,9 @@ class QuietPdfAppTest {
         onConfirmPdfCompression: (PdfCompressionRequest) -> Unit = {},
         onCancelPdfCompression: () -> Unit = {},
         onOpenCompressedPdf: () -> Unit = {},
+        protectPdfState: ProtectPdfState = ProtectPdfState.Idle,
+        onProtectPdf: () -> Unit = {},
+        onConfirmPdfProtection: (CharArray) -> Unit = {},
         scannerCaptureState: ScannerCaptureState = ScannerCaptureState.Idle,
         onScanDocument: () -> Unit = {},
         onRetakeScannerCapture: () -> Unit = {},
@@ -1288,6 +1331,9 @@ class QuietPdfAppTest {
                     onConfirmPdfCompression = onConfirmPdfCompression,
                     onCancelPdfCompression = onCancelPdfCompression,
                     onOpenCompressedPdf = onOpenCompressedPdf,
+                    protectPdfState = protectPdfState,
+                    onProtectPdf = onProtectPdf,
+                    onConfirmPdfProtection = onConfirmPdfProtection,
                     scannerCaptureState = scannerCaptureState,
                     onScanDocument = onScanDocument,
                     onRetakeScannerCapture = onRetakeScannerCapture,

@@ -11,6 +11,7 @@ composeBom = "2024.09.00"
 androidxPdf = "1.0.0-alpha19"
 pdfiumAndroid = "2.0.2"
 cameraX = "1.6.1"
+pdfBoxAndroid = "2.0.27.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -35,6 +36,7 @@ pdfium-android-core = { group = "io.legere", name = "pdfiumandroid-core", versio
 androidx-camera-camera2 = { group = "androidx.camera", name = "camera-camera2", version.ref = "cameraX" }
 androidx-camera-lifecycle = { group = "androidx.camera", name = "camera-lifecycle", version.ref = "cameraX" }
 androidx-camera-view = { group = "androidx.camera", name = "camera-view", version.ref = "cameraX" }
+pdfbox-android = { group = "com.tom-roush", name = "pdfbox-android", version.ref = "pdfBoxAndroid" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
