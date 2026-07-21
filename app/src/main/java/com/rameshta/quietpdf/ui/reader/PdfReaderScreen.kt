@@ -121,6 +121,7 @@ fun PdfReaderScreen(
     loadTableOfContents: suspend () -> PdfTableOfContentsResult,
     inspectHealth: suspend () -> PdfHealthResult,
     onToggleFavorite: () -> Unit = {},
+    onSharePdf: () -> Unit = {},
 ) {
     val initialPage = document.initialPageIndex.coerceIn(0, document.pageCount - 1)
     var readerMode by remember(document.uri) { mutableStateOf(ReaderMode.VerticalContinuous) }
@@ -359,6 +360,7 @@ fun PdfReaderScreen(
                         onShowHealth = showHealth,
                         isFavorite = document.isFavorite,
                         onToggleFavorite = onToggleFavorite,
+                        onSharePdf = onSharePdf,
                         modifier = Modifier.align(Alignment.TopCenter),
                     )
                 }
@@ -398,6 +400,7 @@ fun PdfReaderScreen(
                         onShowHealth = showHealth,
                         isFavorite = document.isFavorite,
                         onToggleFavorite = onToggleFavorite,
+                        onSharePdf = onSharePdf,
                     )
                 },
             ) { innerPadding ->
@@ -472,6 +475,7 @@ private fun ReaderTopBar(
     onShowHealth: () -> Unit,
     isFavorite: Boolean,
     onToggleFavorite: () -> Unit,
+    onSharePdf: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     TopAppBar(
@@ -497,6 +501,7 @@ private fun ReaderTopBar(
                 onShowHealth = onShowHealth,
                 isFavorite = isFavorite,
                 onToggleFavorite = onToggleFavorite,
+                onSharePdf = onSharePdf,
             )
             TextButton(
                 onClick = { onFullscreenChange(!isFullscreen) },
@@ -911,6 +916,7 @@ private fun ReaderModeMenu(
     onShowHealth: () -> Unit,
     isFavorite: Boolean,
     onToggleFavorite: () -> Unit,
+    onSharePdf: () -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
     val controlDescription = stringResource(R.string.reader_mode)
@@ -948,6 +954,15 @@ private fun ReaderModeMenu(
                         .testTag("reader_mode_${mode.name}"),
                 )
             }
+            HorizontalDivider()
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.share_pdf)) },
+                onClick = {
+                    expanded = false
+                    onSharePdf()
+                },
+                modifier = Modifier.testTag("share_pdf_button"),
+            )
             HorizontalDivider()
             DropdownMenuItem(
                 text = {

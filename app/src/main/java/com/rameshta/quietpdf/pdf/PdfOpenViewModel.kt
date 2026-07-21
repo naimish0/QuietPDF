@@ -216,7 +216,7 @@ sealed interface ProtectPdfState {
         val pageCount: Int,
     ) : ProtectPdfState
     data class Protecting(val pageCount: Int) : ProtectPdfState
-    data class Completed(val pageCount: Int) : ProtectPdfState
+    data class Completed(val outputUri: Uri, val pageCount: Int) : ProtectPdfState
     data class Failed(val failure: ProtectPdfFailure) : ProtectPdfState
 }
 
@@ -242,7 +242,7 @@ sealed interface ChangePasswordState {
         val currentPasswordError: Boolean = false,
     ) : ChangePasswordState
     data object Changing : ChangePasswordState
-    data class Completed(val pageCount: Int) : ChangePasswordState
+    data class Completed(val outputUri: Uri, val pageCount: Int) : ChangePasswordState
     data class Failed(val failure: ChangePasswordFailure) : ChangePasswordState
 }
 
@@ -1795,7 +1795,7 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
                         expectedPageCount = configuring.pageCount,
                     )
                 ) {
-                    is ProtectPdfResult.Success -> ProtectPdfState.Completed(configuring.pageCount)
+                    is ProtectPdfResult.Success -> ProtectPdfState.Completed(outputUri, configuring.pageCount)
                         .also { recordHistory(PdfHistoryOperation.ProtectPdf) }
                     ProtectPdfResult.AlreadyProtected -> {
                         ProtectPdfState.Failed(ProtectPdfFailure.AlreadyProtected)
@@ -1969,7 +1969,7 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
                         newPassword = newPassword,
                     )
                 ) {
-                    is ChangePasswordResult.Success -> ChangePasswordState.Completed(result.pageCount)
+                    is ChangePasswordResult.Success -> ChangePasswordState.Completed(outputUri, result.pageCount)
                         .also { recordHistory(PdfHistoryOperation.ChangePassword) }
                     ChangePasswordResult.IncorrectCurrentPassword -> {
                         configuring.copy(currentPasswordError = true)
