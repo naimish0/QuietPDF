@@ -2,6 +2,7 @@ package com.rameshta.quietpdf
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.content.ClipData
 import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
@@ -28,6 +29,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.rememberScrollState
@@ -36,6 +38,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -129,6 +132,9 @@ import com.rameshta.quietpdf.pdf.ImageWatermarkPosition
 import com.rameshta.quietpdf.pdf.ImageWatermarkPreviewResult
 import com.rameshta.quietpdf.pdf.ImageWatermarkSettings
 import com.rameshta.quietpdf.pdf.ImageWatermarkState
+import com.rameshta.quietpdf.pdf.EmbeddedImagePreview
+import com.rameshta.quietpdf.pdf.ExtractImagesDestination
+import com.rameshta.quietpdf.pdf.ExtractImagesState
 import com.rameshta.quietpdf.pdf.PdfCompressionMode
 import com.rameshta.quietpdf.pdf.PdfCompressionRequest
 import com.rameshta.quietpdf.pdf.TargetFileSize
@@ -167,6 +173,7 @@ class MainActivity : ComponentActivity() {
                 }
                 var pendingTextWatermark by remember { mutableStateOf<TextWatermarkSettings?>(null) }
                 var pendingImageWatermark by remember { mutableStateOf<ImageWatermarkSettings?>(null) }
+                var pendingExtractedImages by remember { mutableStateOf<Set<Int>?>(null) }
                 val picker = rememberLauncherForActivityResult(
                     contract = ActivityResultContracts.OpenDocument(),
                 ) { uri ->
@@ -405,6 +412,33 @@ class MainActivity : ComponentActivity() {
                         viewModel.selectPdfForImageWatermark(uri)
                     }
                 }
+                val extractedImagesFolder = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.OpenDocumentTree(),
+                ) { uri ->
+                    val selection = pendingExtractedImages
+                    pendingExtractedImages = null
+                    if (uri == null || selection == null) viewModel.cancelImageExtraction()
+                    else {
+                        retainDirectoryPermission(uri)
+                        viewModel.exportExtractedImagesToDirectory(uri, selection)
+                    }
+                }
+                val extractedImagesZip = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.CreateDocument("application/zip"),
+                ) { uri ->
+                    val selection = pendingExtractedImages
+                    pendingExtractedImages = null
+                    if (uri == null || selection == null) viewModel.cancelImageExtraction()
+                    else viewModel.exportExtractedImagesToZip(uri, selection)
+                }
+                val extractImagesPdfPicker = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.OpenDocument(),
+                ) { uri ->
+                    if (uri != null) {
+                        retainReadPermission(uri)
+                        viewModel.selectPdfForImageExtraction(uri)
+                    }
+                }
                 val createScannedPdf = rememberLauncherForActivityResult(
                     contract = ActivityResultContracts.CreateDocument("application/pdf"),
                 ) { uri ->
@@ -415,6 +449,26 @@ class MainActivity : ComponentActivity() {
                 ) { granted ->
                     if (granted) viewModel.startScannerCapture()
                     else viewModel.scannerPermissionDenied()
+                }
+
+                val extractImagesState = viewModel.extractImagesState
+                LaunchedEffect(extractImagesState) {
+                    val share = extractImagesState as? ExtractImagesState.ShareReady
+                        ?: return@LaunchedEffect
+                    val streams = ArrayList(share.imageUris)
+                    val intent = Intent(
+                        if (streams.size == 1) Intent.ACTION_SEND else Intent.ACTION_SEND_MULTIPLE,
+                    ).apply {
+                        type = "image/png"
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        if (streams.size == 1) putExtra(Intent.EXTRA_STREAM, streams.first())
+                        else putParcelableArrayListExtra(Intent.EXTRA_STREAM, streams)
+                        clipData = ClipData.newUri(contentResolver, "Extracted image", streams.first()).also { clip ->
+                            streams.drop(1).forEach { clip.addItem(ClipData.Item(it)) }
+                        }
+                    }
+                    startActivity(Intent.createChooser(intent, getString(R.string.extract_images_share_selected)))
+                    viewModel.resumeImageExtractionAfterShare()
                 }
 
                 QuietPdfApp(
@@ -586,6 +640,28 @@ class MainActivity : ComponentActivity() {
                     },
                     onOpenImageWatermarkedPdf = viewModel::openImageWatermarkedPdf,
                     onDismissImageWatermarkResult = viewModel::clearImageWatermarkResult,
+                    extractImagesState = extractImagesState,
+                    onExtractImages = {
+                        extractImagesPdfPicker.launch(arrayOf("application/pdf"))
+                    },
+                    onSaveSelectedImages = { selection ->
+                        pendingExtractedImages = selection
+                        extractedImagesFolder.launch(null)
+                    },
+                    onSaveAllImages = { selection ->
+                        pendingExtractedImages = selection
+                        extractedImagesFolder.launch(null)
+                    },
+                    onExportImagesZip = { selection ->
+                        pendingExtractedImages = selection
+                        extractedImagesZip.launch("QuietPDF-extracted-images.zip")
+                    },
+                    onShareExtractedImages = viewModel::prepareExtractedImagesShare,
+                    onCancelImageExtraction = {
+                        pendingExtractedImages = null
+                        viewModel.cancelImageExtraction()
+                    },
+                    onDismissExtractImagesResult = viewModel::clearExtractImagesResult,
                     scannerCaptureState = viewModel.scannerCaptureState,
                     onScanDocument = {
                         if (ContextCompat.checkSelfPermission(
@@ -762,6 +838,14 @@ fun QuietPdfApp(
     onCancelImageWatermark: () -> Unit = {},
     onOpenImageWatermarkedPdf: () -> Unit = {},
     onDismissImageWatermarkResult: () -> Unit = {},
+    extractImagesState: ExtractImagesState = ExtractImagesState.Idle,
+    onExtractImages: () -> Unit = {},
+    onSaveSelectedImages: (Set<Int>) -> Unit = {},
+    onSaveAllImages: (Set<Int>) -> Unit = {},
+    onExportImagesZip: (Set<Int>) -> Unit = {},
+    onShareExtractedImages: (Set<Int>) -> Unit = {},
+    onCancelImageExtraction: () -> Unit = {},
+    onDismissExtractImagesResult: () -> Unit = {},
     scannerCaptureState: ScannerCaptureState = ScannerCaptureState.Idle,
     onScanDocument: () -> Unit = {},
     onBeginScannerCapture: () -> File? = { null },
@@ -899,6 +983,10 @@ fun QuietPdfApp(
                     onCancelImageWatermark = onCancelImageWatermark,
                     onOpenImageWatermarkedPdf = onOpenImageWatermarkedPdf,
                     onDismissImageWatermarkResult = onDismissImageWatermarkResult,
+                    extractImagesState = extractImagesState,
+                    onExtractImages = onExtractImages,
+                    onCancelImageExtraction = onCancelImageExtraction,
+                    onDismissExtractImagesResult = onDismissExtractImagesResult,
                     scannerCaptureState = scannerCaptureState,
                     onScanDocument = onScanDocument,
                     onOpenScannerPdf = onOpenScannerPdf,
@@ -1047,6 +1135,17 @@ fun QuietPdfApp(
             renderPreview = renderImageWatermarkPreview,
             onConfirm = onConfirmImageWatermark,
             onCancel = onCancelImageWatermark,
+        )
+    }
+    if (extractImagesState is ExtractImagesState.Configuring) {
+        ExtractImagesDialog(
+            documentName = extractImagesState.displayName,
+            images = extractImagesState.analysis.images,
+            onSaveSelected = onSaveSelectedImages,
+            onSaveAll = onSaveAllImages,
+            onExportZip = onExportImagesZip,
+            onShare = onShareExtractedImages,
+            onCancel = onCancelImageExtraction,
         )
     }
 }
@@ -1785,6 +1884,117 @@ private fun imageWatermarkPosition(vertical: Int, horizontal: Int): ImageWaterma
     }
 
 @Composable
+private fun ExtractImagesDialog(
+    documentName: String,
+    images: List<EmbeddedImagePreview>,
+    onSaveSelected: (Set<Int>) -> Unit,
+    onSaveAll: (Set<Int>) -> Unit,
+    onExportZip: (Set<Int>) -> Unit,
+    onShare: (Set<Int>) -> Unit,
+    onCancel: () -> Unit,
+) {
+    val safeIndices: Set<Int> = remember(images) {
+        images.filter(EmbeddedImagePreview::extractable).mapTo(linkedSetOf()) { it.index }
+    }
+    var selected by remember(images) { mutableStateOf<Set<Int>>(safeIndices) }
+    AlertDialog(
+        onDismissRequest = onCancel,
+        title = { Text(stringResource(R.string.extract_images_title)) },
+        text = {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                Text(stringResource(R.string.extract_images_summary, documentName, images.size))
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    TextButton(
+                        onClick = { selected = safeIndices },
+                        modifier = Modifier.weight(1f).testTag("extract_images_select_all"),
+                    ) { Text(stringResource(R.string.extract_images_select_all)) }
+                    TextButton(
+                        onClick = { selected = emptySet() },
+                        modifier = Modifier.weight(1f).testTag("extract_images_clear"),
+                    ) { Text(stringResource(R.string.extract_images_clear_selection)) }
+                }
+                images.forEach { image ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)
+                            .then(if (image.extractable) Modifier.clickable {
+                                selected = if (image.index in selected) selected - image.index
+                                else selected + image.index
+                            } else Modifier)
+                            .testTag("extract_image_${image.index}"),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Checkbox(
+                            checked = image.index in selected,
+                            onCheckedChange = if (image.extractable) { checked ->
+                                selected = if (checked) selected + image.index else selected - image.index
+                            } else null,
+                        )
+                        Box(
+                            modifier = Modifier.size(72.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            image.bitmap?.let { preview ->
+                                Image(
+                                    bitmap = preview.asImageBitmap(),
+                                    contentDescription = null,
+                                    contentScale = ContentScale.Fit,
+                                    modifier = Modifier.fillMaxSize(),
+                                )
+                            }
+                        }
+                        Column(modifier = Modifier.padding(start = 10.dp)) {
+                            Text(stringResource(
+                                R.string.extract_images_item,
+                                image.pageNumber,
+                                image.width,
+                                image.height,
+                            ))
+                            if (!image.extractable) {
+                                Text(
+                                    stringResource(R.string.extract_images_too_large),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.error,
+                                )
+                            }
+                        }
+                    }
+                }
+                Button(
+                    onClick = { onSaveSelected(selected) },
+                    enabled = selected.isNotEmpty(),
+                    modifier = Modifier.fillMaxWidth().testTag("extract_images_save_selected"),
+                ) { Text(stringResource(R.string.extract_images_save_selected)) }
+                TextButton(
+                    onClick = { onSaveAll(safeIndices) },
+                    enabled = safeIndices.isNotEmpty(),
+                    modifier = Modifier.fillMaxWidth().testTag("extract_images_save_all"),
+                ) { Text(stringResource(R.string.extract_images_save_all)) }
+                TextButton(
+                    onClick = { onExportZip(selected) },
+                    enabled = selected.isNotEmpty(),
+                    modifier = Modifier.fillMaxWidth().testTag("extract_images_zip"),
+                ) { Text(stringResource(R.string.extract_images_zip_selected)) }
+                TextButton(
+                    onClick = { onShare(selected) },
+                    enabled = selected.isNotEmpty(),
+                    modifier = Modifier.fillMaxWidth().testTag("extract_images_share"),
+                ) { Text(stringResource(R.string.extract_images_share_selected)) }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onCancel, modifier = Modifier.testTag("extract_images_cancel")) {
+                Text(stringResource(R.string.cancel))
+            }
+        },
+        modifier = Modifier.testTag("extract_images_dialog"),
+    )
+}
+
+@Composable
 private fun DuplicatePagesDialog(
     documentName: String,
     pageCount: Int,
@@ -2441,6 +2651,10 @@ private fun OpenPdfContent(
     onCancelImageWatermark: () -> Unit,
     onOpenImageWatermarkedPdf: () -> Unit,
     onDismissImageWatermarkResult: () -> Unit,
+    extractImagesState: ExtractImagesState,
+    onExtractImages: () -> Unit,
+    onCancelImageExtraction: () -> Unit,
+    onDismissExtractImagesResult: () -> Unit,
     scannerCaptureState: ScannerCaptureState,
     onScanDocument: () -> Unit,
     onOpenScannerPdf: () -> Unit,
@@ -2466,6 +2680,8 @@ private fun OpenPdfContent(
         textWatermarkState is TextWatermarkState.Completed
         || imageWatermarkState is ImageWatermarkState.Failed ||
         imageWatermarkState is ImageWatermarkState.Completed
+        || extractImagesState is ExtractImagesState.Failed ||
+        extractImagesState is ExtractImagesState.Completed
         || scannerCaptureState is ScannerCaptureState.Failed ||
         scannerCaptureState is ScannerCaptureState.Completed
     LaunchedEffect(hasResult) {
@@ -2693,6 +2909,29 @@ private fun OpenPdfContent(
             }
             else -> Unit
         }
+        when (extractImagesState) {
+            ExtractImagesState.Preparing -> {
+                OperationProgressContent(R.string.extract_images_preparing)
+                return@Column
+            }
+            is ExtractImagesState.Exporting -> {
+                OperationProgressContent(
+                    R.string.extract_images_exporting,
+                    argument = extractImagesState.imageCount,
+                    onCancel = onCancelImageExtraction,
+                )
+                return@Column
+            }
+            is ExtractImagesState.PreparingShare -> {
+                OperationProgressContent(
+                    R.string.extract_images_preparing_share,
+                    argument = extractImagesState.imageCount,
+                    onCancel = onCancelImageExtraction,
+                )
+                return@Column
+            }
+            else -> Unit
+        }
         when (state) {
             PdfOpenState.Idle -> IdleContent(
                 onOpenPdf = onOpenPdf,
@@ -2742,6 +2981,9 @@ private fun OpenPdfContent(
                 onImageWatermark = onImageWatermark,
                 onOpenImageWatermarkedPdf = onOpenImageWatermarkedPdf,
                 onDismissImageWatermarkResult = onDismissImageWatermarkResult,
+                extractImagesState = extractImagesState,
+                onExtractImages = onExtractImages,
+                onDismissExtractImagesResult = onDismissExtractImagesResult,
                 scannerCaptureState = scannerCaptureState,
                 onScanDocument = onScanDocument,
                 onOpenScannerPdf = onOpenScannerPdf,
@@ -2803,6 +3045,9 @@ private fun IdleContent(
     onImageWatermark: () -> Unit,
     onOpenImageWatermarkedPdf: () -> Unit,
     onDismissImageWatermarkResult: () -> Unit,
+    extractImagesState: ExtractImagesState,
+    onExtractImages: () -> Unit,
+    onDismissExtractImagesResult: () -> Unit,
     scannerCaptureState: ScannerCaptureState,
     onScanDocument: () -> Unit,
     onOpenScannerPdf: () -> Unit,
@@ -2912,6 +3157,12 @@ private fun IdleContent(
         label = stringResource(R.string.image_watermark),
         onClick = onImageWatermark,
         testTag = "image_watermark_button",
+    )
+    Spacer(Modifier.height(4.dp))
+    OpenButton(
+        label = stringResource(R.string.extract_images),
+        onClick = onExtractImages,
+        testTag = "extract_images_button",
     )
     if (imagesToPdfState is ImagesToPdfState.Failed) {
         Spacer(Modifier.height(20.dp))
@@ -3240,6 +3491,38 @@ private fun IdleContent(
                 TextButton(onClick = onDismissImageWatermarkResult) {
                     Text(stringResource(R.string.dismiss))
                 }
+            }
+        }
+        else -> Unit
+    }
+    when (extractImagesState) {
+        is ExtractImagesState.Failed -> {
+            Spacer(Modifier.height(20.dp))
+            Text(
+                text = stringResource(extractImagesState.failure.messageResource),
+                color = MaterialTheme.colorScheme.error,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.testTag("extract_images_error"),
+            )
+            TextButton(onClick = onDismissExtractImagesResult) {
+                Text(stringResource(R.string.dismiss))
+            }
+        }
+        is ExtractImagesState.Completed -> {
+            Spacer(Modifier.height(20.dp))
+            Text(
+                text = stringResource(
+                    if (extractImagesState.destination == ExtractImagesDestination.Zip) {
+                        R.string.extract_images_completed_zip
+                    } else R.string.extract_images_completed_directory,
+                    extractImagesState.imageCount,
+                ),
+                color = MaterialTheme.colorScheme.primary,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.testTag("extract_images_success"),
+            )
+            TextButton(onClick = onDismissExtractImagesResult) {
+                Text(stringResource(R.string.dismiss))
             }
         }
         else -> Unit

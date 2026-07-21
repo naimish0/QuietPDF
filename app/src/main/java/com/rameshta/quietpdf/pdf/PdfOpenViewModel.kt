@@ -11,6 +11,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.core.content.FileProvider
 import com.rameshta.quietpdf.R
 import java.io.File
 import kotlinx.coroutines.Dispatchers
@@ -295,6 +296,37 @@ enum class ImageWatermarkFailure(@get:StringRes val messageResource: Int) {
     UnableToSave(R.string.image_watermark_save_error),
 }
 
+enum class ExtractImagesDestination { Directory, Zip }
+
+sealed interface ExtractImagesState {
+    data object Idle : ExtractImagesState
+    data object Preparing : ExtractImagesState
+    data class Configuring(
+        val sourceUri: Uri,
+        val displayName: String,
+        val analysis: ExtractImagesAnalysis,
+    ) : ExtractImagesState
+    data class Exporting(val imageCount: Int) : ExtractImagesState
+    data class PreparingShare(val imageCount: Int) : ExtractImagesState
+    data class ShareReady(val imageUris: List<Uri>) : ExtractImagesState
+    data class Completed(
+        val imageCount: Int,
+        val destination: ExtractImagesDestination,
+    ) : ExtractImagesState
+    data class Failed(val failure: ExtractImagesFailure) : ExtractImagesState
+}
+
+enum class ExtractImagesFailure(@get:StringRes val messageResource: Int) {
+    NoImages(R.string.extract_images_none),
+    PasswordProtected(R.string.extract_images_password_protected),
+    InvalidDocument(R.string.extract_images_invalid_document),
+    InvalidSelection(R.string.extract_images_invalid_selection),
+    PermissionDenied(R.string.extract_images_permission_denied),
+    InsufficientMemory(R.string.extract_images_memory_error),
+    UnableToSave(R.string.extract_images_save_error),
+    UnableToShare(R.string.extract_images_share_error),
+}
+
 enum class TextWatermarkFailure(@get:StringRes val messageResource: Int) {
     PasswordProtected(R.string.text_watermark_password_protected),
     InvalidDocument(R.string.text_watermark_invalid_document),
@@ -421,6 +453,7 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
     private val changePasswordEngine = ChangePasswordEngine(application)
     private val textWatermarkEngine = TextWatermarkEngine(application)
     private val imageWatermarkEngine = ImageWatermarkEngine(application)
+    private val extractImagesEngine = ExtractImagesEngine(application)
     private val scannerCaptureEngine = ScannerCaptureEngine(application)
     private val scannerCropCorrectionEngine = ScannerCropCorrectionEngine(application.cacheDir)
     private val scannerEnhancementEngine = ScannerEnhancementEngine(application.cacheDir)
@@ -439,6 +472,8 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
     private var changePasswordJob: Job? = null
     private var textWatermarkJob: Job? = null
     private var imageWatermarkJob: Job? = null
+    private var extractImagesJob: Job? = null
+    private var extractImagesConfiguration: ExtractImagesState.Configuring? = null
     private var scannerJob: Job? = null
     private var scannerEnhancementJob: Job? = null
     private var scannerCaptureFile: File? = null
@@ -504,6 +539,9 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
         private set
 
     var imageWatermarkState: ImageWatermarkState by mutableStateOf(ImageWatermarkState.Idle)
+        private set
+
+    var extractImagesState: ExtractImagesState by mutableStateOf(ExtractImagesState.Idle)
         private set
 
     var scannerCaptureState: ScannerCaptureState by mutableStateOf(ScannerCaptureState.Idle)
@@ -1963,6 +2001,138 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
         imageWatermarkState = ImageWatermarkState.Idle
     }
 
+    fun selectPdfForImageExtraction(uri: Uri) {
+        extractImagesJob?.cancel()
+        clearExtractImagesConfiguration()
+        extractImagesEngine.clearShareFiles()
+        extractImagesState = ExtractImagesState.Preparing
+        extractImagesJob = viewModelScope.launch {
+            extractImagesState = when (val result = extractImagesEngine.analyze(uri)) {
+                is ExtractImagesAnalysisResult.Ready -> ExtractImagesState.Configuring(
+                    uri,
+                    withContext(Dispatchers.IO) { queryDisplayName(uri) } ?: "PDF",
+                    result.analysis,
+                ).also { extractImagesConfiguration = it }
+                ExtractImagesAnalysisResult.NoImages ->
+                    ExtractImagesState.Failed(ExtractImagesFailure.NoImages)
+                ExtractImagesAnalysisResult.PasswordProtected ->
+                    ExtractImagesState.Failed(ExtractImagesFailure.PasswordProtected)
+                ExtractImagesAnalysisResult.InvalidDocument ->
+                    ExtractImagesState.Failed(ExtractImagesFailure.InvalidDocument)
+                ExtractImagesAnalysisResult.PermissionDenied ->
+                    ExtractImagesState.Failed(ExtractImagesFailure.PermissionDenied)
+                ExtractImagesAnalysisResult.InsufficientMemory ->
+                    ExtractImagesState.Failed(ExtractImagesFailure.InsufficientMemory)
+            }
+        }
+    }
+
+    fun exportExtractedImagesToDirectory(directoryUri: Uri, selectedIndices: Set<Int>) {
+        val configuring = extractImagesConfiguration ?: return
+        val validSelection = selectedIndices.intersect(configuring.analysis.extractableIndices)
+        if (validSelection.size != selectedIndices.size || validSelection.isEmpty()) {
+            extractImagesState = ExtractImagesState.Failed(ExtractImagesFailure.InvalidSelection)
+            clearExtractImagesConfiguration()
+            return
+        }
+        extractImagesJob?.cancel()
+        extractImagesState = ExtractImagesState.Exporting(validSelection.size)
+        extractImagesJob = viewModelScope.launch {
+            finishExtractImagesExport(
+                extractImagesEngine.exportToDirectory(configuring.sourceUri, directoryUri, validSelection),
+                ExtractImagesDestination.Directory,
+            )
+        }
+    }
+
+    fun exportExtractedImagesToZip(outputUri: Uri, selectedIndices: Set<Int>) {
+        val configuring = extractImagesConfiguration ?: return
+        val validSelection = selectedIndices.intersect(configuring.analysis.extractableIndices)
+        if (validSelection.size != selectedIndices.size || validSelection.isEmpty()) {
+            extractImagesState = ExtractImagesState.Failed(ExtractImagesFailure.InvalidSelection)
+            clearExtractImagesConfiguration()
+            return
+        }
+        extractImagesJob?.cancel()
+        extractImagesState = ExtractImagesState.Exporting(validSelection.size)
+        extractImagesJob = viewModelScope.launch {
+            finishExtractImagesExport(
+                extractImagesEngine.exportToZip(configuring.sourceUri, outputUri, validSelection),
+                ExtractImagesDestination.Zip,
+            )
+        }
+    }
+
+    fun prepareExtractedImagesShare(selectedIndices: Set<Int>) {
+        val configuring = extractImagesConfiguration ?: return
+        val validSelection = selectedIndices.intersect(configuring.analysis.extractableIndices)
+        if (validSelection.size != selectedIndices.size || validSelection.isEmpty()) return
+        extractImagesJob?.cancel()
+        extractImagesState = ExtractImagesState.PreparingShare(validSelection.size)
+        extractImagesJob = viewModelScope.launch {
+            extractImagesState = when (
+                val result = extractImagesEngine.prepareShare(configuring.sourceUri, validSelection)
+            ) {
+                is ExtractImagesShareResult.Ready -> ExtractImagesState.ShareReady(
+                    result.files.map { file ->
+                        FileProvider.getUriForFile(
+                            getApplication(), "${getApplication<Application>().packageName}.fileprovider", file,
+                        )
+                    },
+                )
+                ExtractImagesShareResult.InvalidSelection ->
+                    ExtractImagesState.Failed(ExtractImagesFailure.InvalidSelection)
+                ExtractImagesShareResult.InvalidDocument ->
+                    ExtractImagesState.Failed(ExtractImagesFailure.InvalidDocument)
+                ExtractImagesShareResult.PasswordProtected ->
+                    ExtractImagesState.Failed(ExtractImagesFailure.PasswordProtected)
+                ExtractImagesShareResult.PermissionDenied ->
+                    ExtractImagesState.Failed(ExtractImagesFailure.PermissionDenied)
+                ExtractImagesShareResult.InsufficientMemory ->
+                    ExtractImagesState.Failed(ExtractImagesFailure.InsufficientMemory)
+                ExtractImagesShareResult.Failed ->
+                    ExtractImagesState.Failed(ExtractImagesFailure.UnableToShare)
+            }
+            if (extractImagesState is ExtractImagesState.Failed) clearExtractImagesConfiguration()
+        }
+    }
+
+    fun resumeImageExtractionAfterShare() {
+        extractImagesState = extractImagesConfiguration ?: ExtractImagesState.Idle
+    }
+
+    fun cancelImageExtraction() {
+        extractImagesJob?.cancel()
+        clearExtractImagesConfiguration()
+        extractImagesState = ExtractImagesState.Idle
+    }
+
+    fun clearExtractImagesResult() {
+        clearExtractImagesConfiguration()
+        extractImagesState = ExtractImagesState.Idle
+    }
+
+    private fun finishExtractImagesExport(
+        result: ExtractImagesResult,
+        destination: ExtractImagesDestination,
+    ) {
+        extractImagesState = when (result) {
+            is ExtractImagesResult.Success -> ExtractImagesState.Completed(result.imageCount, destination)
+            ExtractImagesResult.InvalidSelection -> ExtractImagesState.Failed(ExtractImagesFailure.InvalidSelection)
+            ExtractImagesResult.InvalidDocument -> ExtractImagesState.Failed(ExtractImagesFailure.InvalidDocument)
+            ExtractImagesResult.PasswordProtected -> ExtractImagesState.Failed(ExtractImagesFailure.PasswordProtected)
+            ExtractImagesResult.PermissionDenied -> ExtractImagesState.Failed(ExtractImagesFailure.PermissionDenied)
+            ExtractImagesResult.InsufficientMemory -> ExtractImagesState.Failed(ExtractImagesFailure.InsufficientMemory)
+            ExtractImagesResult.Failed -> ExtractImagesState.Failed(ExtractImagesFailure.UnableToSave)
+        }
+        clearExtractImagesConfiguration()
+    }
+
+    private fun clearExtractImagesConfiguration() {
+        extractImagesConfiguration?.analysis?.images?.forEach { preview -> preview.bitmap?.recycle() }
+        extractImagesConfiguration = null
+    }
+
     fun rejectUnsupportedUri() {
         openJob?.cancel()
         searchEngine.close()
@@ -2039,6 +2209,9 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
         deletePagesJob?.cancel()
         duplicatePagesJob?.cancel()
         compressPdfJob?.cancel()
+        extractImagesJob?.cancel()
+        clearExtractImagesConfiguration()
+        extractImagesEngine.clearShareFiles()
         scannerJob?.cancel()
         scannerEnhancementJob?.cancel()
         releaseScannerCapture()

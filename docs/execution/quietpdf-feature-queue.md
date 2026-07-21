@@ -34,7 +34,7 @@ COMPLETED T27-Remove-Password
 COMPLETED 28-Change-Password
 COMPLETED T29-Text-Watermark
 COMPLETED T30-Image-Watermark
-T31-Extract-Images
+COMPLETED T31-Extract-Images
 T32-Fill-Forms
 T33-Sign-PDF
 T34-Annotate-PDF
