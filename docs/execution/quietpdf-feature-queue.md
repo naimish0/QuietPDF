@@ -43,6 +43,6 @@ COMPLETED T36-Favorites
 COMPLETED T37-History
 COMPLETED T38-File-Search-Sort
 COMPLETED T39-Share-PDF
-T40-Smart-Home
-T41-AdMob
+COMPLETED T40-Smart-Home
+COMPLETED T41-AdMob
 T42-Production-Hardening

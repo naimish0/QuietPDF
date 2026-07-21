@@ -601,6 +601,8 @@
     <string name="smart_home_settings">Settings</string>
     <string name="smart_home_settings_unavailable">Android settings are unavailable on this device.</string>
     <string name="smart_home_file_actions">File actions</string>
+    <string name="advertisement_label">Advertisement</string>
+    <string name="ad_privacy_disclosure">PDF processing stays local. Advertising may use network and device data according to your privacy choices. Document contents and metadata are never sent to the ad service.</string>
     <string name="smart_home_no_tools">No matching tools. Try another search or category.</string>
     <string name="smart_home_files_empty">No PDFs yet. Open a PDF to begin your private on-device library.</string>
     <plurals name="recent_file_pages">
