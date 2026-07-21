@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
@@ -31,6 +32,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -60,6 +63,8 @@ import com.rameshta.quietpdf.pdf.ImagePdfMargin
 import com.rameshta.quietpdf.pdf.ImagePdfOrientation
 import com.rameshta.quietpdf.pdf.ImagePdfPageSize
 import com.rameshta.quietpdf.pdf.ImagePdfScaleMode
+import com.rameshta.quietpdf.pdf.MergePdfItem
+import com.rameshta.quietpdf.pdf.MergePdfState
 import com.rameshta.quietpdf.ui.reader.PdfReaderScreen
 import com.rameshta.quietpdf.ui.theme.QuietPDFTheme
 
@@ -96,6 +101,20 @@ class MainActivity : ComponentActivity() {
                         viewModel.selectImagesForPdf(uris)
                     }
                 }
+                val createMergedPdf = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.CreateDocument("application/pdf"),
+                ) { uri ->
+                    if (uri == null) viewModel.cancelMergePdf()
+                    else viewModel.mergeSelectedPdfs(uri)
+                }
+                val mergePdfPicker = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.OpenMultipleDocuments(),
+                ) { uris ->
+                    if (uris.isNotEmpty()) {
+                        uris.forEach(::retainReadPermission)
+                        viewModel.selectPdfsForMerge(uris)
+                    }
+                }
 
                 QuietPdfApp(
                     state = viewModel.state,
@@ -114,6 +133,13 @@ class MainActivity : ComponentActivity() {
                         createImagesPdf.launch("QuietPDF-images.pdf")
                     },
                     onCancelImagesPdfLayout = viewModel::discardSelectedImages,
+                    mergePdfState = viewModel.mergePdfState,
+                    onMergePdfs = { mergePdfPicker.launch(arrayOf("application/pdf")) },
+                    onMoveMergeDocument = viewModel::moveMergeDocument,
+                    onRemoveMergeDocument = viewModel::removeMergeDocument,
+                    onConfirmMerge = { createMergedPdf.launch("QuietPDF-merged.pdf") },
+                    onCancelMerge = viewModel::cancelMergePdf,
+                    onDismissMergeFailure = viewModel::clearMergePdfFailure,
                 )
             }
         }
@@ -171,6 +197,13 @@ fun QuietPdfApp(
     onDismissImagesToPdfFailure: () -> Unit = {},
     onConfirmImagesPdfLayout: (ImagePdfLayout) -> Unit = {},
     onCancelImagesPdfLayout: () -> Unit = {},
+    mergePdfState: MergePdfState = MergePdfState.Idle,
+    onMergePdfs: () -> Unit = {},
+    onMoveMergeDocument: (fromIndex: Int, toIndex: Int) -> Unit = { _, _ -> },
+    onRemoveMergeDocument: (index: Int) -> Unit = {},
+    onConfirmMerge: () -> Unit = {},
+    onCancelMerge: () -> Unit = {},
+    onDismissMergeFailure: () -> Unit = {},
 ) {
     if (state is PdfOpenState.Opened) {
         PdfReaderScreen(
@@ -209,6 +242,10 @@ fun QuietPdfApp(
                     imagesToPdfState = imagesToPdfState,
                     onImagesToPdf = onImagesToPdf,
                     onDismissImagesToPdfFailure = onDismissImagesToPdfFailure,
+                    mergePdfState = mergePdfState,
+                    onMergePdfs = onMergePdfs,
+                    onDismissMergeFailure = onDismissMergeFailure,
+                    onCancelMerge = onCancelMerge,
                     contentPadding = PaddingValues(24.dp),
                 )
             }
@@ -221,6 +258,84 @@ fun QuietPdfApp(
             onCancel = onCancelImagesPdfLayout,
         )
     }
+    if (mergePdfState is MergePdfState.Configuring) {
+        MergePdfOrderDialog(
+            documents = mergePdfState.documents,
+            onMove = onMoveMergeDocument,
+            onRemove = onRemoveMergeDocument,
+            onConfirm = onConfirmMerge,
+            onCancel = onCancelMerge,
+        )
+    }
+}
+
+@Composable
+private fun MergePdfOrderDialog(
+    documents: List<MergePdfItem>,
+    onMove: (Int, Int) -> Unit,
+    onRemove: (Int) -> Unit,
+    onConfirm: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onCancel,
+        title = { Text(stringResource(R.string.merge_pdf_order_title)) },
+        text = {
+            Column {
+                Text(stringResource(R.string.merge_pdf_order_description))
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 400.dp),
+                ) {
+                    itemsIndexed(documents, key = { _, item -> item.uri }) { index, item ->
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 12.dp)
+                                .testTag("merge_document_$index"),
+                        ) {
+                            Text(
+                                text = "${index + 1}. ${item.displayName}",
+                                style = MaterialTheme.typography.bodyLarge,
+                            )
+                            Row {
+                                TextButton(
+                                    onClick = { onMove(index, index - 1) },
+                                    enabled = index > 0,
+                                    modifier = Modifier.testTag("merge_move_up_$index"),
+                                ) { Text(stringResource(R.string.move_up)) }
+                                TextButton(
+                                    onClick = { onMove(index, index + 1) },
+                                    enabled = index < documents.lastIndex,
+                                    modifier = Modifier.testTag("merge_move_down_$index"),
+                                ) { Text(stringResource(R.string.move_down)) }
+                                TextButton(
+                                    onClick = { onRemove(index) },
+                                    modifier = Modifier.testTag("merge_remove_$index"),
+                                ) { Text(stringResource(R.string.remove)) }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = onConfirm,
+                enabled = documents.size >= 2,
+                modifier = Modifier.testTag("merge_confirm"),
+            ) {
+                Text(stringResource(R.string.merge_pdf))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onCancel, modifier = Modifier.testTag("merge_cancel")) {
+                Text(stringResource(R.string.cancel))
+            }
+        },
+        modifier = Modifier.testTag("merge_order_dialog"),
+    )
 }
 
 @Composable
@@ -330,6 +445,10 @@ private fun OpenPdfContent(
     imagesToPdfState: ImagesToPdfState,
     onImagesToPdf: () -> Unit,
     onDismissImagesToPdfFailure: () -> Unit,
+    mergePdfState: MergePdfState,
+    onMergePdfs: () -> Unit,
+    onDismissMergeFailure: () -> Unit,
+    onCancelMerge: () -> Unit,
     contentPadding: PaddingValues,
 ) {
     Column(
@@ -340,12 +459,30 @@ private fun OpenPdfContent(
             ImagesToPdfCreatingContent(imagesToPdfState.imageCount)
             return@Column
         }
+        when (mergePdfState) {
+            MergePdfState.Preparing -> {
+                OperationProgressContent(R.string.merge_pdf_preparing)
+                return@Column
+            }
+            is MergePdfState.Merging -> {
+                OperationProgressContent(
+                    messageResource = R.string.merge_pdf_merging,
+                    argument = mergePdfState.documentCount,
+                    onCancel = onCancelMerge,
+                )
+                return@Column
+            }
+            else -> Unit
+        }
         when (state) {
             PdfOpenState.Idle -> IdleContent(
                 onOpenPdf = onOpenPdf,
                 onImagesToPdf = onImagesToPdf,
                 imagesToPdfState = imagesToPdfState,
                 onDismissImagesToPdfFailure = onDismissImagesToPdfFailure,
+                mergePdfState = mergePdfState,
+                onMergePdfs = onMergePdfs,
+                onDismissMergeFailure = onDismissMergeFailure,
             )
             PdfOpenState.Opening -> OpeningContent()
             is PdfOpenState.Opened -> Unit
@@ -360,6 +497,9 @@ private fun IdleContent(
     onImagesToPdf: () -> Unit,
     imagesToPdfState: ImagesToPdfState,
     onDismissImagesToPdfFailure: () -> Unit,
+    mergePdfState: MergePdfState,
+    onMergePdfs: () -> Unit,
+    onDismissMergeFailure: () -> Unit,
 ) {
     Text(
         text = stringResource(R.string.home_title),
@@ -382,6 +522,12 @@ private fun IdleContent(
         onClick = onImagesToPdf,
         testTag = "images_to_pdf_button",
     )
+    Spacer(Modifier.height(12.dp))
+    OpenButton(
+        label = stringResource(R.string.merge_pdf),
+        onClick = onMergePdfs,
+        testTag = "merge_pdf_button",
+    )
     if (imagesToPdfState is ImagesToPdfState.Failed) {
         Spacer(Modifier.height(20.dp))
         Text(
@@ -392,6 +538,42 @@ private fun IdleContent(
         )
         TextButton(onClick = onDismissImagesToPdfFailure) {
             Text(stringResource(R.string.dismiss))
+        }
+    }
+    if (mergePdfState is MergePdfState.Failed) {
+        Spacer(Modifier.height(20.dp))
+        Text(
+            text = stringResource(mergePdfState.failure.messageResource),
+            color = MaterialTheme.colorScheme.error,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.testTag("merge_pdf_error"),
+        )
+        TextButton(onClick = onDismissMergeFailure) {
+            Text(stringResource(R.string.dismiss))
+        }
+    }
+}
+
+@Composable
+private fun OperationProgressContent(
+    messageResource: Int,
+    argument: Int? = null,
+    onCancel: (() -> Unit)? = null,
+) {
+    CircularProgressIndicator(
+        modifier = Modifier.size(48.dp).testTag("operation_progress"),
+    )
+    Spacer(Modifier.height(20.dp))
+    Text(
+        text = if (argument == null) stringResource(messageResource)
+        else stringResource(messageResource, argument),
+        style = MaterialTheme.typography.titleMedium,
+        textAlign = TextAlign.Center,
+    )
+    if (onCancel != null) {
+        Spacer(Modifier.height(12.dp))
+        TextButton(onClick = onCancel, modifier = Modifier.testTag("operation_cancel")) {
+            Text(stringResource(R.string.cancel))
         }
     }
 }

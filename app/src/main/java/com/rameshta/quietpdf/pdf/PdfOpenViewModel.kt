@@ -3,6 +3,7 @@ package com.rameshta.quietpdf.pdf
 import android.app.Application
 import android.graphics.Bitmap
 import android.net.Uri
+import android.provider.OpenableColumns
 import android.util.LruCache
 import androidx.annotation.StringRes
 import androidx.compose.runtime.getValue
@@ -42,6 +43,24 @@ sealed interface ImagesToPdfState {
     data class Failed(val failure: ImagesToPdfFailure) : ImagesToPdfState
 }
 
+data class MergePdfItem(val uri: Uri, val displayName: String)
+
+sealed interface MergePdfState {
+    data object Idle : MergePdfState
+    data object Preparing : MergePdfState
+    data class Configuring(val documents: List<MergePdfItem>) : MergePdfState
+    data class Merging(val documentCount: Int) : MergePdfState
+    data class Failed(val failure: MergePdfFailure) : MergePdfState
+}
+
+enum class MergePdfFailure(@get:StringRes val messageResource: Int) {
+    NeedAtLeastTwo(R.string.merge_pdf_need_two),
+    InvalidDocument(R.string.merge_pdf_invalid_document),
+    PermissionDenied(R.string.merge_pdf_permission_denied),
+    InsufficientMemory(R.string.merge_pdf_memory_error),
+    UnableToSave(R.string.merge_pdf_save_error),
+}
+
 enum class ImagesToPdfFailure(@get:StringRes val messageResource: Int) {
     InvalidImage(R.string.images_to_pdf_invalid_image),
     PermissionDenied(R.string.images_to_pdf_permission_denied),
@@ -64,8 +83,10 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
     private val tableOfContentsEngine = PdfTableOfContentsEngine(application)
     private val healthEngine = PdfHealthEngine(application)
     private val imagesToPdfEngine = ImagesToPdfEngine(application.contentResolver, application.cacheDir)
+    private val mergePdfEngine = MergePdfEngine(application)
     private var openJob: Job? = null
     private var imageCreationJob: Job? = null
+    private var mergeJob: Job? = null
     private var selectedImageUris: List<Uri> = emptyList()
     private var selectedImageLayout = ImagePdfLayout()
     private var documentGeneration = 0L
@@ -77,6 +98,9 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
         private set
 
     var imagesToPdfState: ImagesToPdfState by mutableStateOf(ImagesToPdfState.Idle)
+        private set
+
+    var mergePdfState: MergePdfState by mutableStateOf(MergePdfState.Idle)
         private set
 
     fun open(uri: Uri) {
@@ -155,6 +179,78 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
         imagesToPdfState = ImagesToPdfState.Idle
     }
 
+    fun selectPdfsForMerge(uris: List<Uri>) {
+        mergeJob?.cancel()
+        val uniqueUris = uris.distinct()
+        if (uniqueUris.size < 2) {
+            mergePdfState = MergePdfState.Failed(MergePdfFailure.NeedAtLeastTwo)
+            return
+        }
+        mergePdfState = MergePdfState.Preparing
+        mergeJob = viewModelScope.launch {
+            val items = withContext(Dispatchers.IO) {
+                uniqueUris.mapIndexed { index, uri ->
+                    MergePdfItem(uri, queryDisplayName(uri) ?: "PDF ${index + 1}")
+                }
+            }
+            mergePdfState = MergePdfState.Configuring(items)
+        }
+    }
+
+    fun moveMergeDocument(fromIndex: Int, toIndex: Int) {
+        val configuring = mergePdfState as? MergePdfState.Configuring ?: return
+        if (fromIndex !in configuring.documents.indices || toIndex !in configuring.documents.indices) return
+        val reordered = configuring.documents.toMutableList()
+        val item = reordered.removeAt(fromIndex)
+        reordered.add(toIndex, item)
+        mergePdfState = configuring.copy(documents = reordered)
+    }
+
+    fun removeMergeDocument(index: Int) {
+        val configuring = mergePdfState as? MergePdfState.Configuring ?: return
+        if (index !in configuring.documents.indices) return
+        val updated = configuring.documents.toMutableList().apply { removeAt(index) }
+        mergePdfState = if (updated.size < 2) {
+            MergePdfState.Failed(MergePdfFailure.NeedAtLeastTwo)
+        } else {
+            configuring.copy(documents = updated)
+        }
+    }
+
+    fun mergeSelectedPdfs(outputUri: Uri) {
+        val configuring = mergePdfState as? MergePdfState.Configuring ?: return
+        val sourceUris = configuring.documents.map(MergePdfItem::uri)
+        mergePdfState = MergePdfState.Merging(sourceUris.size)
+        mergeJob?.cancel()
+        mergeJob = viewModelScope.launch {
+            mergePdfState = when (val result = mergePdfEngine.merge(sourceUris, outputUri)) {
+                is MergePdfResult.Success -> {
+                    open(outputUri)
+                    MergePdfState.Idle
+                }
+                is MergePdfResult.InvalidDocument -> {
+                    MergePdfState.Failed(MergePdfFailure.InvalidDocument)
+                }
+                MergePdfResult.PermissionDenied -> {
+                    MergePdfState.Failed(MergePdfFailure.PermissionDenied)
+                }
+                MergePdfResult.InsufficientMemory -> {
+                    MergePdfState.Failed(MergePdfFailure.InsufficientMemory)
+                }
+                MergePdfResult.Failed -> MergePdfState.Failed(MergePdfFailure.UnableToSave)
+            }
+        }
+    }
+
+    fun cancelMergePdf() {
+        mergeJob?.cancel()
+        mergePdfState = MergePdfState.Idle
+    }
+
+    fun clearMergePdfFailure() {
+        mergePdfState = MergePdfState.Idle
+    }
+
     fun rejectUnsupportedUri() {
         openJob?.cancel()
         searchEngine.close()
@@ -225,6 +321,7 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
 
     override fun onCleared() {
         imageCreationJob?.cancel()
+        mergeJob?.cancel()
         searchEngine.close()
         super.onCleared()
     }
@@ -236,5 +333,22 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
             val memoryBudget = Runtime.getRuntime().maxMemory() / 12L
             return memoryBudget.coerceIn(8L * 1024 * 1024, 32L * 1024 * 1024).toInt()
         }
+    }
+
+    private fun queryDisplayName(uri: Uri): String? = try {
+        getApplication<Application>().contentResolver.query(
+            uri,
+            arrayOf(OpenableColumns.DISPLAY_NAME),
+            null,
+            null,
+            null,
+        )?.use { cursor ->
+            if (!cursor.moveToFirst()) return@use null
+            val column = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+            if (column < 0 || cursor.isNull(column)) null
+            else cursor.getString(column)?.trim()?.takeIf(String::isNotEmpty)
+        }
+    } catch (_: RuntimeException) {
+        null
     }
 }

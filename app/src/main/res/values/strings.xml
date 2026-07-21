@@ -96,4 +96,16 @@
     <string name="wide">Wide</string>
     <string name="continue_action">Continue</string>
     <string name="cancel">Cancel</string>
+    <string name="merge_pdf">Merge PDFs</string>
+    <string name="merge_pdf_preparing">Reading selected PDFs…</string>
+    <string name="merge_pdf_merging">Merging %1$d PDFs…</string>
+    <string name="merge_pdf_order_title">Merge order</string>
+    <string name="merge_pdf_order_description">Pages will be added in this document order.</string>
+    <string name="move_up">Move up</string>
+    <string name="move_down">Move down</string>
+    <string name="merge_pdf_need_two">Select at least two different PDFs to merge.</string>
+    <string name="merge_pdf_invalid_document">One selected file is not a readable PDF. Keep the originals and choose the files again.</string>
+    <string name="merge_pdf_permission_denied">QuietPDF lost access to a selected PDF or save location. Choose the files again.</string>
+    <string name="merge_pdf_memory_error">These PDFs need more memory than is available. Close other apps and try again.</string>
+    <string name="merge_pdf_save_error">The merged PDF could not be created safely. Keep the originals and choose another save location.</string>
 </resources>

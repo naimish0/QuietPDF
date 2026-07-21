@@ -1,9 +1,10 @@
 # QuietPDF Feature Queue
 
 Process this list sequentially. Feature branch names must exactly match the pending queue entry. The
-user owns branch creation, all verification, Git operations, pull requests, merges, main pulls, and
-queue-status updates. Codex only implements the requested feature and writes its focused tests in the
-workspace, then stops without running verification or changing this queue.
+user owns branch creation, Git operations, pull requests, merges, main pulls, and queue-status
+updates. Codex implements the requested feature, writes its focused tests, and runs relevant
+verification after implementation is complete. Codex reports the verification commands and results,
+then stops without changing this queue or performing any Git or pull-request operation.
 
 COMPLETED T3-PDF-Reader-Modes
 COMPLETED T4-PDF-Fullscreen
@@ -15,7 +16,7 @@ COMPLETED T9-PDF-Table-Of-Contents
 COMPLETED T10-PDF-Health
 COMPLETED T11-Images-To-PDF
 COMPLETED T12-Images-PDF-Layout
-T13-Merge-PDF
+COMPLETED T13-Merge-PDF
 T14-Split-PDF
 T15-Extract-Pages
 T16-Delete-Pages

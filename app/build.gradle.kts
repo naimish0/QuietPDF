@@ -30,6 +30,12 @@ android {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
     }
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
+        }
+    }
     buildFeatures {
         compose = true
     }
@@ -47,6 +53,7 @@ dependencies {
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.pdf.document.service)
     implementation(libs.pdfium.android)
+    implementation(libs.pdfium.android.core)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
