@@ -1,4 +1,4 @@
-T3-PDF-Reader-Modes
+COMPLETED T3-PDF-Reader-Modes
 T4-PDF-Fullscreen
 T5-PDF-Dark-Mode
 T6-PDF-Remember-Page
