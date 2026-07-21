@@ -20,7 +20,7 @@ COMPLETED T13-Merge-PDF
 COMPLETED T14-Split-PDF
 COMPLETED T15-Extract-Pages
 COMPLETED T16-Delete-Pages
-T17-Rearrange-Pages
+COMPLETED T17-Rearrange-Pages
 T18-Rotate-Pages
 T19-Duplicate-Pages
 T20-Compress-PDF

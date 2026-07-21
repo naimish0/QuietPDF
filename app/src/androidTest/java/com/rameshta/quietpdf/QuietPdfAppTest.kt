@@ -48,6 +48,8 @@ import com.rameshta.quietpdf.pdf.ExtractPagesFailure
 import com.rameshta.quietpdf.pdf.ExtractPagesState
 import com.rameshta.quietpdf.pdf.DeletePagesFailure
 import com.rameshta.quietpdf.pdf.DeletePagesState
+import com.rameshta.quietpdf.pdf.RearrangePagesFailure
+import com.rameshta.quietpdf.pdf.RearrangePagesState
 import com.rameshta.quietpdf.ui.theme.QuietPDFTheme
 import org.junit.Rule
 import org.junit.Assert.assertEquals
@@ -427,6 +429,73 @@ class QuietPdfAppTest {
     }
 
     @Test
+    fun rearrangePages_buttonStartsSingleDocumentSelection() {
+        val selections = AtomicInteger()
+        setContent(
+            state = PdfOpenState.Idle,
+            onRearrangePages = { selections.incrementAndGet() },
+        )
+
+        composeRule.onNodeWithTag("rearrange_pages_button")
+            .assertTextEquals("Rearrange pages")
+            .performClick()
+        assertEquals(1, selections.get())
+    }
+
+    @Test
+    fun rearrangePages_dialogShowsOrderAndReturnsMoveResetAndConfirmActions() {
+        val move = AtomicReference<Pair<Int, Int>>()
+        val resets = AtomicInteger()
+        val confirms = AtomicInteger()
+        setContent(
+            state = PdfOpenState.Idle,
+            rearrangePagesState = RearrangePagesState.Configuring(
+                sourceUri = Uri.parse("content://test/rearrange"),
+                displayName = "source.pdf",
+                pageCount = 3,
+                pageOrder = listOf(2, 0, 1),
+            ),
+            onMoveRearrangedPage = { from, to -> move.set(from to to) },
+            onResetRearrangedPages = { resets.incrementAndGet() },
+            onConfirmPageRearrangement = { confirms.incrementAndGet() },
+        )
+
+        composeRule.onNodeWithTag("rearrange_pages_dialog").assertIsDisplayed()
+        composeRule.onNodeWithText("Position 1: page 3").assertIsDisplayed()
+        composeRule.onNodeWithTag("rearrange_page_2_down").performClick()
+        assertEquals(0 to 1, move.get())
+        composeRule.onNodeWithTag("rearrange_pages_reset").performClick()
+        composeRule.onNodeWithTag("rearrange_pages_confirm").performClick()
+        assertEquals(1, resets.get())
+        assertEquals(1, confirms.get())
+    }
+
+    @Test
+    fun rearrangePages_progressCanBeCancelled() {
+        val cancellations = AtomicInteger()
+        setContent(
+            state = PdfOpenState.Idle,
+            rearrangePagesState = RearrangePagesState.Rearranging(pageCount = 4),
+            onCancelPageRearrangement = { cancellations.incrementAndGet() },
+        )
+        composeRule.onNodeWithText("Rearranging all 4 pages…").assertIsDisplayed()
+        composeRule.onNodeWithTag("operation_cancel").performClick()
+        assertEquals(1, cancellations.get())
+    }
+
+    @Test
+    fun rearrangePages_failureIsActionable() {
+        setContent(
+            state = PdfOpenState.Idle,
+            rearrangePagesState = RearrangePagesState.Failed(
+                RearrangePagesFailure.InvalidDocument,
+            ),
+        )
+        composeRule.onNodeWithTag("rearrange_pages_error").assertIsDisplayed()
+        composeRule.onNodeWithText("Dismiss").assertIsDisplayed()
+    }
+
+    @Test
     fun openedState_showsNameAndPageCount() {
         setContent(
             PdfOpenState.Opened(
@@ -798,6 +867,12 @@ class QuietPdfAppTest {
         onDeletePages: () -> Unit = {},
         onConfirmPageDeletion: (IntArray) -> Unit = {},
         onCancelPageDeletion: () -> Unit = {},
+        rearrangePagesState: RearrangePagesState = RearrangePagesState.Idle,
+        onRearrangePages: () -> Unit = {},
+        onMoveRearrangedPage: (Int, Int) -> Unit = { _, _ -> },
+        onResetRearrangedPages: () -> Unit = {},
+        onConfirmPageRearrangement: () -> Unit = {},
+        onCancelPageRearrangement: () -> Unit = {},
     ) {
         composeRule.setContent {
             QuietPDFTheme(dynamicColor = false) {
@@ -830,6 +905,12 @@ class QuietPdfAppTest {
                     onDeletePages = onDeletePages,
                     onConfirmPageDeletion = onConfirmPageDeletion,
                     onCancelPageDeletion = onCancelPageDeletion,
+                    rearrangePagesState = rearrangePagesState,
+                    onRearrangePages = onRearrangePages,
+                    onMoveRearrangedPage = onMoveRearrangedPage,
+                    onResetRearrangedPages = onResetRearrangedPages,
+                    onConfirmPageRearrangement = onConfirmPageRearrangement,
+                    onCancelPageRearrangement = onCancelPageRearrangement,
                 )
             }
         }
