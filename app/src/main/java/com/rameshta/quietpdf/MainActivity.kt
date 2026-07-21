@@ -1,5 +1,7 @@
 package com.rameshta.quietpdf
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
@@ -22,6 +24,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -38,6 +41,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.getValue
@@ -45,7 +49,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.selected
@@ -89,8 +96,18 @@ import com.rameshta.quietpdf.pdf.CompressPdfState
 import com.rameshta.quietpdf.pdf.PdfCompressionMode
 import com.rameshta.quietpdf.pdf.PdfCompressionRequest
 import com.rameshta.quietpdf.pdf.TargetFileSize
+import com.rameshta.quietpdf.pdf.ScannerCaptureState
 import com.rameshta.quietpdf.ui.reader.PdfReaderScreen
 import com.rameshta.quietpdf.ui.theme.QuietPDFTheme
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.ImageCapture
+import androidx.camera.core.ImageCaptureException
+import androidx.camera.view.CameraController
+import androidx.camera.view.LifecycleCameraController
+import androidx.camera.view.PreviewView
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import java.io.File
 
 class MainActivity : ComponentActivity() {
     private val viewModel: PdfOpenViewModel by viewModels()
@@ -240,6 +257,17 @@ class MainActivity : ComponentActivity() {
                         viewModel.selectPdfForCompression(uri)
                     }
                 }
+                val createScannedPdf = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.CreateDocument("application/pdf"),
+                ) { uri ->
+                    if (uri != null) viewModel.createScannerPdf(uri)
+                }
+                val cameraPermission = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.RequestPermission(),
+                ) { granted ->
+                    if (granted) viewModel.startScannerCapture()
+                    else viewModel.scannerPermissionDenied()
+                }
 
                 QuietPdfApp(
                     state = viewModel.state,
@@ -327,6 +355,27 @@ class MainActivity : ComponentActivity() {
                     onCancelPdfCompression = viewModel::cancelCompressPdf,
                     onOpenCompressedPdf = viewModel::openCompressedPdf,
                     onDismissPdfCompressionResult = viewModel::clearCompressPdfResult,
+                    scannerCaptureState = viewModel.scannerCaptureState,
+                    onScanDocument = {
+                        if (ContextCompat.checkSelfPermission(
+                                this@MainActivity,
+                                Manifest.permission.CAMERA,
+                            ) == PackageManager.PERMISSION_GRANTED
+                        ) {
+                            viewModel.startScannerCapture()
+                        } else {
+                            cameraPermission.launch(Manifest.permission.CAMERA)
+                        }
+                    },
+                    onBeginScannerCapture = viewModel::beginScannerCapture,
+                    onScannerCaptureSaved = viewModel::scannerCaptureSaved,
+                    onScannerCaptureFailed = viewModel::scannerCaptureFailed,
+                    onScannerCameraUnavailable = viewModel::scannerCameraUnavailable,
+                    onRetakeScannerCapture = viewModel::retakeScannerCapture,
+                    onSaveScannerPdf = { createScannedPdf.launch("QuietPDF-scan.pdf") },
+                    onCancelScannerCapture = viewModel::cancelScannerCapture,
+                    onOpenScannerPdf = viewModel::openScannerPdf,
+                    onDismissScannerResult = viewModel::clearScannerResult,
                 )
             }
         }
@@ -440,6 +489,17 @@ fun QuietPdfApp(
     onCancelPdfCompression: () -> Unit = {},
     onOpenCompressedPdf: () -> Unit = {},
     onDismissPdfCompressionResult: () -> Unit = {},
+    scannerCaptureState: ScannerCaptureState = ScannerCaptureState.Idle,
+    onScanDocument: () -> Unit = {},
+    onBeginScannerCapture: () -> File? = { null },
+    onScannerCaptureSaved: (File) -> Unit = {},
+    onScannerCaptureFailed: (File?) -> Unit = {},
+    onScannerCameraUnavailable: () -> Unit = {},
+    onRetakeScannerCapture: () -> Unit = {},
+    onSaveScannerPdf: () -> Unit = {},
+    onCancelScannerCapture: () -> Unit = {},
+    onOpenScannerPdf: () -> Unit = {},
+    onDismissScannerResult: () -> Unit = {},
 ) {
     if (state is PdfOpenState.Opened) {
         PdfReaderScreen(
@@ -451,6 +511,24 @@ fun QuietPdfApp(
             onToggleBookmark = onToggleBookmark,
             loadTableOfContents = loadTableOfContents,
             inspectHealth = inspectHealth,
+        )
+        return
+    }
+    if (scannerCaptureState is ScannerCaptureState.Camera ||
+        scannerCaptureState is ScannerCaptureState.Capturing ||
+        scannerCaptureState is ScannerCaptureState.PreparingPreview ||
+        scannerCaptureState is ScannerCaptureState.Review ||
+        scannerCaptureState is ScannerCaptureState.CreatingPdf
+    ) {
+        ScannerCaptureScreen(
+            state = scannerCaptureState,
+            onBeginCapture = onBeginScannerCapture,
+            onCaptureSaved = onScannerCaptureSaved,
+            onCaptureFailed = onScannerCaptureFailed,
+            onCameraUnavailable = onScannerCameraUnavailable,
+            onRetake = onRetakeScannerCapture,
+            onSavePdf = onSaveScannerPdf,
+            onCancel = onCancelScannerCapture,
         )
         return
     }
@@ -511,6 +589,10 @@ fun QuietPdfApp(
                     onCancelPdfCompression = onCancelPdfCompression,
                     onOpenCompressedPdf = onOpenCompressedPdf,
                     onDismissPdfCompressionResult = onDismissPdfCompressionResult,
+                    scannerCaptureState = scannerCaptureState,
+                    onScanDocument = onScanDocument,
+                    onOpenScannerPdf = onOpenScannerPdf,
+                    onDismissScannerResult = onDismissScannerResult,
                     contentPadding = PaddingValues(24.dp),
                 )
             }
@@ -1348,6 +1430,10 @@ private fun OpenPdfContent(
     onCancelPdfCompression: () -> Unit,
     onOpenCompressedPdf: () -> Unit,
     onDismissPdfCompressionResult: () -> Unit,
+    scannerCaptureState: ScannerCaptureState,
+    onScanDocument: () -> Unit,
+    onOpenScannerPdf: () -> Unit,
+    onDismissScannerResult: () -> Unit,
     contentPadding: PaddingValues,
 ) {
     val contentScroll = rememberScrollState()
@@ -1360,6 +1446,8 @@ private fun OpenPdfContent(
         rotatePagesState is RotatePagesState.Failed ||
         duplicatePagesState is DuplicatePagesState.Failed ||
         compressPdfState is CompressPdfState.Failed || compressPdfState is CompressPdfState.Completed
+        || scannerCaptureState is ScannerCaptureState.Failed ||
+        scannerCaptureState is ScannerCaptureState.Completed
     LaunchedEffect(hasResult) {
         if (hasResult) {
             withFrameNanos { }
@@ -1539,6 +1627,10 @@ private fun OpenPdfContent(
                 onCompressPdf = onCompressPdf,
                 onOpenCompressedPdf = onOpenCompressedPdf,
                 onDismissPdfCompressionResult = onDismissPdfCompressionResult,
+                scannerCaptureState = scannerCaptureState,
+                onScanDocument = onScanDocument,
+                onOpenScannerPdf = onOpenScannerPdf,
+                onDismissScannerResult = onDismissScannerResult,
             )
             PdfOpenState.Opening -> OpeningContent()
             is PdfOpenState.Opened -> Unit
@@ -1578,6 +1670,10 @@ private fun IdleContent(
     onCompressPdf: () -> Unit,
     onOpenCompressedPdf: () -> Unit,
     onDismissPdfCompressionResult: () -> Unit,
+    scannerCaptureState: ScannerCaptureState,
+    onScanDocument: () -> Unit,
+    onOpenScannerPdf: () -> Unit,
+    onDismissScannerResult: () -> Unit,
 ) {
     Text(
         text = stringResource(R.string.home_title),
@@ -1594,6 +1690,12 @@ private fun IdleContent(
     )
     Spacer(Modifier.height(24.dp))
     OpenButton(label = stringResource(R.string.open_pdf), onClick = onOpenPdf)
+    Spacer(Modifier.height(4.dp))
+    OpenButton(
+        label = stringResource(R.string.scan_document),
+        onClick = onScanDocument,
+        testTag = "scan_document_button",
+    )
     Spacer(Modifier.height(4.dp))
     OpenButton(
         label = stringResource(R.string.images_to_pdf),
@@ -1815,6 +1917,219 @@ private fun IdleContent(
             }
         }
         else -> Unit
+    }
+    when (scannerCaptureState) {
+        is ScannerCaptureState.Failed -> {
+            Spacer(Modifier.height(20.dp))
+            Text(
+                text = stringResource(scannerCaptureState.failure.messageResource),
+                color = MaterialTheme.colorScheme.error,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.testTag("scanner_error"),
+            )
+            TextButton(onClick = onDismissScannerResult) {
+                Text(stringResource(R.string.dismiss))
+            }
+        }
+        is ScannerCaptureState.Completed -> {
+            Spacer(Modifier.height(20.dp))
+            Text(
+                text = stringResource(R.string.scanner_pdf_saved),
+                color = MaterialTheme.colorScheme.primary,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.testTag("scanner_success"),
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(
+                    onClick = onOpenScannerPdf,
+                    modifier = Modifier.testTag("open_scanner_pdf"),
+                ) {
+                    Text(stringResource(R.string.open_pdf))
+                }
+                TextButton(onClick = onDismissScannerResult) {
+                    Text(stringResource(R.string.dismiss))
+                }
+            }
+        }
+        else -> Unit
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ScannerCaptureScreen(
+    state: ScannerCaptureState,
+    onBeginCapture: () -> File?,
+    onCaptureSaved: (File) -> Unit,
+    onCaptureFailed: (File?) -> Unit,
+    onCameraUnavailable: () -> Unit,
+    onRetake: () -> Unit,
+    onSavePdf: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(stringResource(R.string.scanner_title)) },
+                navigationIcon = {
+                    TextButton(onClick = onCancel, modifier = Modifier.testTag("scanner_cancel")) {
+                        Text(stringResource(R.string.cancel))
+                    }
+                },
+            )
+        },
+    ) { padding ->
+        when (state) {
+            ScannerCaptureState.Camera, ScannerCaptureState.Capturing -> ScannerCameraPreview(
+                capturing = state is ScannerCaptureState.Capturing,
+                onBeginCapture = onBeginCapture,
+                onCaptureSaved = onCaptureSaved,
+                onCaptureFailed = onCaptureFailed,
+                onCameraUnavailable = onCameraUnavailable,
+                modifier = Modifier.fillMaxSize().padding(padding),
+            )
+            ScannerCaptureState.PreparingPreview -> Box(
+                modifier = Modifier.fillMaxSize().padding(padding),
+                contentAlignment = Alignment.Center,
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    OperationProgressContent(R.string.scanner_preparing_preview, onCancel = onCancel)
+                }
+            }
+            is ScannerCaptureState.Review -> Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .verticalScroll(rememberScrollState())
+                    .padding(20.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Image(
+                    bitmap = state.preview.bitmap.asImageBitmap(),
+                    contentDescription = stringResource(R.string.scanner_captured_preview),
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 240.dp, max = 560.dp)
+                        .testTag("scanner_review_image"),
+                )
+                Spacer(Modifier.height(16.dp))
+                Text(
+                    text = stringResource(
+                        R.string.scanner_capture_dimensions,
+                        state.preview.sourceWidth,
+                        state.preview.sourceHeight,
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    text = stringResource(R.string.scanner_capture_scope_note),
+                    style = MaterialTheme.typography.bodyMedium,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+                state.saveFailure?.let { failure ->
+                    Text(
+                        text = stringResource(failure.messageResource),
+                        color = MaterialTheme.colorScheme.error,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(top = 12.dp).testTag("scanner_save_error"),
+                    )
+                }
+                Row(
+                    modifier = Modifier.padding(top = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    TextButton(onClick = onRetake, modifier = Modifier.testTag("scanner_retake")) {
+                        Text(stringResource(R.string.scanner_retake))
+                    }
+                    Button(onClick = onSavePdf, modifier = Modifier.testTag("scanner_save_pdf")) {
+                        Text(stringResource(R.string.scanner_save_pdf))
+                    }
+                }
+            }
+            ScannerCaptureState.CreatingPdf -> Box(
+                modifier = Modifier.fillMaxSize().padding(padding),
+                contentAlignment = Alignment.Center,
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    OperationProgressContent(R.string.scanner_creating_pdf, onCancel = onCancel)
+                }
+            }
+            else -> Unit
+        }
+    }
+}
+
+@Composable
+private fun ScannerCameraPreview(
+    capturing: Boolean,
+    onBeginCapture: () -> File?,
+    onCaptureSaved: (File) -> Unit,
+    onCaptureFailed: (File?) -> Unit,
+    onCameraUnavailable: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val controller = remember(context) {
+        LifecycleCameraController(context).apply {
+            cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
+            setEnabledUseCases(CameraController.IMAGE_CAPTURE)
+            imageCaptureMode = ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY
+        }
+    }
+    DisposableEffect(controller, lifecycleOwner) {
+        try {
+            controller.bindToLifecycle(lifecycleOwner)
+        } catch (_: Exception) {
+            onCameraUnavailable()
+        }
+        onDispose { controller.unbind() }
+    }
+    Box(modifier = modifier) {
+        AndroidView(
+            factory = { viewContext ->
+                PreviewView(viewContext).apply {
+                    implementationMode = PreviewView.ImplementationMode.COMPATIBLE
+                    scaleType = PreviewView.ScaleType.FILL_CENTER
+                    this.controller = controller
+                }
+            },
+            modifier = Modifier.fillMaxSize().testTag("scanner_camera_preview"),
+        )
+        Column(
+            modifier = Modifier.align(Alignment.BottomCenter).padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            if (capturing) {
+                CircularProgressIndicator(modifier = Modifier.testTag("scanner_capture_progress"))
+            }
+            Button(
+                enabled = !capturing,
+                onClick = {
+                    val captureFile = onBeginCapture() ?: return@Button
+                    val output = ImageCapture.OutputFileOptions.Builder(captureFile).build()
+                    controller.takePicture(
+                        output,
+                        ContextCompat.getMainExecutor(context),
+                        object : ImageCapture.OnImageSavedCallback {
+                            override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
+                                onCaptureSaved(captureFile)
+                            }
+
+                            override fun onError(exception: ImageCaptureException) {
+                                onCaptureFailed(captureFile)
+                            }
+                        },
+                    )
+                },
+                modifier = Modifier.testTag("scanner_shutter"),
+            ) {
+                Text(stringResource(R.string.scanner_capture))
+            }
+        }
     }
 }
 

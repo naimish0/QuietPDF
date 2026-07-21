@@ -10,6 +10,7 @@ kotlin = "2.4.10"
 composeBom = "2024.09.00"
 androidxPdf = "1.0.0-alpha19"
 pdfiumAndroid = "2.0.2"
+cameraX = "1.6.1"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -18,6 +19,7 @@ androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "j
 androidx-espresso-core = { group = "androidx.test.espresso", name = "espresso-core", version.ref = "espressoCore" }
 androidx-lifecycle-runtime-ktx = { group = "androidx.lifecycle", name = "lifecycle-runtime-ktx", version.ref = "lifecycleRuntimeKtx" }
 androidx-lifecycle-viewmodel-ktx = { group = "androidx.lifecycle", name = "lifecycle-viewmodel-ktx", version.ref = "lifecycleRuntimeKtx" }
+androidx-lifecycle-runtime-compose = { group = "androidx.lifecycle", name = "lifecycle-runtime-compose", version.ref = "lifecycleRuntimeKtx" }
 androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }
 androidx-compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }
 androidx-compose-ui = { group = "androidx.compose.ui", name = "ui" }
@@ -30,6 +32,9 @@ androidx-compose-material3 = { group = "androidx.compose.material3", name = "mat
 androidx-pdf-document-service = { group = "androidx.pdf", name = "pdf-document-service", version.ref = "androidxPdf" }
 pdfium-android = { group = "io.legere", name = "pdfiumandroid", version.ref = "pdfiumAndroid" }
 pdfium-android-core = { group = "io.legere", name = "pdfiumandroid-core", version.ref = "pdfiumAndroid" }
+androidx-camera-camera2 = { group = "androidx.camera", name = "camera-camera2", version.ref = "cameraX" }
+androidx-camera-lifecycle = { group = "androidx.camera", name = "camera-lifecycle", version.ref = "cameraX" }
+androidx-camera-view = { group = "androidx.camera", name = "camera-view", version.ref = "cameraX" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
