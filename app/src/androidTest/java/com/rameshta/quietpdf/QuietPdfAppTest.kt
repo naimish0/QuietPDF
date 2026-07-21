@@ -64,6 +64,10 @@ import com.rameshta.quietpdf.pdf.RemovePasswordFailure
 import com.rameshta.quietpdf.pdf.RemovePasswordState
 import com.rameshta.quietpdf.pdf.ChangePasswordFailure
 import com.rameshta.quietpdf.pdf.ChangePasswordState
+import com.rameshta.quietpdf.pdf.TextWatermarkFailure
+import com.rameshta.quietpdf.pdf.TextWatermarkPreviewResult
+import com.rameshta.quietpdf.pdf.TextWatermarkSettings
+import com.rameshta.quietpdf.pdf.TextWatermarkState
 import com.rameshta.quietpdf.pdf.CompressibleImage
 import com.rameshta.quietpdf.pdf.PdfCompressionMode
 import com.rameshta.quietpdf.pdf.PdfCompressionRequest
@@ -912,6 +916,93 @@ class QuietPdfAppTest {
     }
 
     @Test
+    fun textWatermark_buttonStartsSelection() {
+        val selections = AtomicInteger()
+        setContent(state = PdfOpenState.Idle, onTextWatermark = { selections.incrementAndGet() })
+        composeRule.onNodeWithTag("text_watermark_button").performScrollTo().performClick()
+        assertEquals(1, selections.get())
+    }
+
+    @Test
+    fun textWatermark_showsAccuratePreviewAndReturnsConfiguredSettings() {
+        val selected = AtomicReference<TextWatermarkSettings>()
+        setContent(
+            state = PdfOpenState.Idle,
+            textWatermarkState = TextWatermarkState.Configuring(
+                Uri.parse("content://test/watermark"), "report.pdf", 5,
+            ),
+            renderTextWatermarkPreview = { _, _ ->
+                TextWatermarkPreviewResult.Ready(
+                    Bitmap.createBitmap(500, 700, Bitmap.Config.ARGB_8888),
+                )
+            },
+            onConfirmTextWatermark = selected::set,
+        )
+        composeRule.onNodeWithTag("text_watermark_text").performTextInput("CONFIDENTIAL")
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("text_watermark_preview").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("watermark_horizontal_2").performScrollTo().performClick()
+        composeRule.onNodeWithTag("watermark_vertical_0").performScrollTo().performClick()
+        composeRule.onNodeWithTag("watermark_rotation_1").performScrollTo().performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("text_watermark_confirm").performClick()
+        assertEquals("CONFIDENTIAL", selected.get().text)
+        assertEquals(setOf(0, 1, 2, 3, 4), selected.get().pageIndices)
+        assertEquals(com.rameshta.quietpdf.pdf.TextWatermarkPosition.TopRight, selected.get().position)
+        assertEquals(0, selected.get().rotationDegrees)
+    }
+
+    @Test
+    fun textWatermark_rejectsInvalidPageSelection() {
+        setContent(
+            state = PdfOpenState.Idle,
+            textWatermarkState = TextWatermarkState.Configuring(
+                Uri.parse("content://test/watermark"), "report.pdf", 2,
+            ),
+        )
+        composeRule.onNodeWithTag("text_watermark_text").performTextInput("Draft")
+        composeRule.onNodeWithTag("text_watermark_pages").performTextInput("3")
+        composeRule.onNodeWithText("valid pages", substring = true).assertIsDisplayed()
+        composeRule.onNodeWithTag("text_watermark_confirm").assertIsNotEnabled()
+    }
+
+    @Test
+    fun textWatermark_progressCanBeCancelled() {
+        val cancellations = AtomicInteger()
+        setContent(
+            state = PdfOpenState.Idle,
+            textWatermarkState = TextWatermarkState.Applying(3),
+            onCancelTextWatermark = { cancellations.incrementAndGet() },
+        )
+        composeRule.onNodeWithTag("operation_cancel").performClick()
+        assertEquals(1, cancellations.get())
+    }
+
+    @Test
+    fun textWatermark_resultCanBeOpened() {
+        val opens = AtomicInteger()
+        setContent(
+            state = PdfOpenState.Idle,
+            textWatermarkState = TextWatermarkState.Completed(
+                Uri.parse("content://test/watermarked"), 5, 3,
+            ),
+            onOpenTextWatermarkedPdf = { opens.incrementAndGet() },
+        )
+        composeRule.onNodeWithTag("text_watermark_success").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("open_text_watermarked_pdf").performClick()
+        assertEquals(1, opens.get())
+    }
+
+    @Test
+    fun textWatermark_passwordProtectedFailureIsActionable() {
+        setContent(
+            state = PdfOpenState.Idle,
+            textWatermarkState = TextWatermarkState.Failed(TextWatermarkFailure.PasswordProtected),
+        )
+        composeRule.onNodeWithTag("text_watermark_error").performScrollTo().assertIsDisplayed()
+    }
+
+    @Test
     fun openedState_showsNameAndPageCount() {
         setContent(
             PdfOpenState.Opened(
@@ -1410,6 +1501,14 @@ class QuietPdfAppTest {
         changePasswordState: ChangePasswordState = ChangePasswordState.Idle,
         onChangePassword: () -> Unit = {},
         onConfirmPasswordChange: (CharArray, CharArray) -> Unit = { _, _ -> },
+        textWatermarkState: TextWatermarkState = TextWatermarkState.Idle,
+        onTextWatermark: () -> Unit = {},
+        renderTextWatermarkPreview: suspend (TextWatermarkSettings, Int) -> TextWatermarkPreviewResult = { _, _ ->
+            TextWatermarkPreviewResult.Failed
+        },
+        onConfirmTextWatermark: (TextWatermarkSettings) -> Unit = {},
+        onCancelTextWatermark: () -> Unit = {},
+        onOpenTextWatermarkedPdf: () -> Unit = {},
         scannerCaptureState: ScannerCaptureState = ScannerCaptureState.Idle,
         onScanDocument: () -> Unit = {},
         onRetakeScannerCapture: () -> Unit = {},
@@ -1477,6 +1576,12 @@ class QuietPdfAppTest {
                     changePasswordState = changePasswordState,
                     onChangePassword = onChangePassword,
                     onConfirmPasswordChange = onConfirmPasswordChange,
+                    textWatermarkState = textWatermarkState,
+                    onTextWatermark = onTextWatermark,
+                    renderTextWatermarkPreview = renderTextWatermarkPreview,
+                    onConfirmTextWatermark = onConfirmTextWatermark,
+                    onCancelTextWatermark = onCancelTextWatermark,
+                    onOpenTextWatermarkedPdf = onOpenTextWatermarkedPdf,
                     scannerCaptureState = scannerCaptureState,
                     onScanDocument = onScanDocument,
                     onRetakeScannerCapture = onRetakeScannerCapture,

@@ -119,6 +119,11 @@ import com.rameshta.quietpdf.pdf.ProtectPdfPassword
 import com.rameshta.quietpdf.pdf.ProtectPdfState
 import com.rameshta.quietpdf.pdf.RemovePasswordState
 import com.rameshta.quietpdf.pdf.ChangePasswordState
+import com.rameshta.quietpdf.pdf.TextWatermarkPosition
+import com.rameshta.quietpdf.pdf.TextWatermarkPreviewResult
+import com.rameshta.quietpdf.pdf.TextWatermarkSettings
+import com.rameshta.quietpdf.pdf.TextWatermarkState
+import com.rameshta.quietpdf.pdf.TextWatermarkPageSelection
 import com.rameshta.quietpdf.pdf.PdfCompressionMode
 import com.rameshta.quietpdf.pdf.PdfCompressionRequest
 import com.rameshta.quietpdf.pdf.TargetFileSize
@@ -155,6 +160,7 @@ class MainActivity : ComponentActivity() {
                 var pendingPasswordChange by remember {
                     mutableStateOf<Pair<CharArray, CharArray>?>(null)
                 }
+                var pendingTextWatermark by remember { mutableStateOf<TextWatermarkSettings?>(null) }
                 val picker = rememberLauncherForActivityResult(
                     contract = ActivityResultContracts.OpenDocument(),
                 ) { uri ->
@@ -353,6 +359,22 @@ class MainActivity : ComponentActivity() {
                         viewModel.selectPdfForPasswordChange(uri)
                     }
                 }
+                val createTextWatermarkedPdf = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.CreateDocument("application/pdf"),
+                ) { uri ->
+                    val settings = pendingTextWatermark
+                    pendingTextWatermark = null
+                    if (uri == null || settings == null) viewModel.cancelTextWatermark()
+                    else viewModel.applyTextWatermark(uri, settings)
+                }
+                val textWatermarkPicker = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.OpenDocument(),
+                ) { uri ->
+                    if (uri != null) {
+                        retainReadPermission(uri)
+                        viewModel.selectPdfForTextWatermark(uri)
+                    }
+                }
                 val createScannedPdf = rememberLauncherForActivityResult(
                     contract = ActivityResultContracts.CreateDocument("application/pdf"),
                 ) { uri ->
@@ -501,6 +523,21 @@ class MainActivity : ComponentActivity() {
                         viewModel.cancelChangePassword()
                     },
                     onDismissPasswordChangeResult = viewModel::clearChangePasswordResult,
+                    textWatermarkState = viewModel.textWatermarkState,
+                    onTextWatermark = {
+                        textWatermarkPicker.launch(arrayOf("application/pdf"))
+                    },
+                    renderTextWatermarkPreview = viewModel::renderTextWatermarkPreview,
+                    onConfirmTextWatermark = { settings ->
+                        pendingTextWatermark = settings
+                        createTextWatermarkedPdf.launch("QuietPDF-text-watermark.pdf")
+                    },
+                    onCancelTextWatermark = {
+                        pendingTextWatermark = null
+                        viewModel.cancelTextWatermark()
+                    },
+                    onOpenTextWatermarkedPdf = viewModel::openTextWatermarkedPdf,
+                    onDismissTextWatermarkResult = viewModel::clearTextWatermarkResult,
                     scannerCaptureState = viewModel.scannerCaptureState,
                     onScanDocument = {
                         if (ContextCompat.checkSelfPermission(
@@ -658,6 +695,15 @@ fun QuietPdfApp(
     onConfirmPasswordChange: (CharArray, CharArray) -> Unit = { _, _ -> },
     onCancelPasswordChange: () -> Unit = {},
     onDismissPasswordChangeResult: () -> Unit = {},
+    textWatermarkState: TextWatermarkState = TextWatermarkState.Idle,
+    onTextWatermark: () -> Unit = {},
+    renderTextWatermarkPreview: suspend (TextWatermarkSettings, Int) -> TextWatermarkPreviewResult = { _, _ ->
+        TextWatermarkPreviewResult.Failed
+    },
+    onConfirmTextWatermark: (TextWatermarkSettings) -> Unit = {},
+    onCancelTextWatermark: () -> Unit = {},
+    onOpenTextWatermarkedPdf: () -> Unit = {},
+    onDismissTextWatermarkResult: () -> Unit = {},
     scannerCaptureState: ScannerCaptureState = ScannerCaptureState.Idle,
     onScanDocument: () -> Unit = {},
     onBeginScannerCapture: () -> File? = { null },
@@ -785,6 +831,11 @@ fun QuietPdfApp(
                     onChangePassword = onChangePassword,
                     onCancelPasswordChange = onCancelPasswordChange,
                     onDismissPasswordChangeResult = onDismissPasswordChangeResult,
+                    textWatermarkState = textWatermarkState,
+                    onTextWatermark = onTextWatermark,
+                    onCancelTextWatermark = onCancelTextWatermark,
+                    onOpenTextWatermarkedPdf = onOpenTextWatermarkedPdf,
+                    onDismissTextWatermarkResult = onDismissTextWatermarkResult,
                     scannerCaptureState = scannerCaptureState,
                     onScanDocument = onScanDocument,
                     onOpenScannerPdf = onOpenScannerPdf,
@@ -890,6 +941,15 @@ fun QuietPdfApp(
             currentPasswordError = changePasswordState.currentPasswordError,
             onConfirm = onConfirmPasswordChange,
             onCancel = onCancelPasswordChange,
+        )
+    }
+    if (textWatermarkState is TextWatermarkState.Configuring) {
+        TextWatermarkDialog(
+            documentName = textWatermarkState.displayName,
+            pageCount = textWatermarkState.pageCount,
+            renderPreview = renderTextWatermarkPreview,
+            onConfirm = onConfirmTextWatermark,
+            onCancel = onCancelTextWatermark,
         )
     }
 }
@@ -1255,6 +1315,219 @@ private fun ChangePasswordDialog(
         modifier = Modifier.testTag("change_password_dialog"),
     )
 }
+
+@Composable
+private fun TextWatermarkDialog(
+    documentName: String,
+    pageCount: Int,
+    renderPreview: suspend (TextWatermarkSettings, Int) -> TextWatermarkPreviewResult,
+    onConfirm: (TextWatermarkSettings) -> Unit,
+    onCancel: () -> Unit,
+) {
+    var watermarkText by remember(documentName, pageCount) { mutableStateOf("") }
+    var pageSelection by remember(documentName, pageCount) { mutableStateOf("") }
+    var horizontalPosition by remember(documentName, pageCount) { mutableStateOf(1) }
+    var verticalPosition by remember(documentName, pageCount) { mutableStateOf(1) }
+    var opacity by remember(documentName, pageCount) { mutableStateOf(0.3f) }
+    var rotationIndex by remember(documentName, pageCount) { mutableStateOf(0) }
+    var scale by remember(documentName, pageCount) { mutableStateOf(0.1f) }
+    var previewBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    var previewLoading by remember { mutableStateOf(false) }
+    val selectedPages = remember(pageSelection, pageCount) {
+        TextWatermarkPageSelection.parse(pageSelection, pageCount)
+    }
+    val validSettings = remember(
+        watermarkText,
+        selectedPages,
+        horizontalPosition,
+        verticalPosition,
+        opacity,
+        rotationIndex,
+        scale,
+        pageCount,
+    ) {
+        selectedPages?.let {
+            TextWatermarkSettings(
+                text = watermarkText,
+                pageIndices = it,
+                position = textWatermarkPosition(verticalPosition, horizontalPosition),
+                opacity = opacity,
+                rotationDegrees = listOf(-45, 0, 45)[rotationIndex],
+                scale = scale,
+            )
+        }?.takeIf { it.isValid(pageCount) }
+    }
+    LaunchedEffect(validSettings) {
+        if (validSettings == null) {
+            previewBitmap?.recycle()
+            previewBitmap = null
+            previewLoading = false
+        } else {
+            previewLoading = true
+            when (val result = renderPreview(validSettings, 600)) {
+                is TextWatermarkPreviewResult.Ready -> {
+                    previewBitmap?.takeIf { it !== result.bitmap }?.recycle()
+                    previewBitmap = result.bitmap
+                }
+                else -> {
+                    previewBitmap?.recycle()
+                    previewBitmap = null
+                }
+            }
+            previewLoading = false
+        }
+    }
+    DisposableEffect(Unit) {
+        onDispose { previewBitmap?.recycle() }
+    }
+    AlertDialog(
+        onDismissRequest = onCancel,
+        title = { Text(stringResource(R.string.text_watermark_title)) },
+        text = {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                Text(stringResource(R.string.text_watermark_document_summary, documentName, pageCount))
+                OutlinedTextField(
+                    value = watermarkText,
+                    onValueChange = {
+                        if (it.length <= TextWatermarkSettings.MAX_TEXT_LENGTH &&
+                            it.none(Char::isISOControl)
+                        ) watermarkText = it
+                    },
+                    label = { Text(stringResource(R.string.watermark_text)) },
+                    supportingText = {
+                        Text(stringResource(R.string.text_watermark_text_help, TextWatermarkSettings.MAX_TEXT_LENGTH))
+                    },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().testTag("text_watermark_text"),
+                )
+                OutlinedTextField(
+                    value = pageSelection,
+                    onValueChange = { pageSelection = it },
+                    label = { Text(stringResource(R.string.watermark_pages)) },
+                    supportingText = {
+                        Text(
+                            if (pageSelection.isBlank() || selectedPages != null) {
+                                stringResource(R.string.text_watermark_pages_help, pageCount)
+                            } else stringResource(R.string.text_watermark_pages_invalid)
+                        )
+                    },
+                    isError = pageSelection.isNotBlank() && selectedPages == null,
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                        .testTag("text_watermark_pages"),
+                )
+                LayoutChoiceRow(
+                    label = stringResource(R.string.watermark_horizontal_position),
+                    options = listOf(
+                        stringResource(R.string.position_left),
+                        stringResource(R.string.position_center),
+                        stringResource(R.string.position_right),
+                    ),
+                    selectedIndex = horizontalPosition,
+                    tagPrefix = "watermark_horizontal",
+                    onSelect = { horizontalPosition = it },
+                )
+                LayoutChoiceRow(
+                    label = stringResource(R.string.watermark_vertical_position),
+                    options = listOf(
+                        stringResource(R.string.position_top),
+                        stringResource(R.string.position_middle),
+                        stringResource(R.string.position_bottom),
+                    ),
+                    selectedIndex = verticalPosition,
+                    tagPrefix = "watermark_vertical",
+                    onSelect = { verticalPosition = it },
+                )
+                LayoutChoiceRow(
+                    label = stringResource(R.string.watermark_rotation),
+                    options = listOf("-45°", "0°", "+45°"),
+                    selectedIndex = rotationIndex,
+                    tagPrefix = "watermark_rotation",
+                    onSelect = { rotationIndex = it },
+                )
+                Text(
+                    text = stringResource(R.string.watermark_opacity, (opacity * 100).roundToInt()),
+                    style = MaterialTheme.typography.labelLarge,
+                    modifier = Modifier.padding(top = 12.dp),
+                )
+                Slider(
+                    value = opacity,
+                    onValueChange = { opacity = it },
+                    valueRange = 0.1f..1f,
+                    steps = 8,
+                    modifier = Modifier.testTag("text_watermark_opacity"),
+                )
+                Text(
+                    text = stringResource(R.string.watermark_scale, (scale * 100).roundToInt()),
+                    style = MaterialTheme.typography.labelLarge,
+                )
+                Slider(
+                    value = scale,
+                    onValueChange = { scale = it },
+                    valueRange = 0.05f..0.25f,
+                    steps = 3,
+                    modifier = Modifier.testTag("text_watermark_scale"),
+                )
+                Text(
+                    text = stringResource(
+                        R.string.text_watermark_preview,
+                        (selectedPages?.minOrNull() ?: 0) + 1,
+                    ),
+                    style = MaterialTheme.typography.labelLarge,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+                Box(
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 180.dp, max = 300.dp)
+                        .testTag("text_watermark_preview"),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    when {
+                        previewLoading -> CircularProgressIndicator()
+                        previewBitmap != null -> Image(
+                            bitmap = previewBitmap!!.asImageBitmap(),
+                            contentDescription = stringResource(R.string.text_watermark_preview_description),
+                            contentScale = ContentScale.Fit,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                        else -> Text(
+                            text = stringResource(R.string.text_watermark_preview_prompt),
+                            textAlign = TextAlign.Center,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { validSettings?.let(onConfirm) },
+                enabled = validSettings != null && previewBitmap != null && !previewLoading,
+                modifier = Modifier.testTag("text_watermark_confirm"),
+            ) {
+                Text(stringResource(R.string.save_watermarked_pdf))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onCancel, modifier = Modifier.testTag("text_watermark_cancel")) {
+                Text(stringResource(R.string.cancel))
+            }
+        },
+        modifier = Modifier.testTag("text_watermark_dialog"),
+    )
+}
+
+private fun textWatermarkPosition(vertical: Int, horizontal: Int): TextWatermarkPosition =
+    when (vertical to horizontal) {
+        0 to 0 -> TextWatermarkPosition.TopLeft
+        0 to 1 -> TextWatermarkPosition.TopCenter
+        0 to 2 -> TextWatermarkPosition.TopRight
+        1 to 0 -> TextWatermarkPosition.MiddleLeft
+        1 to 2 -> TextWatermarkPosition.MiddleRight
+        2 to 0 -> TextWatermarkPosition.BottomLeft
+        2 to 1 -> TextWatermarkPosition.BottomCenter
+        2 to 2 -> TextWatermarkPosition.BottomRight
+        else -> TextWatermarkPosition.Center
+    }
 
 @Composable
 private fun DuplicatePagesDialog(
@@ -1903,6 +2176,11 @@ private fun OpenPdfContent(
     onChangePassword: () -> Unit,
     onCancelPasswordChange: () -> Unit,
     onDismissPasswordChangeResult: () -> Unit,
+    textWatermarkState: TextWatermarkState,
+    onTextWatermark: () -> Unit,
+    onCancelTextWatermark: () -> Unit,
+    onOpenTextWatermarkedPdf: () -> Unit,
+    onDismissTextWatermarkResult: () -> Unit,
     scannerCaptureState: ScannerCaptureState,
     onScanDocument: () -> Unit,
     onOpenScannerPdf: () -> Unit,
@@ -1924,6 +2202,8 @@ private fun OpenPdfContent(
         removePasswordState is RemovePasswordState.Completed
         || changePasswordState is ChangePasswordState.Failed ||
         changePasswordState is ChangePasswordState.Completed
+        || textWatermarkState is TextWatermarkState.Failed ||
+        textWatermarkState is TextWatermarkState.Completed
         || scannerCaptureState is ScannerCaptureState.Failed ||
         scannerCaptureState is ScannerCaptureState.Completed
     LaunchedEffect(hasResult) {
@@ -2117,6 +2397,21 @@ private fun OpenPdfContent(
             }
             else -> Unit
         }
+        when (textWatermarkState) {
+            TextWatermarkState.Preparing -> {
+                OperationProgressContent(R.string.text_watermark_preparing)
+                return@Column
+            }
+            is TextWatermarkState.Applying -> {
+                OperationProgressContent(
+                    messageResource = R.string.text_watermark_applying,
+                    argument = textWatermarkState.selectedPageCount,
+                    onCancel = onCancelTextWatermark,
+                )
+                return@Column
+            }
+            else -> Unit
+        }
         when (state) {
             PdfOpenState.Idle -> IdleContent(
                 onOpenPdf = onOpenPdf,
@@ -2158,6 +2453,10 @@ private fun OpenPdfContent(
                 changePasswordState = changePasswordState,
                 onChangePassword = onChangePassword,
                 onDismissPasswordChangeResult = onDismissPasswordChangeResult,
+                textWatermarkState = textWatermarkState,
+                onTextWatermark = onTextWatermark,
+                onOpenTextWatermarkedPdf = onOpenTextWatermarkedPdf,
+                onDismissTextWatermarkResult = onDismissTextWatermarkResult,
                 scannerCaptureState = scannerCaptureState,
                 onScanDocument = onScanDocument,
                 onOpenScannerPdf = onOpenScannerPdf,
@@ -2211,6 +2510,10 @@ private fun IdleContent(
     changePasswordState: ChangePasswordState,
     onChangePassword: () -> Unit,
     onDismissPasswordChangeResult: () -> Unit,
+    textWatermarkState: TextWatermarkState,
+    onTextWatermark: () -> Unit,
+    onOpenTextWatermarkedPdf: () -> Unit,
+    onDismissTextWatermarkResult: () -> Unit,
     scannerCaptureState: ScannerCaptureState,
     onScanDocument: () -> Unit,
     onOpenScannerPdf: () -> Unit,
@@ -2308,6 +2611,12 @@ private fun IdleContent(
         label = stringResource(R.string.change_password),
         onClick = onChangePassword,
         testTag = "change_password_button",
+    )
+    Spacer(Modifier.height(4.dp))
+    OpenButton(
+        label = stringResource(R.string.text_watermark),
+        onClick = onTextWatermark,
+        testTag = "text_watermark_button",
     )
     if (imagesToPdfState is ImagesToPdfState.Failed) {
         Spacer(Modifier.height(20.dp))
@@ -2562,6 +2871,43 @@ private fun IdleContent(
             )
             TextButton(onClick = onDismissPasswordChangeResult) {
                 Text(stringResource(R.string.dismiss))
+            }
+        }
+        else -> Unit
+    }
+    when (textWatermarkState) {
+        is TextWatermarkState.Failed -> {
+            Spacer(Modifier.height(20.dp))
+            Text(
+                text = stringResource(textWatermarkState.failure.messageResource),
+                color = MaterialTheme.colorScheme.error,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.testTag("text_watermark_error"),
+            )
+            TextButton(onClick = onDismissTextWatermarkResult) {
+                Text(stringResource(R.string.dismiss))
+            }
+        }
+        is TextWatermarkState.Completed -> {
+            Spacer(Modifier.height(20.dp))
+            Text(
+                text = stringResource(
+                    R.string.text_watermark_completed,
+                    textWatermarkState.watermarkedPageCount,
+                    textWatermarkState.pageCount,
+                ),
+                color = MaterialTheme.colorScheme.primary,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.testTag("text_watermark_success"),
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(
+                    onClick = onOpenTextWatermarkedPdf,
+                    modifier = Modifier.testTag("open_text_watermarked_pdf"),
+                ) { Text(stringResource(R.string.open_pdf)) }
+                TextButton(onClick = onDismissTextWatermarkResult) {
+                    Text(stringResource(R.string.dismiss))
+                }
             }
         }
         else -> Unit
