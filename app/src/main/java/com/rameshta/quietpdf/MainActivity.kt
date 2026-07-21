@@ -27,6 +27,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -46,6 +47,8 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -65,6 +68,10 @@ import com.rameshta.quietpdf.pdf.ImagePdfPageSize
 import com.rameshta.quietpdf.pdf.ImagePdfScaleMode
 import com.rameshta.quietpdf.pdf.MergePdfItem
 import com.rameshta.quietpdf.pdf.MergePdfState
+import com.rameshta.quietpdf.pdf.SplitPageRange
+import com.rameshta.quietpdf.pdf.SplitPdfMode
+import com.rameshta.quietpdf.pdf.SplitPdfPlanner
+import com.rameshta.quietpdf.pdf.SplitPdfState
 import com.rameshta.quietpdf.ui.reader.PdfReaderScreen
 import com.rameshta.quietpdf.ui.theme.QuietPDFTheme
 
@@ -115,6 +122,23 @@ class MainActivity : ComponentActivity() {
                         viewModel.selectPdfsForMerge(uris)
                     }
                 }
+                val splitOutputFolder = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.OpenDocumentTree(),
+                ) { uri ->
+                    if (uri == null) viewModel.cancelSplitPdf()
+                    else {
+                        retainDirectoryPermission(uri)
+                        viewModel.splitSelectedPdf(uri)
+                    }
+                }
+                val splitPdfPicker = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.OpenDocument(),
+                ) { uri ->
+                    if (uri != null) {
+                        retainReadPermission(uri)
+                        viewModel.selectPdfForSplit(uri)
+                    }
+                }
 
                 QuietPdfApp(
                     state = viewModel.state,
@@ -140,6 +164,14 @@ class MainActivity : ComponentActivity() {
                     onConfirmMerge = { createMergedPdf.launch("QuietPDF-merged.pdf") },
                     onCancelMerge = viewModel::cancelMergePdf,
                     onDismissMergeFailure = viewModel::clearMergePdfFailure,
+                    splitPdfState = viewModel.splitPdfState,
+                    onSplitPdf = { splitPdfPicker.launch(arrayOf("application/pdf")) },
+                    onConfirmSplit = { ranges ->
+                        viewModel.configureSplitPdf(ranges)
+                        splitOutputFolder.launch(null)
+                    },
+                    onCancelSplit = viewModel::cancelSplitPdf,
+                    onDismissSplitResult = viewModel::clearSplitPdfResult,
                 )
             }
         }
@@ -169,6 +201,17 @@ class MainActivity : ComponentActivity() {
             contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
         } catch (_: SecurityException) {
             // Some providers grant temporary access only. Opening can still proceed safely.
+        }
+    }
+
+    private fun retainDirectoryPermission(uri: Uri) {
+        try {
+            contentResolver.takePersistableUriPermission(
+                uri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+            )
+        } catch (_: SecurityException) {
+            // The active picker grant may still be sufficient for this split operation.
         }
     }
 
@@ -204,6 +247,11 @@ fun QuietPdfApp(
     onConfirmMerge: () -> Unit = {},
     onCancelMerge: () -> Unit = {},
     onDismissMergeFailure: () -> Unit = {},
+    splitPdfState: SplitPdfState = SplitPdfState.Idle,
+    onSplitPdf: () -> Unit = {},
+    onConfirmSplit: (List<SplitPageRange>) -> Unit = {},
+    onCancelSplit: () -> Unit = {},
+    onDismissSplitResult: () -> Unit = {},
 ) {
     if (state is PdfOpenState.Opened) {
         PdfReaderScreen(
@@ -246,6 +294,10 @@ fun QuietPdfApp(
                     onMergePdfs = onMergePdfs,
                     onDismissMergeFailure = onDismissMergeFailure,
                     onCancelMerge = onCancelMerge,
+                    splitPdfState = splitPdfState,
+                    onSplitPdf = onSplitPdf,
+                    onCancelSplit = onCancelSplit,
+                    onDismissSplitResult = onDismissSplitResult,
                     contentPadding = PaddingValues(24.dp),
                 )
             }
@@ -267,6 +319,103 @@ fun QuietPdfApp(
             onCancel = onCancelMerge,
         )
     }
+    if (splitPdfState is SplitPdfState.Configuring) {
+        SplitPdfDialog(
+            documentName = splitPdfState.displayName,
+            pageCount = splitPdfState.pageCount,
+            onConfirm = onConfirmSplit,
+            onCancel = onCancelSplit,
+        )
+    }
+}
+
+@Composable
+private fun SplitPdfDialog(
+    documentName: String,
+    pageCount: Int,
+    onConfirm: (List<SplitPageRange>) -> Unit,
+    onCancel: () -> Unit,
+) {
+    var mode by remember(documentName, pageCount) { mutableStateOf(SplitPdfMode.EachPage) }
+    var customRanges by remember(documentName, pageCount) { mutableStateOf("") }
+    var everyPages by remember(documentName, pageCount) { mutableStateOf("") }
+    val plan = SplitPdfPlanner.createPlan(mode, pageCount, customRanges, everyPages)
+    AlertDialog(
+        onDismissRequest = onCancel,
+        title = { Text(stringResource(R.string.split_pdf_options_title)) },
+        text = {
+            Column {
+                Text(stringResource(R.string.split_pdf_document_summary, documentName, pageCount))
+                LayoutChoiceRow(
+                    label = stringResource(R.string.split_pdf_mode),
+                    options = listOf(
+                        stringResource(R.string.split_pdf_each_page),
+                        stringResource(R.string.split_pdf_custom_ranges),
+                        stringResource(R.string.split_pdf_every_pages),
+                    ),
+                    selectedIndex = mode.ordinal,
+                    tagPrefix = "split_mode",
+                    onSelect = { mode = SplitPdfMode.entries[it] },
+                )
+                when (mode) {
+                    SplitPdfMode.EachPage -> {
+                        Text(stringResource(R.string.split_pdf_each_page_description))
+                    }
+                    SplitPdfMode.CustomRanges -> {
+                        OutlinedTextField(
+                            value = customRanges,
+                            onValueChange = { customRanges = it },
+                            label = { Text(stringResource(R.string.split_pdf_ranges_label)) },
+                            supportingText = {
+                                Text(stringResource(R.string.split_pdf_ranges_help, pageCount))
+                            },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth().testTag("split_ranges_input"),
+                        )
+                    }
+                    SplitPdfMode.EveryPages -> {
+                        OutlinedTextField(
+                            value = everyPages,
+                            onValueChange = { everyPages = it.filter(Char::isDigit) },
+                            label = { Text(stringResource(R.string.split_pdf_every_label)) },
+                            supportingText = {
+                                Text(stringResource(R.string.split_pdf_every_help, pageCount - 1))
+                            },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth().testTag("split_every_input"),
+                        )
+                    }
+                }
+                if (plan != null) {
+                    Text(
+                        text = stringResource(R.string.split_pdf_output_count, plan.size),
+                        style = MaterialTheme.typography.labelLarge,
+                        modifier = Modifier.padding(top = 12.dp).testTag("split_output_count"),
+                    )
+                } else if (mode != SplitPdfMode.EachPage) {
+                    Text(
+                        text = stringResource(R.string.split_pdf_invalid_plan),
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(top = 12.dp).testTag("split_plan_error"),
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { plan?.let(onConfirm) },
+                enabled = plan != null,
+                modifier = Modifier.testTag("split_confirm"),
+            ) { Text(stringResource(R.string.choose_output_folder)) }
+        },
+        dismissButton = {
+            TextButton(onClick = onCancel, modifier = Modifier.testTag("split_cancel")) {
+                Text(stringResource(R.string.cancel))
+            }
+        },
+        modifier = Modifier.testTag("split_pdf_dialog"),
+    )
 }
 
 @Composable
@@ -449,6 +598,10 @@ private fun OpenPdfContent(
     onMergePdfs: () -> Unit,
     onDismissMergeFailure: () -> Unit,
     onCancelMerge: () -> Unit,
+    splitPdfState: SplitPdfState,
+    onSplitPdf: () -> Unit,
+    onCancelSplit: () -> Unit,
+    onDismissSplitResult: () -> Unit,
     contentPadding: PaddingValues,
 ) {
     Column(
@@ -474,6 +627,22 @@ private fun OpenPdfContent(
             }
             else -> Unit
         }
+        when (splitPdfState) {
+            SplitPdfState.Preparing -> {
+                OperationProgressContent(R.string.split_pdf_preparing)
+                return@Column
+            }
+            is SplitPdfState.Splitting -> {
+                OperationProgressContent(
+                    messageResource = R.string.split_pdf_splitting,
+                    firstArgument = splitPdfState.completedOutputs,
+                    secondArgument = splitPdfState.totalOutputs,
+                    onCancel = onCancelSplit,
+                )
+                return@Column
+            }
+            else -> Unit
+        }
         when (state) {
             PdfOpenState.Idle -> IdleContent(
                 onOpenPdf = onOpenPdf,
@@ -483,6 +652,9 @@ private fun OpenPdfContent(
                 mergePdfState = mergePdfState,
                 onMergePdfs = onMergePdfs,
                 onDismissMergeFailure = onDismissMergeFailure,
+                splitPdfState = splitPdfState,
+                onSplitPdf = onSplitPdf,
+                onDismissSplitResult = onDismissSplitResult,
             )
             PdfOpenState.Opening -> OpeningContent()
             is PdfOpenState.Opened -> Unit
@@ -500,6 +672,9 @@ private fun IdleContent(
     mergePdfState: MergePdfState,
     onMergePdfs: () -> Unit,
     onDismissMergeFailure: () -> Unit,
+    splitPdfState: SplitPdfState,
+    onSplitPdf: () -> Unit,
+    onDismissSplitResult: () -> Unit,
 ) {
     Text(
         text = stringResource(R.string.home_title),
@@ -528,6 +703,12 @@ private fun IdleContent(
         onClick = onMergePdfs,
         testTag = "merge_pdf_button",
     )
+    Spacer(Modifier.height(12.dp))
+    OpenButton(
+        label = stringResource(R.string.split_pdf),
+        onClick = onSplitPdf,
+        testTag = "split_pdf_button",
+    )
     if (imagesToPdfState is ImagesToPdfState.Failed) {
         Spacer(Modifier.height(20.dp))
         Text(
@@ -552,12 +733,41 @@ private fun IdleContent(
             Text(stringResource(R.string.dismiss))
         }
     }
+    when (splitPdfState) {
+        is SplitPdfState.Failed -> {
+            Spacer(Modifier.height(20.dp))
+            Text(
+                text = stringResource(splitPdfState.failure.messageResource),
+                color = MaterialTheme.colorScheme.error,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.testTag("split_pdf_error"),
+            )
+            TextButton(onClick = onDismissSplitResult) {
+                Text(stringResource(R.string.dismiss))
+            }
+        }
+        is SplitPdfState.Completed -> {
+            Spacer(Modifier.height(20.dp))
+            Text(
+                text = stringResource(R.string.split_pdf_completed, splitPdfState.outputCount),
+                color = MaterialTheme.colorScheme.primary,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.testTag("split_pdf_success"),
+            )
+            TextButton(onClick = onDismissSplitResult) {
+                Text(stringResource(R.string.dismiss))
+            }
+        }
+        else -> Unit
+    }
 }
 
 @Composable
 private fun OperationProgressContent(
     messageResource: Int,
     argument: Int? = null,
+    firstArgument: Int? = null,
+    secondArgument: Int? = null,
     onCancel: (() -> Unit)? = null,
 ) {
     CircularProgressIndicator(
@@ -565,8 +775,13 @@ private fun OperationProgressContent(
     )
     Spacer(Modifier.height(20.dp))
     Text(
-        text = if (argument == null) stringResource(messageResource)
-        else stringResource(messageResource, argument),
+        text = when {
+            firstArgument != null && secondArgument != null -> {
+                stringResource(messageResource, firstArgument, secondArgument)
+            }
+            argument != null -> stringResource(messageResource, argument)
+            else -> stringResource(messageResource)
+        },
         style = MaterialTheme.typography.titleMedium,
         textAlign = TextAlign.Center,
     )
