@@ -76,6 +76,12 @@ import com.rameshta.quietpdf.pdf.WatermarkImageInfo
 import com.rameshta.quietpdf.pdf.EmbeddedImagePreview
 import com.rameshta.quietpdf.pdf.ExtractImagesAnalysis
 import com.rameshta.quietpdf.pdf.ExtractImagesState
+import com.rameshta.quietpdf.pdf.FillFormsAnalysis
+import com.rameshta.quietpdf.pdf.FillFormsFailure
+import com.rameshta.quietpdf.pdf.FillFormsState
+import com.rameshta.quietpdf.pdf.FormFieldDescriptor
+import com.rameshta.quietpdf.pdf.FormFieldKind
+import com.rameshta.quietpdf.pdf.FormFieldUpdate
 import com.rameshta.quietpdf.pdf.CompressibleImage
 import com.rameshta.quietpdf.pdf.PdfCompressionMode
 import com.rameshta.quietpdf.pdf.PdfCompressionRequest
@@ -1110,6 +1116,57 @@ class QuietPdfAppTest {
     }
 
     @Test
+    fun fillForms_buttonStartsPdfSelection() {
+        val selections = AtomicInteger()
+        setContent(state = PdfOpenState.Idle, onFillForms = { selections.incrementAndGet() })
+        composeRule.onNodeWithTag("fill_forms_button").performScrollTo().performClick()
+        assertEquals(1, selections.get())
+    }
+
+    @Test
+    fun fillForms_requiredTextAndSupportedControlsReturnOnlyChangedValues() {
+        val submitted = AtomicReference<List<FormFieldUpdate>>()
+        setContent(
+            state = PdfOpenState.Idle,
+            fillFormsState = FillFormsState.Configuring(
+                Uri.parse("content://test/form"), "application.pdf",
+                FillFormsAnalysis(1, listOf(
+                    FormFieldDescriptor("name", "Full name", 1, FormFieldKind.Text,
+                        listOf(""), required = true, maxLength = 40),
+                    FormFieldDescriptor("accept", "Accept terms", 1, FormFieldKind.CheckBox,
+                        listOf("false")),
+                    FormFieldDescriptor("contact", "Contact", 1, FormFieldKind.Radio,
+                        listOf(""), listOf("Email", "Phone"), listOf("email", "phone")),
+                ), 0),
+            ),
+            onConfirmFormFilling = submitted::set,
+        )
+        composeRule.onNodeWithTag("fill_forms_save").assertIsNotEnabled()
+        composeRule.onNodeWithTag("form_text_0").performTextInput("Ada Lovelace")
+        composeRule.onNodeWithTag("form_checkbox_1").performClick()
+        composeRule.onNodeWithTag("form_option_2_0").performScrollTo().performClick()
+        composeRule.onNodeWithTag("fill_forms_save").performClick()
+        assertEquals(
+            listOf(
+                FormFieldUpdate("name", listOf("Ada Lovelace")),
+                FormFieldUpdate("accept", listOf("true")),
+                FormFieldUpdate("contact", listOf("email")),
+            ),
+            submitted.get(),
+        )
+    }
+
+    @Test
+    fun fillForms_unsupportedFailureIsActionable() {
+        setContent(
+            state = PdfOpenState.Idle,
+            fillFormsState = FillFormsState.Failed(FillFormsFailure.UnsupportedForm),
+        )
+        composeRule.onNodeWithTag("fill_forms_error").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("visual overlays", substring = true).assertIsDisplayed()
+    }
+
+    @Test
     fun openedState_showsNameAndPageCount() {
         setContent(
             PdfOpenState.Opened(
@@ -1627,6 +1684,9 @@ class QuietPdfAppTest {
         onExtractImages: () -> Unit = {},
         onSaveSelectedImages: (Set<Int>) -> Unit = {},
         onSaveAllImages: (Set<Int>) -> Unit = {},
+        fillFormsState: FillFormsState = FillFormsState.Idle,
+        onFillForms: () -> Unit = {},
+        onConfirmFormFilling: (List<FormFieldUpdate>) -> Unit = {},
         scannerCaptureState: ScannerCaptureState = ScannerCaptureState.Idle,
         onScanDocument: () -> Unit = {},
         onRetakeScannerCapture: () -> Unit = {},
@@ -1709,6 +1769,9 @@ class QuietPdfAppTest {
                     onExtractImages = onExtractImages,
                     onSaveSelectedImages = onSaveSelectedImages,
                     onSaveAllImages = onSaveAllImages,
+                    fillFormsState = fillFormsState,
+                    onFillForms = onFillForms,
+                    onConfirmFormFilling = onConfirmFormFilling,
                     scannerCaptureState = scannerCaptureState,
                     onScanDocument = onScanDocument,
                     onRetakeScannerCapture = onRetakeScannerCapture,

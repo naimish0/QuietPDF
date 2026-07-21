@@ -135,6 +135,12 @@ import com.rameshta.quietpdf.pdf.ImageWatermarkState
 import com.rameshta.quietpdf.pdf.EmbeddedImagePreview
 import com.rameshta.quietpdf.pdf.ExtractImagesDestination
 import com.rameshta.quietpdf.pdf.ExtractImagesState
+import com.rameshta.quietpdf.pdf.FillFormsState
+import com.rameshta.quietpdf.pdf.FillFormsAnalysis
+import com.rameshta.quietpdf.pdf.FormFieldDescriptor
+import com.rameshta.quietpdf.pdf.FormFieldKind
+import com.rameshta.quietpdf.pdf.FormFieldUpdate
+import com.rameshta.quietpdf.pdf.FillFormsEngine
 import com.rameshta.quietpdf.pdf.PdfCompressionMode
 import com.rameshta.quietpdf.pdf.PdfCompressionRequest
 import com.rameshta.quietpdf.pdf.TargetFileSize
@@ -174,6 +180,7 @@ class MainActivity : ComponentActivity() {
                 var pendingTextWatermark by remember { mutableStateOf<TextWatermarkSettings?>(null) }
                 var pendingImageWatermark by remember { mutableStateOf<ImageWatermarkSettings?>(null) }
                 var pendingExtractedImages by remember { mutableStateOf<Set<Int>?>(null) }
+                var pendingFormUpdates by remember { mutableStateOf<List<FormFieldUpdate>?>(null) }
                 val picker = rememberLauncherForActivityResult(
                     contract = ActivityResultContracts.OpenDocument(),
                 ) { uri ->
@@ -439,6 +446,22 @@ class MainActivity : ComponentActivity() {
                         viewModel.selectPdfForImageExtraction(uri)
                     }
                 }
+                val createFilledFormPdf = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.CreateDocument("application/pdf"),
+                ) { uri ->
+                    val updates = pendingFormUpdates
+                    pendingFormUpdates = null
+                    if (uri == null || updates == null) viewModel.cancelFormFilling()
+                    else viewModel.fillSelectedPdfForm(uri, updates)
+                }
+                val fillFormsPdfPicker = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.OpenDocument(),
+                ) { uri ->
+                    if (uri != null) {
+                        retainReadPermission(uri)
+                        viewModel.selectPdfForFormFilling(uri)
+                    }
+                }
                 val createScannedPdf = rememberLauncherForActivityResult(
                     contract = ActivityResultContracts.CreateDocument("application/pdf"),
                 ) { uri ->
@@ -662,6 +685,18 @@ class MainActivity : ComponentActivity() {
                         viewModel.cancelImageExtraction()
                     },
                     onDismissExtractImagesResult = viewModel::clearExtractImagesResult,
+                    fillFormsState = viewModel.fillFormsState,
+                    onFillForms = { fillFormsPdfPicker.launch(arrayOf("application/pdf")) },
+                    onConfirmFormFilling = { updates ->
+                        pendingFormUpdates = updates
+                        createFilledFormPdf.launch("QuietPDF-filled-form.pdf")
+                    },
+                    onCancelFormFilling = {
+                        pendingFormUpdates = null
+                        viewModel.cancelFormFilling()
+                    },
+                    onOpenFilledFormPdf = viewModel::openFilledFormPdf,
+                    onDismissFillFormsResult = viewModel::clearFillFormsResult,
                     scannerCaptureState = viewModel.scannerCaptureState,
                     onScanDocument = {
                         if (ContextCompat.checkSelfPermission(
@@ -846,6 +881,12 @@ fun QuietPdfApp(
     onShareExtractedImages: (Set<Int>) -> Unit = {},
     onCancelImageExtraction: () -> Unit = {},
     onDismissExtractImagesResult: () -> Unit = {},
+    fillFormsState: FillFormsState = FillFormsState.Idle,
+    onFillForms: () -> Unit = {},
+    onConfirmFormFilling: (List<FormFieldUpdate>) -> Unit = {},
+    onCancelFormFilling: () -> Unit = {},
+    onOpenFilledFormPdf: () -> Unit = {},
+    onDismissFillFormsResult: () -> Unit = {},
     scannerCaptureState: ScannerCaptureState = ScannerCaptureState.Idle,
     onScanDocument: () -> Unit = {},
     onBeginScannerCapture: () -> File? = { null },
@@ -987,6 +1028,11 @@ fun QuietPdfApp(
                     onExtractImages = onExtractImages,
                     onCancelImageExtraction = onCancelImageExtraction,
                     onDismissExtractImagesResult = onDismissExtractImagesResult,
+                    fillFormsState = fillFormsState,
+                    onFillForms = onFillForms,
+                    onCancelFormFilling = onCancelFormFilling,
+                    onOpenFilledFormPdf = onOpenFilledFormPdf,
+                    onDismissFillFormsResult = onDismissFillFormsResult,
                     scannerCaptureState = scannerCaptureState,
                     onScanDocument = onScanDocument,
                     onOpenScannerPdf = onOpenScannerPdf,
@@ -1146,6 +1192,14 @@ fun QuietPdfApp(
             onExportZip = onExportImagesZip,
             onShare = onShareExtractedImages,
             onCancel = onCancelImageExtraction,
+        )
+    }
+    if (fillFormsState is FillFormsState.Configuring) {
+        FillFormsDialog(
+            documentName = fillFormsState.displayName,
+            analysis = fillFormsState.analysis,
+            onConfirm = onConfirmFormFilling,
+            onCancel = onCancelFormFilling,
         )
     }
 }
@@ -1995,6 +2049,202 @@ private fun ExtractImagesDialog(
 }
 
 @Composable
+private fun FillFormsDialog(
+    documentName: String,
+    analysis: FillFormsAnalysis,
+    onConfirm: (List<FormFieldUpdate>) -> Unit,
+    onCancel: () -> Unit,
+) {
+    var values by remember(analysis) {
+        mutableStateOf(analysis.fields.associate { it.id to it.values })
+    }
+    val writableFields = analysis.fields.filterNot(FormFieldDescriptor::readOnly)
+    val changedFields = writableFields.filter { field -> values[field.id].orEmpty() != field.values }
+    val valid = changedFields.isNotEmpty() && writableFields.all { field ->
+        validFormValue(field, values[field.id].orEmpty())
+    }
+    fun update(field: FormFieldDescriptor, newValues: List<String>) {
+        values = values + (field.id to newValues)
+    }
+    AlertDialog(
+        onDismissRequest = onCancel,
+        title = { Text(stringResource(R.string.fill_forms_title)) },
+        text = {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                Text(stringResource(
+                    R.string.fill_forms_summary,
+                    documentName,
+                    analysis.fields.size,
+                ))
+                if (analysis.unsupportedFieldCount > 0) {
+                    Text(
+                        stringResource(
+                            R.string.fill_forms_unsupported_count,
+                            analysis.unsupportedFieldCount,
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
+                }
+                analysis.fields.forEachIndexed { index, field ->
+                    Column(
+                        modifier = Modifier.fillMaxWidth().padding(top = 16.dp)
+                            .testTag("form_field_$index"),
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(field.label, fontWeight = FontWeight.SemiBold)
+                            field.pageNumber?.let { page ->
+                                Text(
+                                    stringResource(R.string.fill_forms_page, page),
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                            }
+                        }
+                        if (field.required || field.readOnly) {
+                            Text(
+                                buildString {
+                                    if (field.required) append(stringResource(R.string.fill_forms_required))
+                                    if (field.required && field.readOnly) append(" · ")
+                                    if (field.readOnly) append(stringResource(R.string.fill_forms_read_only))
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        when (field.kind) {
+                            FormFieldKind.Text -> OutlinedTextField(
+                                value = values[field.id]?.singleOrNull().orEmpty(),
+                                onValueChange = { candidate ->
+                                    if (candidate.none(Char::isISOControl) &&
+                                        (field.maxLength <= 0 || candidate.length <= field.maxLength)
+                                    ) update(field, listOf(candidate))
+                                },
+                                enabled = !field.readOnly,
+                                label = { Text(stringResource(R.string.fill_forms_text_value)) },
+                                minLines = if (field.multiline) 3 else 1,
+                                maxLines = if (field.multiline) 6 else 1,
+                                visualTransformation = if (field.password) {
+                                    PasswordVisualTransformation()
+                                } else androidx.compose.ui.text.input.VisualTransformation.None,
+                                isError = !field.readOnly && !validFormValue(
+                                    field, values[field.id].orEmpty(),
+                                ),
+                                modifier = Modifier.fillMaxWidth().testTag("form_text_$index"),
+                            )
+                            FormFieldKind.CheckBox -> Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Switch(
+                                    checked = values[field.id]?.singleOrNull() == FillFormsEngine.TRUE_VALUE,
+                                    onCheckedChange = if (!field.readOnly) { checked ->
+                                        update(field, listOf(if (checked) {
+                                            FillFormsEngine.TRUE_VALUE
+                                        } else FillFormsEngine.FALSE_VALUE))
+                                    } else null,
+                                    modifier = Modifier.testTag("form_checkbox_$index"),
+                                )
+                                Text(
+                                    stringResource(R.string.fill_forms_checked),
+                                    modifier = Modifier.padding(start = 8.dp),
+                                )
+                            }
+                            FormFieldKind.Radio, FormFieldKind.ComboBox, FormFieldKind.ListBox -> {
+                                if (field.kind == FormFieldKind.ComboBox && field.editableChoice) {
+                                    OutlinedTextField(
+                                        value = values[field.id]?.singleOrNull().orEmpty(),
+                                        onValueChange = { candidate ->
+                                            if (candidate.none(Char::isISOControl)) {
+                                                update(field, listOf(candidate))
+                                            }
+                                        },
+                                        enabled = !field.readOnly,
+                                        label = { Text(stringResource(R.string.fill_forms_text_value)) },
+                                        singleLine = true,
+                                        modifier = Modifier.fillMaxWidth().testTag("form_choice_text_$index"),
+                                    )
+                                } else {
+                                    field.options.forEachIndexed { optionIndex, option ->
+                                        val optionValue = field.optionValues[optionIndex]
+                                        val selected = optionValue in values[field.id].orEmpty()
+                                        FilterChip(
+                                            selected = selected,
+                                            onClick = {
+                                                if (!field.readOnly) {
+                                                    val next = if (field.kind == FormFieldKind.ListBox &&
+                                                        field.multiSelect
+                                                    ) {
+                                                        if (selected) values[field.id].orEmpty() - optionValue
+                                                        else values[field.id].orEmpty() + optionValue
+                                                    } else listOf(optionValue)
+                                                    update(field, next)
+                                                }
+                                            },
+                                            enabled = !field.readOnly,
+                                            label = { Text(option) },
+                                            modifier = Modifier.padding(end = 6.dp)
+                                                .testTag("form_option_${index}_$optionIndex"),
+                                        )
+                                    }
+                                    if (!field.required && field.kind != FormFieldKind.ListBox &&
+                                        !field.readOnly
+                                    ) {
+                                        TextButton(
+                                            onClick = { update(field, listOf("")) },
+                                            modifier = Modifier.testTag("form_clear_$index"),
+                                        ) { Text(stringResource(R.string.fill_forms_clear)) }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    onConfirm(changedFields.map { field ->
+                        FormFieldUpdate(field.id, values[field.id].orEmpty())
+                    })
+                },
+                enabled = valid,
+                modifier = Modifier.testTag("fill_forms_save"),
+            ) { Text(stringResource(R.string.fill_forms_save)) }
+        },
+        dismissButton = {
+            TextButton(onClick = onCancel, modifier = Modifier.testTag("fill_forms_cancel")) {
+                Text(stringResource(R.string.cancel))
+            }
+        },
+        modifier = Modifier.testTag("fill_forms_dialog"),
+    )
+}
+
+private fun validFormValue(field: FormFieldDescriptor, values: List<String>): Boolean = when (field.kind) {
+    FormFieldKind.Text -> values.size == 1 &&
+        (field.maxLength <= 0 || values.single().length <= field.maxLength) &&
+        (!field.required || values.single().isNotBlank()) && values.single().none(Char::isISOControl)
+    FormFieldKind.CheckBox -> values.size == 1 &&
+        values.single() in setOf(FillFormsEngine.TRUE_VALUE, FillFormsEngine.FALSE_VALUE) &&
+        (!field.required || values.single() == FillFormsEngine.TRUE_VALUE)
+    FormFieldKind.Radio -> values.size == 1 &&
+        (values.single().isEmpty() && !field.required || values.single() in field.optionValues)
+    FormFieldKind.ComboBox -> values.size == 1 &&
+        (values.single().isEmpty() && !field.required ||
+            field.editableChoice || values.single() in field.optionValues) &&
+        (!field.required || values.single().isNotBlank()) && values.single().none(Char::isISOControl)
+    FormFieldKind.ListBox -> values.distinct().size == values.size &&
+        (field.multiSelect || values.size <= 1) && values.all { it in field.optionValues } &&
+        (!field.required || values.isNotEmpty())
+}
+
+@Composable
 private fun DuplicatePagesDialog(
     documentName: String,
     pageCount: Int,
@@ -2655,6 +2905,11 @@ private fun OpenPdfContent(
     onExtractImages: () -> Unit,
     onCancelImageExtraction: () -> Unit,
     onDismissExtractImagesResult: () -> Unit,
+    fillFormsState: FillFormsState,
+    onFillForms: () -> Unit,
+    onCancelFormFilling: () -> Unit,
+    onOpenFilledFormPdf: () -> Unit,
+    onDismissFillFormsResult: () -> Unit,
     scannerCaptureState: ScannerCaptureState,
     onScanDocument: () -> Unit,
     onOpenScannerPdf: () -> Unit,
@@ -2682,6 +2937,7 @@ private fun OpenPdfContent(
         imageWatermarkState is ImageWatermarkState.Completed
         || extractImagesState is ExtractImagesState.Failed ||
         extractImagesState is ExtractImagesState.Completed
+        || fillFormsState is FillFormsState.Failed || fillFormsState is FillFormsState.Completed
         || scannerCaptureState is ScannerCaptureState.Failed ||
         scannerCaptureState is ScannerCaptureState.Completed
     LaunchedEffect(hasResult) {
@@ -2932,6 +3188,21 @@ private fun OpenPdfContent(
             }
             else -> Unit
         }
+        when (fillFormsState) {
+            FillFormsState.Preparing -> {
+                OperationProgressContent(R.string.fill_forms_preparing)
+                return@Column
+            }
+            is FillFormsState.Saving -> {
+                OperationProgressContent(
+                    R.string.fill_forms_saving,
+                    argument = fillFormsState.fieldCount,
+                    onCancel = onCancelFormFilling,
+                )
+                return@Column
+            }
+            else -> Unit
+        }
         when (state) {
             PdfOpenState.Idle -> IdleContent(
                 onOpenPdf = onOpenPdf,
@@ -2984,6 +3255,10 @@ private fun OpenPdfContent(
                 extractImagesState = extractImagesState,
                 onExtractImages = onExtractImages,
                 onDismissExtractImagesResult = onDismissExtractImagesResult,
+                fillFormsState = fillFormsState,
+                onFillForms = onFillForms,
+                onOpenFilledFormPdf = onOpenFilledFormPdf,
+                onDismissFillFormsResult = onDismissFillFormsResult,
                 scannerCaptureState = scannerCaptureState,
                 onScanDocument = onScanDocument,
                 onOpenScannerPdf = onOpenScannerPdf,
@@ -3048,6 +3323,10 @@ private fun IdleContent(
     extractImagesState: ExtractImagesState,
     onExtractImages: () -> Unit,
     onDismissExtractImagesResult: () -> Unit,
+    fillFormsState: FillFormsState,
+    onFillForms: () -> Unit,
+    onOpenFilledFormPdf: () -> Unit,
+    onDismissFillFormsResult: () -> Unit,
     scannerCaptureState: ScannerCaptureState,
     onScanDocument: () -> Unit,
     onOpenScannerPdf: () -> Unit,
@@ -3163,6 +3442,12 @@ private fun IdleContent(
         label = stringResource(R.string.extract_images),
         onClick = onExtractImages,
         testTag = "extract_images_button",
+    )
+    Spacer(Modifier.height(4.dp))
+    OpenButton(
+        label = stringResource(R.string.fill_forms),
+        onClick = onFillForms,
+        testTag = "fill_forms_button",
     )
     if (imagesToPdfState is ImagesToPdfState.Failed) {
         Spacer(Modifier.height(20.dp))
@@ -3523,6 +3808,43 @@ private fun IdleContent(
             )
             TextButton(onClick = onDismissExtractImagesResult) {
                 Text(stringResource(R.string.dismiss))
+            }
+        }
+        else -> Unit
+    }
+    when (fillFormsState) {
+        is FillFormsState.Failed -> {
+            Spacer(Modifier.height(20.dp))
+            Text(
+                text = stringResource(fillFormsState.failure.messageResource),
+                color = MaterialTheme.colorScheme.error,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.testTag("fill_forms_error"),
+            )
+            TextButton(onClick = onDismissFillFormsResult) {
+                Text(stringResource(R.string.dismiss))
+            }
+        }
+        is FillFormsState.Completed -> {
+            Spacer(Modifier.height(20.dp))
+            Text(
+                text = stringResource(
+                    R.string.fill_forms_completed,
+                    fillFormsState.updatedFieldCount,
+                    fillFormsState.pageCount,
+                ),
+                color = MaterialTheme.colorScheme.primary,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.testTag("fill_forms_success"),
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(
+                    onClick = onOpenFilledFormPdf,
+                    modifier = Modifier.testTag("open_filled_form_pdf"),
+                ) { Text(stringResource(R.string.open_pdf)) }
+                TextButton(onClick = onDismissFillFormsResult) {
+                    Text(stringResource(R.string.dismiss))
+                }
             }
         }
         else -> Unit
