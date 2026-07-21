@@ -6,6 +6,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.test.click
 import androidx.compose.ui.test.doubleClick
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
@@ -157,6 +158,36 @@ class QuietPdfAppTest {
         composeRule.waitForIdle()
 
         assertTrue("Reader modes rendered too many pages", renderCount.get() < 30)
+    }
+
+    @Test
+    fun fullscreen_autoHidesChromeAndTapRestoresIt() {
+        setContent(
+            PdfOpenState.Opened(
+                uri = Uri.parse("content://test/fullscreen"),
+                displayName = "fullscreen.pdf",
+                pageCount = 1,
+            ),
+        )
+
+        composeRule.onNodeWithTag("fullscreen_button").performClick()
+        composeRule.onNodeWithTag("reader_fullscreen").assertIsDisplayed()
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            composeRule.onAllNodesWithTag("reader_top_bar").fetchSemanticsNodes().isEmpty()
+        }
+
+        composeRule.mainClock.autoAdvance = false
+        try {
+            composeRule.onNodeWithTag("pdf_page_1").performTouchInput { click() }
+            composeRule.mainClock.advanceTimeBy(500)
+            composeRule.onNodeWithTag("reader_top_bar").assertIsDisplayed()
+            composeRule.onNodeWithTag("fullscreen_button").performClick()
+            composeRule.mainClock.advanceTimeByFrame()
+            composeRule.onAllNodesWithTag("reader_fullscreen").assertCountEquals(0)
+            composeRule.onNodeWithTag("reader_top_bar").assertIsDisplayed()
+        } finally {
+            composeRule.mainClock.autoAdvance = true
+        }
     }
 
     private fun selectReaderMode(modeName: String) {

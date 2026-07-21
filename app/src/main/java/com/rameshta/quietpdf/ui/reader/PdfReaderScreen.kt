@@ -1,6 +1,10 @@
 package com.rameshta.quietpdf.ui.reader
 
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
 import android.graphics.Bitmap
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -19,10 +23,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -36,6 +42,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -55,6 +62,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
@@ -66,6 +74,9 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.IntSize
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import com.rameshta.quietpdf.R
 import com.rameshta.quietpdf.pdf.PageRenderResult
 import com.rameshta.quietpdf.pdf.PdfOpenState
@@ -85,6 +96,9 @@ fun PdfReaderScreen(
     val verticalState = rememberLazyListState()
     val horizontalState = rememberLazyListState()
     val pagerState = rememberPagerState(pageCount = { document.pageCount })
+    var isFullscreen by remember(document.uri) { mutableStateOf(false) }
+    var chromeVisible by remember(document.uri) { mutableStateOf(true) }
+    val context = LocalContext.current
 
     LaunchedEffect(readerMode, document.uri) {
         val page = currentPage.coerceIn(0, document.pageCount - 1)
@@ -103,99 +117,215 @@ fun PdfReaderScreen(
         }.distinctUntilChanged().collect { currentPage = it }
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        text = document.displayName ?: stringResource(R.string.selected_pdf),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                },
-                actions = {
-                    ReaderModeMenu(
-                        selectedMode = readerMode,
-                        onModeSelected = { readerMode = it },
-                    )
-                    TextButton(onClick = onOpenAnother) {
-                        Text(stringResource(R.string.reader_open_another))
-                    }
-                },
-            )
-        },
-    ) { innerPadding ->
-        BoxWithConstraints(
+    DisposableEffect(isFullscreen, context) {
+        val activity = context.findActivity()
+        val controller = activity?.let {
+            WindowCompat.getInsetsController(it.window, it.window.decorView)
+        }
+        if (isFullscreen) {
+            controller?.systemBarsBehavior =
+                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            controller?.hide(WindowInsetsCompat.Type.systemBars())
+        } else {
+            controller?.show(WindowInsetsCompat.Type.systemBars())
+        }
+        onDispose {
+            if (isFullscreen) controller?.show(WindowInsetsCompat.Type.systemBars())
+        }
+    }
+
+    LaunchedEffect(isFullscreen, chromeVisible) {
+        if (isFullscreen && chromeVisible) {
+            delay(ChromeAutoHideMillis)
+            chromeVisible = false
+        }
+    }
+
+    BackHandler(enabled = isFullscreen) {
+        isFullscreen = false
+        chromeVisible = true
+    }
+
+    val onPageTap = {
+        if (isFullscreen) chromeVisible = !chromeVisible
+    }
+
+    if (isFullscreen) {
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding)
-                .background(MaterialTheme.colorScheme.surfaceVariant),
+                .testTag("reader_fullscreen"),
         ) {
-            when (readerMode) {
-                ReaderMode.VerticalContinuous -> LazyColumn(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .testTag("reader_vertical"),
-                    state = verticalState,
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    items(
-                        count = document.pageCount,
-                        key = { pageIndex -> pageIndex },
-                    ) { pageIndex ->
-                        PdfPageItem(
-                            pageIndex = pageIndex,
-                            pageCount = document.pageCount,
-                            documentIdentity = document.uri,
-                            renderPage = renderPage,
-                        )
-                    }
-                }
+            ReaderPages(
+                document = document,
+                readerMode = readerMode,
+                verticalState = verticalState,
+                horizontalState = horizontalState,
+                pagerState = pagerState,
+                renderPage = renderPage,
+                onPageTap = onPageTap,
+            )
+            if (chromeVisible) {
+                ReaderTopBar(
+                    document = document,
+                    readerMode = readerMode,
+                    onModeSelected = { readerMode = it },
+                    onOpenAnother = onOpenAnother,
+                    isFullscreen = true,
+                    onFullscreenChange = {
+                        isFullscreen = it
+                        chromeVisible = true
+                    },
+                    modifier = Modifier.align(Alignment.TopCenter),
+                )
+            }
+        }
+    } else {
+        Scaffold(
+            topBar = {
+                ReaderTopBar(
+                    document = document,
+                    readerMode = readerMode,
+                    onModeSelected = { readerMode = it },
+                    onOpenAnother = onOpenAnother,
+                    isFullscreen = false,
+                    onFullscreenChange = {
+                        isFullscreen = it
+                        chromeVisible = true
+                    },
+                )
+            },
+        ) { innerPadding ->
+            ReaderPages(
+                document = document,
+                readerMode = readerMode,
+                verticalState = verticalState,
+                horizontalState = horizontalState,
+                pagerState = pagerState,
+                renderPage = renderPage,
+                onPageTap = onPageTap,
+                modifier = Modifier.padding(innerPadding),
+            )
+        }
+    }
+}
 
-                ReaderMode.HorizontalContinuous -> LazyRow(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .testTag("reader_horizontal"),
-                    state = horizontalState,
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    items(
-                        count = document.pageCount,
-                        key = { pageIndex -> pageIndex },
-                    ) { pageIndex ->
-                        PdfPageItem(
-                            pageIndex = pageIndex,
-                            pageCount = document.pageCount,
-                            documentIdentity = document.uri,
-                            renderPage = renderPage,
-                            modifier = Modifier
-                                .width(maxWidth - 24.dp)
-                                .fillMaxHeight(),
-                            fitToViewport = true,
-                        )
-                    }
-                }
+@Composable
+@OptIn(ExperimentalMaterial3Api::class)
+private fun ReaderTopBar(
+    document: PdfOpenState.Opened,
+    readerMode: ReaderMode,
+    onModeSelected: (ReaderMode) -> Unit,
+    onOpenAnother: () -> Unit,
+    isFullscreen: Boolean,
+    onFullscreenChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    TopAppBar(
+        title = {
+            Text(
+                text = document.displayName ?: stringResource(R.string.selected_pdf),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        },
+        actions = {
+            ReaderModeMenu(selectedMode = readerMode, onModeSelected = onModeSelected)
+            TextButton(
+                onClick = { onFullscreenChange(!isFullscreen) },
+                modifier = Modifier.testTag("fullscreen_button"),
+            ) {
+                Text(
+                    stringResource(
+                        if (isFullscreen) R.string.exit_fullscreen else R.string.enter_fullscreen,
+                    ),
+                )
+            }
+            TextButton(onClick = onOpenAnother) {
+                Text(stringResource(R.string.reader_open_another))
+            }
+        },
+        modifier = modifier.testTag("reader_top_bar"),
+    )
+}
 
-                ReaderMode.SinglePage -> HorizontalPager(
-                    state = pagerState,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .testTag("reader_single_page"),
-                    key = { pageIndex -> pageIndex },
-                ) { pageIndex ->
+@Composable
+private fun ReaderPages(
+    document: PdfOpenState.Opened,
+    readerMode: ReaderMode,
+    verticalState: LazyListState,
+    horizontalState: LazyListState,
+    pagerState: PagerState,
+    renderPage: suspend (pageIndex: Int, targetWidth: Int) -> PageRenderResult,
+    onPageTap: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    BoxWithConstraints(
+        modifier = modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.surfaceVariant),
+    ) {
+        when (readerMode) {
+            ReaderMode.VerticalContinuous -> LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .testTag("reader_vertical"),
+                state = verticalState,
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                items(count = document.pageCount, key = { it }) { pageIndex ->
+                    PdfPageItem(
+                        pageIndex = pageIndex,
+                        pageCount = document.pageCount,
+                        documentIdentity = document.uri,
+                        renderPage = renderPage,
+                        onPageTap = onPageTap,
+                    )
+                }
+            }
+
+            ReaderMode.HorizontalContinuous -> LazyRow(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .testTag("reader_horizontal"),
+                state = horizontalState,
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                items(count = document.pageCount, key = { it }) { pageIndex ->
                     PdfPageItem(
                         pageIndex = pageIndex,
                         pageCount = document.pageCount,
                         documentIdentity = document.uri,
                         renderPage = renderPage,
                         modifier = Modifier
-                            .fillMaxSize()
-                            .padding(12.dp),
+                            .width(maxWidth - 24.dp)
+                            .fillMaxHeight(),
                         fitToViewport = true,
+                        onPageTap = onPageTap,
                     )
                 }
+            }
+
+            ReaderMode.SinglePage -> HorizontalPager(
+                state = pagerState,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .testTag("reader_single_page"),
+                key = { it },
+            ) { pageIndex ->
+                PdfPageItem(
+                    pageIndex = pageIndex,
+                    pageCount = document.pageCount,
+                    documentIdentity = document.uri,
+                    renderPage = renderPage,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(12.dp),
+                    fitToViewport = true,
+                    onPageTap = onPageTap,
+                )
             }
         }
     }
@@ -249,6 +379,7 @@ private fun PdfPageItem(
     renderPage: suspend (pageIndex: Int, targetWidth: Int) -> PageRenderResult,
     modifier: Modifier = Modifier,
     fitToViewport: Boolean = false,
+    onPageTap: () -> Unit = {},
 ) {
     val pageNumber = pageIndex + 1
     var zoomState by remember(documentIdentity, pageIndex) { mutableStateOf(PageZoomState()) }
@@ -305,6 +436,7 @@ private fun PdfPageItem(
                         zoomState = zoomState,
                         onZoomStateChange = { zoomState = it },
                         fitToViewport = fitToViewport,
+                        onPageTap = onPageTap,
                     )
                 }
             }
@@ -368,6 +500,7 @@ private fun RenderedPage(
     zoomState: PageZoomState,
     onZoomStateChange: (PageZoomState) -> Unit,
     fitToViewport: Boolean,
+    onPageTap: () -> Unit,
 ) {
     val description = stringResource(R.string.page_content_description, pageNumber, pageCount)
     val zoomDescription = stringResource(R.string.zoom_state, (zoomState.scale * 100).roundToInt())
@@ -410,6 +543,7 @@ private fun RenderedPage(
                 )
                 .pointerInput(viewport, zoomState.isZoomed) {
                     detectTapGestures(
+                        onTap = { onPageTap() },
                         onDoubleTap = { position ->
                             onZoomStateChange(zoomState.toggle(viewportSize, position))
                         },
@@ -453,3 +587,11 @@ private fun RenderedPage(
         }
     }
 }
+
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
+}
+
+private const val ChromeAutoHideMillis = 3_000L

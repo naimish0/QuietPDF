@@ -27,4 +27,6 @@
     <string name="reader_mode_vertical">Vertical continuous</string>
     <string name="reader_mode_horizontal">Horizontal continuous</string>
     <string name="reader_mode_single_page">Single page</string>
+    <string name="enter_fullscreen">Fullscreen</string>
+    <string name="exit_fullscreen">Exit fullscreen</string>
 </resources>
