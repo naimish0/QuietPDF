@@ -72,6 +72,8 @@ import com.rameshta.quietpdf.pdf.SplitPageRange
 import com.rameshta.quietpdf.pdf.SplitPdfMode
 import com.rameshta.quietpdf.pdf.SplitPdfPlanner
 import com.rameshta.quietpdf.pdf.SplitPdfState
+import com.rameshta.quietpdf.pdf.ExtractPageSelectionParser
+import com.rameshta.quietpdf.pdf.ExtractPagesState
 import com.rameshta.quietpdf.ui.reader.PdfReaderScreen
 import com.rameshta.quietpdf.ui.theme.QuietPDFTheme
 
@@ -139,6 +141,20 @@ class MainActivity : ComponentActivity() {
                         viewModel.selectPdfForSplit(uri)
                     }
                 }
+                val createExtractedPdf = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.CreateDocument("application/pdf"),
+                ) { uri ->
+                    if (uri == null) viewModel.cancelExtractPages()
+                    else viewModel.extractSelectedPages(uri)
+                }
+                val extractPagesPicker = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.OpenDocument(),
+                ) { uri ->
+                    if (uri != null) {
+                        retainReadPermission(uri)
+                        viewModel.selectPdfForExtraction(uri)
+                    }
+                }
 
                 QuietPdfApp(
                     state = viewModel.state,
@@ -172,6 +188,16 @@ class MainActivity : ComponentActivity() {
                     },
                     onCancelSplit = viewModel::cancelSplitPdf,
                     onDismissSplitResult = viewModel::clearSplitPdfResult,
+                    extractPagesState = viewModel.extractPagesState,
+                    onExtractPages = {
+                        extractPagesPicker.launch(arrayOf("application/pdf"))
+                    },
+                    onConfirmPageExtraction = { selectedPages ->
+                        viewModel.configurePageExtraction(selectedPages)
+                        createExtractedPdf.launch("QuietPDF-extracted-pages.pdf")
+                    },
+                    onCancelPageExtraction = viewModel::cancelExtractPages,
+                    onDismissPageExtractionFailure = viewModel::clearExtractPagesFailure,
                 )
             }
         }
@@ -252,6 +278,11 @@ fun QuietPdfApp(
     onConfirmSplit: (List<SplitPageRange>) -> Unit = {},
     onCancelSplit: () -> Unit = {},
     onDismissSplitResult: () -> Unit = {},
+    extractPagesState: ExtractPagesState = ExtractPagesState.Idle,
+    onExtractPages: () -> Unit = {},
+    onConfirmPageExtraction: (IntArray) -> Unit = {},
+    onCancelPageExtraction: () -> Unit = {},
+    onDismissPageExtractionFailure: () -> Unit = {},
 ) {
     if (state is PdfOpenState.Opened) {
         PdfReaderScreen(
@@ -298,6 +329,10 @@ fun QuietPdfApp(
                     onSplitPdf = onSplitPdf,
                     onCancelSplit = onCancelSplit,
                     onDismissSplitResult = onDismissSplitResult,
+                    extractPagesState = extractPagesState,
+                    onExtractPages = onExtractPages,
+                    onCancelPageExtraction = onCancelPageExtraction,
+                    onDismissPageExtractionFailure = onDismissPageExtractionFailure,
                     contentPadding = PaddingValues(24.dp),
                 )
             }
@@ -327,6 +362,79 @@ fun QuietPdfApp(
             onCancel = onCancelSplit,
         )
     }
+    if (extractPagesState is ExtractPagesState.Configuring) {
+        ExtractPagesDialog(
+            documentName = extractPagesState.displayName,
+            pageCount = extractPagesState.pageCount,
+            onConfirm = onConfirmPageExtraction,
+            onCancel = onCancelPageExtraction,
+        )
+    }
+}
+
+@Composable
+private fun ExtractPagesDialog(
+    documentName: String,
+    pageCount: Int,
+    onConfirm: (IntArray) -> Unit,
+    onCancel: () -> Unit,
+) {
+    var pageSelection by remember(documentName, pageCount) { mutableStateOf("") }
+    val selectedPages = ExtractPageSelectionParser.parse(pageSelection, pageCount)
+    AlertDialog(
+        onDismissRequest = onCancel,
+        title = { Text(stringResource(R.string.extract_pages_title)) },
+        text = {
+            Column {
+                Text(stringResource(R.string.extract_pages_document_summary, documentName, pageCount))
+                OutlinedTextField(
+                    value = pageSelection,
+                    onValueChange = { pageSelection = it },
+                    label = { Text(stringResource(R.string.extract_pages_selection_label)) },
+                    supportingText = {
+                        Text(stringResource(R.string.extract_pages_selection_help, pageCount))
+                    },
+                    singleLine = true,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 12.dp)
+                        .testTag("extract_pages_input"),
+                )
+                when {
+                    selectedPages != null -> Text(
+                        text = stringResource(
+                            R.string.extract_pages_selection_count,
+                            selectedPages.size,
+                        ),
+                        style = MaterialTheme.typography.labelLarge,
+                        modifier = Modifier
+                            .padding(top = 12.dp)
+                            .testTag("extract_pages_count"),
+                    )
+                    pageSelection.isNotBlank() -> Text(
+                        text = stringResource(R.string.extract_pages_invalid_selection),
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier
+                            .padding(top = 12.dp)
+                            .testTag("extract_pages_selection_error"),
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { selectedPages?.let(onConfirm) },
+                enabled = selectedPages != null,
+                modifier = Modifier.testTag("extract_pages_confirm"),
+            ) { Text(stringResource(R.string.save_extracted_pdf)) }
+        },
+        dismissButton = {
+            TextButton(onClick = onCancel, modifier = Modifier.testTag("extract_pages_cancel")) {
+                Text(stringResource(R.string.cancel))
+            }
+        },
+        modifier = Modifier.testTag("extract_pages_dialog"),
+    )
 }
 
 @Composable
@@ -602,6 +710,10 @@ private fun OpenPdfContent(
     onSplitPdf: () -> Unit,
     onCancelSplit: () -> Unit,
     onDismissSplitResult: () -> Unit,
+    extractPagesState: ExtractPagesState,
+    onExtractPages: () -> Unit,
+    onCancelPageExtraction: () -> Unit,
+    onDismissPageExtractionFailure: () -> Unit,
     contentPadding: PaddingValues,
 ) {
     Column(
@@ -643,6 +755,21 @@ private fun OpenPdfContent(
             }
             else -> Unit
         }
+        when (extractPagesState) {
+            ExtractPagesState.Preparing -> {
+                OperationProgressContent(R.string.extract_pages_preparing)
+                return@Column
+            }
+            is ExtractPagesState.Extracting -> {
+                OperationProgressContent(
+                    messageResource = R.string.extract_pages_extracting,
+                    argument = extractPagesState.selectedPageCount,
+                    onCancel = onCancelPageExtraction,
+                )
+                return@Column
+            }
+            else -> Unit
+        }
         when (state) {
             PdfOpenState.Idle -> IdleContent(
                 onOpenPdf = onOpenPdf,
@@ -655,6 +782,9 @@ private fun OpenPdfContent(
                 splitPdfState = splitPdfState,
                 onSplitPdf = onSplitPdf,
                 onDismissSplitResult = onDismissSplitResult,
+                extractPagesState = extractPagesState,
+                onExtractPages = onExtractPages,
+                onDismissPageExtractionFailure = onDismissPageExtractionFailure,
             )
             PdfOpenState.Opening -> OpeningContent()
             is PdfOpenState.Opened -> Unit
@@ -675,6 +805,9 @@ private fun IdleContent(
     splitPdfState: SplitPdfState,
     onSplitPdf: () -> Unit,
     onDismissSplitResult: () -> Unit,
+    extractPagesState: ExtractPagesState,
+    onExtractPages: () -> Unit,
+    onDismissPageExtractionFailure: () -> Unit,
 ) {
     Text(
         text = stringResource(R.string.home_title),
@@ -708,6 +841,12 @@ private fun IdleContent(
         label = stringResource(R.string.split_pdf),
         onClick = onSplitPdf,
         testTag = "split_pdf_button",
+    )
+    Spacer(Modifier.height(12.dp))
+    OpenButton(
+        label = stringResource(R.string.extract_pages),
+        onClick = onExtractPages,
+        testTag = "extract_pages_button",
     )
     if (imagesToPdfState is ImagesToPdfState.Failed) {
         Spacer(Modifier.height(20.dp))
@@ -759,6 +898,18 @@ private fun IdleContent(
             }
         }
         else -> Unit
+    }
+    if (extractPagesState is ExtractPagesState.Failed) {
+        Spacer(Modifier.height(20.dp))
+        Text(
+            text = stringResource(extractPagesState.failure.messageResource),
+            color = MaterialTheme.colorScheme.error,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.testTag("extract_pages_error"),
+        )
+        TextButton(onClick = onDismissPageExtractionFailure) {
+            Text(stringResource(R.string.dismiss))
+        }
     }
 }
 

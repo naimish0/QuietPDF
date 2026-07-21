@@ -66,6 +66,26 @@ sealed interface SplitPdfState {
     data class Failed(val failure: SplitPdfFailure) : SplitPdfState
 }
 
+sealed interface ExtractPagesState {
+    data object Idle : ExtractPagesState
+    data object Preparing : ExtractPagesState
+    data class Configuring(
+        val sourceUri: Uri,
+        val displayName: String,
+        val pageCount: Int,
+    ) : ExtractPagesState
+    data class Extracting(val selectedPageCount: Int) : ExtractPagesState
+    data class Failed(val failure: ExtractPagesFailure) : ExtractPagesState
+}
+
+enum class ExtractPagesFailure(@get:StringRes val messageResource: Int) {
+    InvalidDocument(R.string.extract_pages_invalid_document),
+    InvalidSelection(R.string.extract_pages_invalid_selection),
+    PermissionDenied(R.string.extract_pages_permission_denied),
+    InsufficientMemory(R.string.extract_pages_memory_error),
+    UnableToSave(R.string.extract_pages_save_error),
+}
+
 enum class SplitPdfFailure(@get:StringRes val messageResource: Int) {
     NeedAtLeastTwoPages(R.string.split_pdf_need_two_pages),
     InvalidDocument(R.string.split_pdf_invalid_document),
@@ -107,13 +127,16 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
     private val imagesToPdfEngine = ImagesToPdfEngine(application.contentResolver, application.cacheDir)
     private val mergePdfEngine = MergePdfEngine(application)
     private val splitPdfEngine = SplitPdfEngine(application)
+    private val extractPagesEngine = ExtractPagesEngine(application)
     private var openJob: Job? = null
     private var imageCreationJob: Job? = null
     private var mergeJob: Job? = null
     private var splitJob: Job? = null
+    private var extractPagesJob: Job? = null
     private var selectedImageUris: List<Uri> = emptyList()
     private var selectedImageLayout = ImagePdfLayout()
     private var selectedSplitRanges: List<SplitPageRange> = emptyList()
+    private var selectedExtractPageIndices = IntArray(0)
     private var documentGeneration = 0L
     private val pageCache = object : LruCache<PageCacheKey, Bitmap>(pageCacheBytes()) {
         override fun sizeOf(key: PageCacheKey, value: Bitmap): Int = value.allocationByteCount
@@ -129,6 +152,9 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
         private set
 
     var splitPdfState: SplitPdfState by mutableStateOf(SplitPdfState.Idle)
+        private set
+
+    var extractPagesState: ExtractPagesState by mutableStateOf(ExtractPagesState.Idle)
         private set
 
     fun open(uri: Uri) {
@@ -366,6 +392,84 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
         splitPdfState = SplitPdfState.Idle
     }
 
+    fun selectPdfForExtraction(uri: Uri) {
+        extractPagesJob?.cancel()
+        selectedExtractPageIndices = IntArray(0)
+        extractPagesState = ExtractPagesState.Preparing
+        extractPagesJob = viewModelScope.launch {
+            extractPagesState = when (val result = withContext(Dispatchers.IO) { opener.open(uri) }) {
+                is PdfOpenResult.Success -> ExtractPagesState.Configuring(
+                    sourceUri = uri,
+                    displayName = result.document.displayName ?: "PDF",
+                    pageCount = result.document.pageCount,
+                )
+                is PdfOpenResult.Failure -> when (result.reason) {
+                    PdfOpenFailure.PermissionDenied -> {
+                        ExtractPagesState.Failed(ExtractPagesFailure.PermissionDenied)
+                    }
+                    else -> ExtractPagesState.Failed(ExtractPagesFailure.InvalidDocument)
+                }
+            }
+        }
+    }
+
+    fun configurePageExtraction(selectedPageIndices: IntArray) {
+        if (extractPagesState !is ExtractPagesState.Configuring) return
+        selectedExtractPageIndices = selectedPageIndices.copyOf()
+    }
+
+    fun extractSelectedPages(outputUri: Uri) {
+        val configuring = extractPagesState as? ExtractPagesState.Configuring ?: return
+        val selectedPages = selectedExtractPageIndices.copyOf()
+        if (selectedPages.isEmpty()) {
+            extractPagesState = ExtractPagesState.Failed(ExtractPagesFailure.InvalidSelection)
+            return
+        }
+        extractPagesJob?.cancel()
+        extractPagesState = ExtractPagesState.Extracting(selectedPages.size)
+        extractPagesJob = viewModelScope.launch {
+            extractPagesState = when (
+                val result = extractPagesEngine.extract(
+                    sourceUri = configuring.sourceUri,
+                    outputUri = outputUri,
+                    selectedPageIndices = selectedPages,
+                )
+            ) {
+                is ExtractPagesResult.Success -> {
+                    open(outputUri)
+                    ExtractPagesState.Idle
+                }
+                ExtractPagesResult.InvalidDocument -> {
+                    ExtractPagesState.Failed(ExtractPagesFailure.InvalidDocument)
+                }
+                ExtractPagesResult.InvalidSelection -> {
+                    ExtractPagesState.Failed(ExtractPagesFailure.InvalidSelection)
+                }
+                ExtractPagesResult.PermissionDenied -> {
+                    ExtractPagesState.Failed(ExtractPagesFailure.PermissionDenied)
+                }
+                ExtractPagesResult.InsufficientMemory -> {
+                    ExtractPagesState.Failed(ExtractPagesFailure.InsufficientMemory)
+                }
+                ExtractPagesResult.Failed -> {
+                    ExtractPagesState.Failed(ExtractPagesFailure.UnableToSave)
+                }
+            }
+            selectedExtractPageIndices = IntArray(0)
+        }
+    }
+
+    fun cancelExtractPages() {
+        extractPagesJob?.cancel()
+        selectedExtractPageIndices = IntArray(0)
+        extractPagesState = ExtractPagesState.Idle
+    }
+
+    fun clearExtractPagesFailure() {
+        selectedExtractPageIndices = IntArray(0)
+        extractPagesState = ExtractPagesState.Idle
+    }
+
     fun rejectUnsupportedUri() {
         openJob?.cancel()
         searchEngine.close()
@@ -438,6 +542,7 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
         imageCreationJob?.cancel()
         mergeJob?.cancel()
         splitJob?.cancel()
+        extractPagesJob?.cancel()
         searchEngine.close()
         super.onCleared()
     }
