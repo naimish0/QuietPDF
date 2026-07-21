@@ -31,6 +31,7 @@ sealed interface PdfOpenState {
         val pageCount: Int,
         val initialPageIndex: Int = 0,
         val bookmarkedPages: Set<Int> = emptySet(),
+        val isFavorite: Boolean = false,
     ) : PdfOpenState
     data class Failed(val failure: PdfOpenFailure) : PdfOpenState
 }
@@ -514,6 +515,7 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
     private val searchEngine = PdfSearchEngine(application)
     private val bookmarkStore = PdfBookmarkStore(application)
     private val recentPdfStore = RecentPdfStore(application)
+    private val favoritePdfStore = FavoritePdfStore(application)
     private val tableOfContentsEngine = PdfTableOfContentsEngine(application)
     private val healthEngine = PdfHealthEngine(application)
     private val imagesToPdfEngine = ImagesToPdfEngine(application.contentResolver, application.cacheDir)
@@ -585,6 +587,9 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
         private set
 
     var recentPdfs: List<RecentPdf> by mutableStateOf(recentPdfStore.load())
+        private set
+
+    var favoritePdfs: List<FavoritePdf> by mutableStateOf(favoritePdfStore.load())
         private set
 
     var imagesToPdfState: ImagesToPdfState by mutableStateOf(ImagesToPdfState.Idle)
@@ -866,26 +871,56 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun open(uri: Uri) {
-        openDocument(uri, removeFailedRecent = false)
+        openDocument(uri, removeFailedStoredFile = false)
     }
 
     fun openRecentPdf(uri: Uri) {
         if (recentPdfs.none { it.uri == uri }) return
-        openDocument(uri, removeFailedRecent = true)
+        openDocument(uri, removeFailedStoredFile = true)
+    }
+
+    fun openFavoritePdf(uri: Uri) {
+        if (favoritePdfs.none { it.uri == uri }) return
+        openDocument(uri, removeFailedStoredFile = true)
     }
 
     fun removeRecentPdf(uri: Uri) {
-        releaseRecentPermission(uri)
         recentPdfs = recentPdfStore.remove(uri)
+        releaseStoredPermissionIfUnused(uri)
     }
 
     fun clearRecentPdfs() {
-        recentPdfs.forEach { releaseRecentPermission(it.uri) }
+        val removedUris = recentPdfs.map(RecentPdf::uri)
         recentPdfStore.clear()
         recentPdfs = emptyList()
+        removedUris.forEach(::releaseStoredPermissionIfUnused)
     }
 
-    private fun openDocument(uri: Uri, removeFailedRecent: Boolean) {
+    fun toggleFavoritePdf(uri: Uri) {
+        val existing = favoritePdfs.firstOrNull { it.uri == uri }
+        favoritePdfs = if (existing != null) {
+            favoritePdfStore.remove(uri)
+        } else {
+            val recent = recentPdfs.firstOrNull { it.uri == uri }
+            val opened = (state as? PdfOpenState.Opened)?.takeIf { it.uri == uri }
+            val pageCount = opened?.pageCount ?: recent?.pageCount ?: return
+            val displayName = opened?.displayName ?: recent?.displayName
+            favoritePdfStore.add(uri, displayName, pageCount)
+        }
+        val opened = state as? PdfOpenState.Opened
+        if (opened?.uri == uri) state = opened.copy(isFavorite = favoritePdfs.any { it.uri == uri })
+        if (existing != null) releaseStoredPermissionIfUnused(uri)
+    }
+
+    fun removeFavoritePdf(uri: Uri) {
+        if (favoritePdfs.none { it.uri == uri }) return
+        favoritePdfs = favoritePdfStore.remove(uri)
+        val opened = state as? PdfOpenState.Opened
+        if (opened?.uri == uri) state = opened.copy(isFavorite = false)
+        releaseStoredPermissionIfUnused(uri)
+    }
+
+    private fun openDocument(uri: Uri, removeFailedStoredFile: Boolean) {
         openJob?.cancel()
         searchEngine.close()
         documentGeneration++
@@ -900,6 +935,13 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
                         result.document.displayName,
                         result.document.pageCount,
                     )
+                    if (favoritePdfs.any { it.uri == result.document.uri }) {
+                        favoritePdfs = favoritePdfStore.add(
+                            result.document.uri,
+                            result.document.displayName,
+                            result.document.pageCount,
+                        )
+                    }
                     PdfOpenState.Opened(
                         uri = result.document.uri,
                         displayName = result.document.displayName,
@@ -912,12 +954,14 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
                             result.document.uri,
                             result.document.pageCount,
                         ),
+                        isFavorite = favoritePdfs.any { it.uri == result.document.uri },
                     )
                 }
                 is PdfOpenResult.Failure -> {
-                    if (removeFailedRecent) {
+                    if (removeFailedStoredFile) {
                         releaseRecentPermission(uri)
                         recentPdfs = recentPdfStore.remove(uri)
+                        favoritePdfs = favoritePdfStore.remove(uri)
                     }
                     PdfOpenState.Failed(result.reason)
                 }
@@ -935,6 +979,12 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
             // The provider may have supplied only a temporary grant or already revoked access.
         } catch (_: RuntimeException) {
             // Some providers do not implement persistable URI permissions.
+        }
+    }
+
+    private fun releaseStoredPermissionIfUnused(uri: Uri) {
+        if (recentPdfs.none { it.uri == uri } && favoritePdfs.none { it.uri == uri }) {
+            releaseRecentPermission(uri)
         }
     }
 

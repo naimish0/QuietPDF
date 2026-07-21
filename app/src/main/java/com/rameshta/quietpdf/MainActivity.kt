@@ -150,6 +150,7 @@ import com.rameshta.quietpdf.pdf.AnnotatePdfPreviewResult
 import com.rameshta.quietpdf.pdf.AnnotatePdfState
 import com.rameshta.quietpdf.pdf.PdfAnnotationItem
 import com.rameshta.quietpdf.pdf.RecentPdf
+import com.rameshta.quietpdf.pdf.FavoritePdf
 import com.rameshta.quietpdf.pdf.PdfCompressionMode
 import com.rameshta.quietpdf.pdf.PdfCompressionRequest
 import com.rameshta.quietpdf.pdf.TargetFileSize
@@ -560,9 +561,13 @@ class MainActivity : ComponentActivity() {
                 QuietPdfApp(
                     state = viewModel.state,
                     recentPdfs = viewModel.recentPdfs,
+                    favoritePdfs = viewModel.favoritePdfs,
                     onOpenRecentPdf = viewModel::openRecentPdf,
                     onRemoveRecentPdf = viewModel::removeRecentPdf,
                     onClearRecentPdfs = viewModel::clearRecentPdfs,
+                    onOpenFavoritePdf = viewModel::openFavoritePdf,
+                    onToggleFavoritePdf = viewModel::toggleFavoritePdf,
+                    onRemoveFavoritePdf = viewModel::removeFavoritePdf,
                     onOpenPdf = { picker.launch(arrayOf("application/pdf")) },
                     renderPage = viewModel::renderPage,
                     onPageChanged = viewModel::rememberPage,
@@ -879,9 +884,13 @@ class MainActivity : ComponentActivity() {
 fun QuietPdfApp(
     state: PdfOpenState,
     recentPdfs: List<RecentPdf> = emptyList(),
+    favoritePdfs: List<FavoritePdf> = emptyList(),
     onOpenRecentPdf: (Uri) -> Unit = {},
     onRemoveRecentPdf: (Uri) -> Unit = {},
     onClearRecentPdfs: () -> Unit = {},
+    onOpenFavoritePdf: (Uri) -> Unit = {},
+    onToggleFavoritePdf: (Uri) -> Unit = {},
+    onRemoveFavoritePdf: (Uri) -> Unit = {},
     onOpenPdf: () -> Unit,
     renderPage: suspend (pageIndex: Int, targetWidth: Int) -> PageRenderResult,
     onPageChanged: (pageIndex: Int) -> Unit = {},
@@ -1040,6 +1049,7 @@ fun QuietPdfApp(
             onToggleBookmark = onToggleBookmark,
             loadTableOfContents = loadTableOfContents,
             inspectHealth = inspectHealth,
+            onToggleFavorite = { onToggleFavoritePdf(state.uri) },
         )
         return
     }
@@ -1089,9 +1099,13 @@ fun QuietPdfApp(
                 OpenPdfContent(
                     state = state,
                     recentPdfs = recentPdfs,
+                    favoritePdfs = favoritePdfs,
                     onOpenRecentPdf = onOpenRecentPdf,
                     onRemoveRecentPdf = onRemoveRecentPdf,
                     onClearRecentPdfs = onClearRecentPdfs,
+                    onOpenFavoritePdf = onOpenFavoritePdf,
+                    onToggleFavoritePdf = onToggleFavoritePdf,
+                    onRemoveFavoritePdf = onRemoveFavoritePdf,
                     onOpenPdf = onOpenPdf,
                     imagesToPdfState = imagesToPdfState,
                     onImagesToPdf = onImagesToPdf,
@@ -3000,9 +3014,13 @@ private fun LayoutChoiceRow(
 private fun OpenPdfContent(
     state: PdfOpenState,
     recentPdfs: List<RecentPdf>,
+    favoritePdfs: List<FavoritePdf>,
     onOpenRecentPdf: (Uri) -> Unit,
     onRemoveRecentPdf: (Uri) -> Unit,
     onClearRecentPdfs: () -> Unit,
+    onOpenFavoritePdf: (Uri) -> Unit,
+    onToggleFavoritePdf: (Uri) -> Unit,
+    onRemoveFavoritePdf: (Uri) -> Unit,
     onOpenPdf: () -> Unit,
     imagesToPdfState: ImagesToPdfState,
     onImagesToPdf: () -> Unit,
@@ -3413,9 +3431,13 @@ private fun OpenPdfContent(
             PdfOpenState.Idle -> IdleContent(
                 onOpenPdf = onOpenPdf,
                 recentPdfs = recentPdfs,
+                favoritePdfs = favoritePdfs,
                 onOpenRecentPdf = onOpenRecentPdf,
                 onRemoveRecentPdf = onRemoveRecentPdf,
                 onClearRecentPdfs = onClearRecentPdfs,
+                onOpenFavoritePdf = onOpenFavoritePdf,
+                onToggleFavoritePdf = onToggleFavoritePdf,
+                onRemoveFavoritePdf = onRemoveFavoritePdf,
                 onImagesToPdf = onImagesToPdf,
                 imagesToPdfState = imagesToPdfState,
                 onDismissImagesToPdfFailure = onDismissImagesToPdfFailure,
@@ -3492,7 +3514,9 @@ private fun OpenPdfContent(
 @Composable
 private fun RecentFilesSection(
     recentPdfs: List<RecentPdf>,
+    favoriteUris: Set<Uri>,
     onOpen: (Uri) -> Unit,
+    onToggleFavorite: (Uri) -> Unit,
     onRemove: (Uri) -> Unit,
     onClear: () -> Unit,
 ) {
@@ -3541,6 +3565,17 @@ private fun RecentFilesSection(
                 }
             }
             TextButton(
+                onClick = { onToggleFavorite(recent.uri) },
+                modifier = Modifier.testTag("recent_file_favorite_$index"),
+            ) {
+                Text(
+                    stringResource(
+                        if (recent.uri in favoriteUris) R.string.favorite_file_remove
+                        else R.string.favorite_file_add,
+                    ),
+                )
+            }
+            TextButton(
                 onClick = { onRemove(recent.uri) },
                 modifier = Modifier.testTag("recent_file_remove_$index"),
             ) { Text(stringResource(R.string.recent_file_remove)) }
@@ -3568,12 +3603,59 @@ private fun RecentFilesSection(
 }
 
 @Composable
+private fun FavoriteFilesSection(
+    favoritePdfs: List<FavoritePdf>,
+    onOpen: (Uri) -> Unit,
+    onRemove: (Uri) -> Unit,
+) {
+    Text(
+        text = stringResource(R.string.favorite_files),
+        style = MaterialTheme.typography.titleMedium,
+        fontWeight = FontWeight.SemiBold,
+        modifier = Modifier.fillMaxWidth().padding(top = 20.dp).testTag("favorite_files_title"),
+    )
+    favoritePdfs.forEachIndexed { index, favorite ->
+        val name = favorite.displayName ?: stringResource(R.string.recent_file_unnamed)
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Button(
+                onClick = { onOpen(favorite.uri) },
+                modifier = Modifier.weight(1f).heightIn(min = 56.dp).testTag("favorite_file_$index"),
+            ) {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(text = name, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(
+                        text = pluralStringResource(
+                            R.plurals.recent_file_pages,
+                            favorite.pageCount,
+                            favorite.pageCount,
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            }
+            TextButton(
+                onClick = { onRemove(favorite.uri) },
+                modifier = Modifier.testTag("favorite_file_remove_$index"),
+            ) { Text(stringResource(R.string.favorite_file_remove)) }
+        }
+    }
+}
+
+@Composable
 private fun IdleContent(
     onOpenPdf: () -> Unit,
     recentPdfs: List<RecentPdf>,
+    favoritePdfs: List<FavoritePdf>,
     onOpenRecentPdf: (Uri) -> Unit,
     onRemoveRecentPdf: (Uri) -> Unit,
     onClearRecentPdfs: () -> Unit,
+    onOpenFavoritePdf: (Uri) -> Unit,
+    onToggleFavoritePdf: (Uri) -> Unit,
+    onRemoveFavoritePdf: (Uri) -> Unit,
     onImagesToPdf: () -> Unit,
     imagesToPdfState: ImagesToPdfState,
     onDismissImagesToPdfFailure: () -> Unit,
@@ -3653,10 +3735,19 @@ private fun IdleContent(
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         textAlign = TextAlign.Center,
     )
+    if (favoritePdfs.isNotEmpty()) {
+        FavoriteFilesSection(
+            favoritePdfs = favoritePdfs,
+            onOpen = onOpenFavoritePdf,
+            onRemove = onRemoveFavoritePdf,
+        )
+    }
     if (recentPdfs.isNotEmpty()) {
         RecentFilesSection(
             recentPdfs = recentPdfs,
+            favoriteUris = favoritePdfs.mapTo(mutableSetOf(), FavoritePdf::uri),
             onOpen = onOpenRecentPdf,
+            onToggleFavorite = onToggleFavoritePdf,
             onRemove = onRemoveRecentPdf,
             onClear = onClearRecentPdfs,
         )
