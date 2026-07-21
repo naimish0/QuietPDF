@@ -1,12 +1,16 @@
 package com.rameshta.quietpdf
 
 import android.graphics.Bitmap
+import android.graphics.Color as AndroidColor
 import android.net.Uri
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.click
+import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.doubleClick
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
@@ -20,6 +24,7 @@ import com.rameshta.quietpdf.pdf.PdfOpenFailure
 import com.rameshta.quietpdf.pdf.PdfOpenState
 import com.rameshta.quietpdf.ui.theme.QuietPDFTheme
 import org.junit.Rule
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -188,6 +193,37 @@ class QuietPdfAppTest {
         } finally {
             composeRule.mainClock.autoAdvance = true
         }
+    }
+
+    @Test
+    fun nightAppearance_isReversibleAndDoesNotModifyThePageBitmap() {
+        val sourceBitmap = Bitmap.createBitmap(100, 140, Bitmap.Config.ARGB_8888).apply {
+            eraseColor(AndroidColor.WHITE)
+        }
+        setContent(
+            state = PdfOpenState.Opened(
+                uri = Uri.parse("content://test/night-appearance"),
+                displayName = "night.pdf",
+                pageCount = 1,
+            ),
+            renderPage = { _, _ -> PageRenderResult.Ready(sourceBitmap) },
+        )
+
+        val pageNode = composeRule.onNodeWithTag("pdf_page_1")
+        val originalPixel = pageNode.captureToImage().toPixelMap()[50, 70]
+        composeRule.onNodeWithTag("reader_mode_button").performClick()
+        composeRule.onNodeWithTag("night_appearance_button").performClick()
+        val nightPixel = pageNode.captureToImage().toPixelMap()[50, 70]
+
+        assertTrue("Original white page was not light", originalPixel.luminance() > 0.9f)
+        assertTrue("Night appearance did not darken the white page", nightPixel.luminance() < 0.1f)
+        assertEquals(AndroidColor.WHITE, sourceBitmap.getPixel(50, 70))
+
+        composeRule.onNodeWithTag("reader_mode_button").performClick()
+        composeRule.onNodeWithTag("night_appearance_button").assertTextEquals("Original pages")
+        composeRule.onNodeWithTag("night_appearance_button").performClick()
+        composeRule.onNodeWithTag("reader_mode_button").performClick()
+        composeRule.onNodeWithTag("night_appearance_button").assertTextEquals("Night pages")
     }
 
     private fun selectReaderMode(modeName: String) {

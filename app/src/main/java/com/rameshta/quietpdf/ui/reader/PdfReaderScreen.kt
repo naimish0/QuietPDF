@@ -35,7 +35,9 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -56,6 +58,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.asImageBitmap
@@ -98,7 +103,21 @@ fun PdfReaderScreen(
     val pagerState = rememberPagerState(pageCount = { document.pageCount })
     var isFullscreen by remember(document.uri) { mutableStateOf(false) }
     var chromeVisible by remember(document.uri) { mutableStateOf(true) }
+    var nightAppearance by remember(document.uri) { mutableStateOf(false) }
     val context = LocalContext.current
+    val inheritedColors = MaterialTheme.colorScheme
+    val readerColors = if (nightAppearance) {
+        darkColorScheme(
+            primary = inheritedColors.primary,
+            secondary = inheritedColors.secondary,
+            tertiary = inheritedColors.tertiary,
+            background = ReaderNightBackground,
+            surface = ReaderNightSurface,
+            surfaceVariant = ReaderNightBackground,
+        )
+    } else {
+        inheritedColors
+    }
 
     LaunchedEffect(readerMode, document.uri) {
         val page = currentPage.coerceIn(0, document.pageCount - 1)
@@ -150,62 +169,70 @@ fun PdfReaderScreen(
         if (isFullscreen) chromeVisible = !chromeVisible
     }
 
-    if (isFullscreen) {
-        Box(
+    MaterialTheme(colorScheme = readerColors) {
+        if (isFullscreen) {
+            Box(
             modifier = Modifier
                 .fillMaxSize()
                 .testTag("reader_fullscreen"),
-        ) {
-            ReaderPages(
-                document = document,
-                readerMode = readerMode,
-                verticalState = verticalState,
-                horizontalState = horizontalState,
-                pagerState = pagerState,
-                renderPage = renderPage,
-                onPageTap = onPageTap,
-            )
-            if (chromeVisible) {
-                ReaderTopBar(
+            ) {
+                ReaderPages(
                     document = document,
                     readerMode = readerMode,
-                    onModeSelected = { readerMode = it },
-                    onOpenAnother = onOpenAnother,
-                    isFullscreen = true,
-                    onFullscreenChange = {
-                        isFullscreen = it
-                        chromeVisible = true
-                    },
-                    modifier = Modifier.align(Alignment.TopCenter),
+                    verticalState = verticalState,
+                    horizontalState = horizontalState,
+                    pagerState = pagerState,
+                    renderPage = renderPage,
+                    onPageTap = onPageTap,
+                    nightAppearance = nightAppearance,
+                )
+                if (chromeVisible) {
+                    ReaderTopBar(
+                        document = document,
+                        readerMode = readerMode,
+                        onModeSelected = { readerMode = it },
+                        onOpenAnother = onOpenAnother,
+                        isFullscreen = true,
+                        onFullscreenChange = {
+                            isFullscreen = it
+                            chromeVisible = true
+                        },
+                        nightAppearance = nightAppearance,
+                        onNightAppearanceChange = { nightAppearance = it },
+                        modifier = Modifier.align(Alignment.TopCenter),
+                    )
+                }
+            }
+        } else {
+            Scaffold(
+                topBar = {
+                    ReaderTopBar(
+                        document = document,
+                        readerMode = readerMode,
+                        onModeSelected = { readerMode = it },
+                        onOpenAnother = onOpenAnother,
+                        isFullscreen = false,
+                        onFullscreenChange = {
+                            isFullscreen = it
+                            chromeVisible = true
+                        },
+                        nightAppearance = nightAppearance,
+                        onNightAppearanceChange = { nightAppearance = it },
+                    )
+                },
+            ) { innerPadding ->
+                ReaderPages(
+                    document = document,
+                    readerMode = readerMode,
+                    verticalState = verticalState,
+                    horizontalState = horizontalState,
+                    pagerState = pagerState,
+                    renderPage = renderPage,
+                    onPageTap = onPageTap,
+                    nightAppearance = nightAppearance,
+                    modifier = Modifier.padding(innerPadding),
                 )
             }
-        }
-    } else {
-        Scaffold(
-            topBar = {
-                ReaderTopBar(
-                    document = document,
-                    readerMode = readerMode,
-                    onModeSelected = { readerMode = it },
-                    onOpenAnother = onOpenAnother,
-                    isFullscreen = false,
-                    onFullscreenChange = {
-                        isFullscreen = it
-                        chromeVisible = true
-                    },
-                )
-            },
-        ) { innerPadding ->
-            ReaderPages(
-                document = document,
-                readerMode = readerMode,
-                verticalState = verticalState,
-                horizontalState = horizontalState,
-                pagerState = pagerState,
-                renderPage = renderPage,
-                onPageTap = onPageTap,
-                modifier = Modifier.padding(innerPadding),
-            )
         }
     }
 }
@@ -219,6 +246,8 @@ private fun ReaderTopBar(
     onOpenAnother: () -> Unit,
     isFullscreen: Boolean,
     onFullscreenChange: (Boolean) -> Unit,
+    nightAppearance: Boolean,
+    onNightAppearanceChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     TopAppBar(
@@ -230,7 +259,12 @@ private fun ReaderTopBar(
             )
         },
         actions = {
-            ReaderModeMenu(selectedMode = readerMode, onModeSelected = onModeSelected)
+            ReaderModeMenu(
+                selectedMode = readerMode,
+                onModeSelected = onModeSelected,
+                nightAppearance = nightAppearance,
+                onNightAppearanceChange = onNightAppearanceChange,
+            )
             TextButton(
                 onClick = { onFullscreenChange(!isFullscreen) },
                 modifier = Modifier.testTag("fullscreen_button"),
@@ -258,6 +292,7 @@ private fun ReaderPages(
     pagerState: PagerState,
     renderPage: suspend (pageIndex: Int, targetWidth: Int) -> PageRenderResult,
     onPageTap: () -> Unit,
+    nightAppearance: Boolean,
     modifier: Modifier = Modifier,
 ) {
     BoxWithConstraints(
@@ -281,6 +316,7 @@ private fun ReaderPages(
                         documentIdentity = document.uri,
                         renderPage = renderPage,
                         onPageTap = onPageTap,
+                        nightAppearance = nightAppearance,
                     )
                 }
             }
@@ -304,6 +340,7 @@ private fun ReaderPages(
                             .fillMaxHeight(),
                         fitToViewport = true,
                         onPageTap = onPageTap,
+                        nightAppearance = nightAppearance,
                     )
                 }
             }
@@ -325,6 +362,7 @@ private fun ReaderPages(
                         .padding(12.dp),
                     fitToViewport = true,
                     onPageTap = onPageTap,
+                    nightAppearance = nightAppearance,
                 )
             }
         }
@@ -335,17 +373,24 @@ private fun ReaderPages(
 private fun ReaderModeMenu(
     selectedMode: ReaderMode,
     onModeSelected: (ReaderMode) -> Unit,
+    nightAppearance: Boolean,
+    onNightAppearanceChange: (Boolean) -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
     val controlDescription = stringResource(R.string.reader_mode)
+    val appearanceDescription = stringResource(R.string.page_appearance)
     val selectedLabel = stringResource(selectedMode.labelResource)
+    val appearanceState = stringResource(
+        if (nightAppearance) R.string.night_appearance_enabled
+        else R.string.night_appearance_disabled,
+    )
     Box {
         TextButton(
             onClick = { expanded = true },
             modifier = Modifier
                 .semantics {
                     contentDescription = controlDescription
-                    stateDescription = selectedLabel
+                    stateDescription = "$selectedLabel, $appearanceState"
                 }
                 .testTag("reader_mode_button"),
         ) {
@@ -367,6 +412,27 @@ private fun ReaderModeMenu(
                         .testTag("reader_mode_${mode.name}"),
                 )
             }
+            HorizontalDivider()
+            DropdownMenuItem(
+                text = {
+                    Text(
+                        stringResource(
+                            if (nightAppearance) R.string.original_appearance
+                            else R.string.night_appearance,
+                        ),
+                    )
+                },
+                onClick = {
+                    expanded = false
+                    onNightAppearanceChange(!nightAppearance)
+                },
+                modifier = Modifier
+                    .semantics {
+                        contentDescription = appearanceDescription
+                        stateDescription = appearanceState
+                    }
+                    .testTag("night_appearance_button"),
+            )
         }
     }
 }
@@ -380,6 +446,7 @@ private fun PdfPageItem(
     modifier: Modifier = Modifier,
     fitToViewport: Boolean = false,
     onPageTap: () -> Unit = {},
+    nightAppearance: Boolean = false,
 ) {
     val pageNumber = pageIndex + 1
     var zoomState by remember(documentIdentity, pageIndex) { mutableStateOf(PageZoomState()) }
@@ -396,7 +463,7 @@ private fun PdfPageItem(
                 Modifier.fillMaxWidth()
             },
             shadowElevation = 2.dp,
-            color = MaterialTheme.colorScheme.surface,
+            color = if (nightAppearance) ReaderNightSurface else MaterialTheme.colorScheme.surface,
         ) {
             BoxWithConstraints(
                 modifier = if (fitToViewport) Modifier.fillMaxSize() else Modifier.fillMaxWidth(),
@@ -437,6 +504,7 @@ private fun PdfPageItem(
                         onZoomStateChange = { zoomState = it },
                         fitToViewport = fitToViewport,
                         onPageTap = onPageTap,
+                        nightAppearance = nightAppearance,
                     )
                 }
             }
@@ -501,6 +569,7 @@ private fun RenderedPage(
     onZoomStateChange: (PageZoomState) -> Unit,
     fitToViewport: Boolean,
     onPageTap: () -> Unit,
+    nightAppearance: Boolean,
 ) {
     val description = stringResource(R.string.page_content_description, pageNumber, pageCount)
     val zoomDescription = stringResource(R.string.zoom_state, (zoomState.scale * 100).roundToInt())
@@ -529,6 +598,7 @@ private fun RenderedPage(
             bitmap = bitmap.asImageBitmap(),
             contentDescription = null,
             contentScale = if (fitToViewport) ContentScale.Fit else ContentScale.FillWidth,
+            colorFilter = if (nightAppearance) NightPageColorFilter else null,
             modifier = (if (fitToViewport) Modifier.fillMaxSize() else Modifier.fillMaxWidth())
                 .graphicsLayer {
                     scaleX = zoomState.scale
@@ -595,3 +665,15 @@ private tailrec fun Context.findActivity(): Activity? = when (this) {
 }
 
 private const val ChromeAutoHideMillis = 3_000L
+private val ReaderNightBackground = Color(0xFF0E0E0E)
+private val ReaderNightSurface = Color(0xFF121212)
+private val NightPageColorFilter = ColorFilter.colorMatrix(
+    ColorMatrix(
+        floatArrayOf(
+            -1f, 0f, 0f, 0f, 255f,
+            0f, -1f, 0f, 0f, 255f,
+            0f, 0f, -1f, 0f, 255f,
+            0f, 0f, 0f, 1f, 0f,
+        ),
+    ),
+)
