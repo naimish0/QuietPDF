@@ -796,23 +796,26 @@ Rules:
 
 ### Feature Execution
 
+The user owns the complete execution workflow outside implementation:
+
 1. The user creates the exact feature branch from an updated, clean `main`.
-2. Verify that the current branch exactly matches the first pending queue item. Never create the
-   feature branch on the user's behalf.
-3. Configure and verify the required repository-local Git identity.
-4. Implement only the assigned feature.
-5. Add focused tests.
-6. Run the relevant verification.
-7. Review the diff for unrelated changes.
-8. Verify the required Git identity again.
-9. Create one intentional feature commit.
-10. Push the feature branch without force-pushing.
-11. Open a focused pull request for the feature branch.
-12. Merge the pull request into `main` only after required checks and scoped verification pass.
-13. Check out `main`, pull it using fast-forward-only behavior, and verify the merged result.
-14. Mark the queue item `COMPLETED` only after the merge and verification, then push that queue-only
-    status update and pull `main` again.
-15. Do not create the next feature branch. Continue only after the user creates the exact next branch.
+2. The user confirms that the branch matches the first pending queue item.
+3. Codex implements only the assigned feature and writes focused tests. Codex then stops and reports
+   the changed files and any known constraints.
+4. The user reviews the diff and runs all relevant verification, tests, builds, lint, and device
+   checks.
+5. The user configures and verifies the required repository-local Git identity.
+6. The user stages the intended files, creates the feature commit, and pushes without force-pushing.
+7. The user opens, reviews, and merges the pull request after required checks pass.
+8. The user checks out `main`, pulls it using fast-forward-only behavior, and verifies the merged
+   result.
+9. The user marks the queue item `COMPLETED`, commits and pushes that queue-only update, and pulls
+   `main` again.
+10. The user creates the next feature branch when ready.
+
+Codex must not run verification commands or perform branch creation, staging, commits, pushes, pull
+requests, merges, branch switching, pulls, or queue-status changes. Read-only repository inspection
+is allowed when needed to implement the feature safely.
 
 ### Never
 
@@ -820,9 +823,7 @@ Rules:
     - Name: `Naimish Gupta`
     - Email: `naimishgupta983842377@gmail.com`
 - Configure Git identity globally.
-- Create a feature branch; feature branches are created manually by the user.
-- Start feature work while on `main` or on a branch that does not exactly match the first pending
-  queue item.
+- Ask Codex to perform verification or Git/PR workflow steps assigned to the user above.
 - Mix multiple queued features in one branch.
 - Begin the next feature before the current feature is merged.
 - Force-push.
@@ -833,10 +834,10 @@ Rules:
 - Continue after a genuine licensing or security blocker.
 - Bypass branch protection.
 
-Every feature must be merged through a pull request. Never bypass branch protection or replace the
-pull-request merge with a direct feature merge into local `main`.
+Every feature must be merged by the user through a pull request. Never bypass branch protection or
+replace the pull-request merge with a direct feature merge into local `main`.
 
-When an external runner owns Git operations, Codex must not independently stage, commit, switch branches, merge, pull, or push. The external runner must still use the required Git identity for every commit.
+The user or their external runner must use the required Git identity for every commit.
 
 ## Definition of Feature Complete
 

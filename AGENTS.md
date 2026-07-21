@@ -3,7 +3,7 @@ docs/execution/quietpdf-feature-queue.md. Treat the product context as persisten
 is authoritative and must be processed sequentially; example feature IDs are not the complete queue.
 The current feature prompt defines the only implementation scope for that run.
 
-The user creates every feature branch manually. Codex must never create the next feature branch.
-Before changing feature code, verify that the current branch exactly matches the first pending
-feature. Follow the product context for commit, push, pull request, merge, main synchronization, and
-queue-completion requirements.
+The user owns the complete branch, verification, Git, pull-request, merge, main-synchronization, and
+queue-completion workflow. Codex's only responsibility is to implement the feature and write its
+focused tests in the workspace. Codex must not run verification or perform any Git, pull-request,
+merge, pull, push, or queue-status operation.

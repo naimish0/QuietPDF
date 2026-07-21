@@ -1,10 +1,9 @@
 # QuietPDF Feature Queue
 
 Process this list sequentially. Feature branch names must exactly match the pending queue entry. The
-user creates each feature branch manually; Codex must not create it. Codex implements and verifies
-the feature on that branch, creates one focused commit, pushes it, opens and merges a pull request,
-pulls and verifies `main`, and only then marks the item `COMPLETED`. Codex waits for the user-created
-next branch before starting the next feature.
+user owns branch creation, all verification, Git operations, pull requests, merges, main pulls, and
+queue-status updates. Codex only implements the requested feature and writes its focused tests in the
+workspace, then stops without running verification or changing this queue.
 
 COMPLETED T3-PDF-Reader-Modes
 COMPLETED T4-PDF-Fullscreen
