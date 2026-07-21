@@ -915,7 +915,10 @@ class QuietPdfAppTest {
     fun changePassword_successIsShown() {
         setContent(
             state = PdfOpenState.Idle,
-            changePasswordState = ChangePasswordState.Completed(3),
+            changePasswordState = ChangePasswordState.Completed(
+                Uri.parse("content://documents/password-changed.pdf"),
+                3,
+            ),
         )
         composeRule.onNodeWithTag("change_password_success").performScrollTo().assertIsDisplayed()
     }

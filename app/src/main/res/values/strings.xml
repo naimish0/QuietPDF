@@ -558,6 +558,9 @@
     <string name="file_sort_pages_ascending">Fewest pages</string>
     <string name="file_sort_pages_descending">Most pages</string>
     <string name="file_search_no_results">No matching recent or favorite files</string>
+    <string name="share_pdf">Share</string>
+    <string name="share_pdf_chooser">Share PDF</string>
+    <string name="share_pdf_unavailable">This PDF cannot be shared because access was lost or no sharing app is available.</string>
     <plurals name="recent_file_pages">
         <item quantity="one">%d page</item>
         <item quantity="other">%d pages</item>

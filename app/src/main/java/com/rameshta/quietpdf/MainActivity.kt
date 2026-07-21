@@ -7,6 +7,7 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -156,6 +157,7 @@ import com.rameshta.quietpdf.pdf.FavoritePdf
 import com.rameshta.quietpdf.pdf.PdfHistoryEntry
 import com.rameshta.quietpdf.pdf.PdfFileOrganizer
 import com.rameshta.quietpdf.pdf.PdfFileSortOrder
+import com.rameshta.quietpdf.pdf.PdfShareIntentFactory
 import com.rameshta.quietpdf.pdf.PdfCompressionMode
 import com.rameshta.quietpdf.pdf.PdfCompressionRequest
 import com.rameshta.quietpdf.pdf.TargetFileSize
@@ -174,6 +176,10 @@ import androidx.camera.view.LifecycleCameraController
 import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.text.DateFormat
 import java.util.Date
@@ -577,6 +583,7 @@ class MainActivity : ComponentActivity() {
                     onToggleFavoritePdf = viewModel::toggleFavoritePdf,
                     onRemoveFavoritePdf = viewModel::removeFavoritePdf,
                     onClearHistory = viewModel::clearHistory,
+                    onSharePdf = ::sharePdf,
                     onOpenPdf = { picker.launch(arrayOf("application/pdf")) },
                     renderPage = viewModel::renderPage,
                     onPageChanged = viewModel::rememberPage,
@@ -872,6 +879,32 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun sharePdf(uri: Uri) {
+        val shareIntent = PdfShareIntentFactory.create(this, uri)
+        if (shareIntent == null) {
+            Toast.makeText(this, R.string.share_pdf_unavailable, Toast.LENGTH_LONG).show()
+            return
+        }
+        lifecycleScope.launch {
+            val readable = withContext(Dispatchers.IO) {
+                try {
+                    contentResolver.openFileDescriptor(uri, "r")?.use { true } ?: false
+                } catch (_: Exception) {
+                    false
+                }
+            }
+            if (!readable) {
+                Toast.makeText(this@MainActivity, R.string.share_pdf_unavailable, Toast.LENGTH_LONG).show()
+                return@launch
+            }
+            try {
+                startActivity(Intent.createChooser(shareIntent, getString(R.string.share_pdf_chooser)))
+            } catch (_: RuntimeException) {
+                Toast.makeText(this@MainActivity, R.string.share_pdf_unavailable, Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
     private fun retainDirectoryPermission(uri: Uri) {
         try {
             contentResolver.takePersistableUriPermission(
@@ -902,6 +935,7 @@ fun QuietPdfApp(
     onToggleFavoritePdf: (Uri) -> Unit = {},
     onRemoveFavoritePdf: (Uri) -> Unit = {},
     onClearHistory: () -> Unit = {},
+    onSharePdf: (Uri) -> Unit = {},
     onOpenPdf: () -> Unit,
     renderPage: suspend (pageIndex: Int, targetWidth: Int) -> PageRenderResult,
     onPageChanged: (pageIndex: Int) -> Unit = {},
@@ -1061,6 +1095,7 @@ fun QuietPdfApp(
             loadTableOfContents = loadTableOfContents,
             inspectHealth = inspectHealth,
             onToggleFavorite = { onToggleFavoritePdf(state.uri) },
+            onSharePdf = { onSharePdf(state.uri) },
         )
         return
     }
@@ -1119,6 +1154,7 @@ fun QuietPdfApp(
                     onToggleFavoritePdf = onToggleFavoritePdf,
                     onRemoveFavoritePdf = onRemoveFavoritePdf,
                     onClearHistory = onClearHistory,
+                    onSharePdf = onSharePdf,
                     onOpenPdf = onOpenPdf,
                     imagesToPdfState = imagesToPdfState,
                     onImagesToPdf = onImagesToPdf,
@@ -3036,6 +3072,7 @@ private fun OpenPdfContent(
     onToggleFavoritePdf: (Uri) -> Unit,
     onRemoveFavoritePdf: (Uri) -> Unit,
     onClearHistory: () -> Unit,
+    onSharePdf: (Uri) -> Unit,
     onOpenPdf: () -> Unit,
     imagesToPdfState: ImagesToPdfState,
     onImagesToPdf: () -> Unit,
@@ -3455,6 +3492,7 @@ private fun OpenPdfContent(
                 onToggleFavoritePdf = onToggleFavoritePdf,
                 onRemoveFavoritePdf = onRemoveFavoritePdf,
                 onClearHistory = onClearHistory,
+                onSharePdf = onSharePdf,
                 onImagesToPdf = onImagesToPdf,
                 imagesToPdfState = imagesToPdfState,
                 onDismissImagesToPdfFailure = onDismissImagesToPdfFailure,
@@ -3535,6 +3573,7 @@ private fun RecentFilesSection(
     favoriteUris: Set<Uri>,
     onOpen: (Uri) -> Unit,
     onToggleFavorite: (Uri) -> Unit,
+    onShare: (Uri) -> Unit,
     onRemove: (Uri) -> Unit,
     onClear: () -> Unit,
 ) {
@@ -3558,14 +3597,12 @@ private fun RecentFilesSection(
     val displayed = if (showAll) recentPdfs else recentPdfs.take(5)
     displayed.forEachIndexed { index, recent ->
         val name = recent.displayName ?: stringResource(R.string.recent_file_unnamed)
-        Row(
+        Column(
             modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             Button(
                 onClick = { onOpen(recent.uri) },
-                modifier = Modifier.weight(1f).heightIn(min = 56.dp).testTag("recent_file_$index"),
+                modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp).testTag("recent_file_$index"),
             ) {
                 Column(modifier = Modifier.fillMaxWidth()) {
                     Text(
@@ -3583,21 +3620,30 @@ private fun RecentFilesSection(
                     )
                 }
             }
-            TextButton(
-                onClick = { onToggleFavorite(recent.uri) },
-                modifier = Modifier.testTag("recent_file_favorite_$index"),
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
             ) {
-                Text(
-                    stringResource(
-                        if (recent.uri in favoriteUris) R.string.favorite_file_remove
-                        else R.string.favorite_file_add,
-                    ),
-                )
+                TextButton(
+                    onClick = { onToggleFavorite(recent.uri) },
+                    modifier = Modifier.testTag("recent_file_favorite_$index"),
+                ) {
+                    Text(
+                        stringResource(
+                            if (recent.uri in favoriteUris) R.string.favorite_file_remove
+                            else R.string.favorite_file_add,
+                        ),
+                    )
+                }
+                TextButton(
+                    onClick = { onShare(recent.uri) },
+                    modifier = Modifier.testTag("recent_file_share_$index"),
+                ) { Text(stringResource(R.string.share_pdf)) }
+                TextButton(
+                    onClick = { onRemove(recent.uri) },
+                    modifier = Modifier.testTag("recent_file_remove_$index"),
+                ) { Text(stringResource(R.string.recent_file_remove)) }
             }
-            TextButton(
-                onClick = { onRemove(recent.uri) },
-                modifier = Modifier.testTag("recent_file_remove_$index"),
-            ) { Text(stringResource(R.string.recent_file_remove)) }
         }
     }
     if (confirmClear) {
@@ -3625,6 +3671,7 @@ private fun RecentFilesSection(
 private fun FavoriteFilesSection(
     favoritePdfs: List<FavoritePdf>,
     onOpen: (Uri) -> Unit,
+    onShare: (Uri) -> Unit,
     onRemove: (Uri) -> Unit,
 ) {
     Text(
@@ -3635,14 +3682,12 @@ private fun FavoriteFilesSection(
     )
     favoritePdfs.forEachIndexed { index, favorite ->
         val name = favorite.displayName ?: stringResource(R.string.recent_file_unnamed)
-        Row(
+        Column(
             modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             Button(
                 onClick = { onOpen(favorite.uri) },
-                modifier = Modifier.weight(1f).heightIn(min = 56.dp).testTag("favorite_file_$index"),
+                modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp).testTag("favorite_file_$index"),
             ) {
                 Column(modifier = Modifier.fillMaxWidth()) {
                     Text(text = name, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -3656,10 +3701,16 @@ private fun FavoriteFilesSection(
                     )
                 }
             }
-            TextButton(
-                onClick = { onRemove(favorite.uri) },
-                modifier = Modifier.testTag("favorite_file_remove_$index"),
-            ) { Text(stringResource(R.string.favorite_file_remove)) }
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                TextButton(
+                    onClick = { onShare(favorite.uri) },
+                    modifier = Modifier.testTag("favorite_file_share_$index"),
+                ) { Text(stringResource(R.string.share_pdf)) }
+                TextButton(
+                    onClick = { onRemove(favorite.uri) },
+                    modifier = Modifier.testTag("favorite_file_remove_$index"),
+                ) { Text(stringResource(R.string.favorite_file_remove)) }
+            }
         }
     }
 }
@@ -3817,6 +3868,7 @@ private fun IdleContent(
     onToggleFavoritePdf: (Uri) -> Unit,
     onRemoveFavoritePdf: (Uri) -> Unit,
     onClearHistory: () -> Unit,
+    onSharePdf: (Uri) -> Unit,
     onImagesToPdf: () -> Unit,
     imagesToPdfState: ImagesToPdfState,
     onDismissImagesToPdfFailure: () -> Unit,
@@ -3927,6 +3979,7 @@ private fun IdleContent(
         FavoriteFilesSection(
             favoritePdfs = organizedFavorites,
             onOpen = onOpenFavoritePdf,
+            onShare = onSharePdf,
             onRemove = onRemoveFavoritePdf,
         )
     }
@@ -3937,6 +3990,7 @@ private fun IdleContent(
             favoriteUris = favoritePdfs.mapTo(mutableSetOf(), FavoritePdf::uri),
             onOpen = onOpenRecentPdf,
             onToggleFavorite = onToggleFavoritePdf,
+            onShare = onSharePdf,
             onRemove = onRemoveRecentPdf,
             onClear = onClearRecentPdfs,
         )
@@ -4230,6 +4284,10 @@ private fun IdleContent(
                 ) {
                     Text(stringResource(R.string.open_pdf))
                 }
+                TextButton(
+                    onClick = { onSharePdf(compressPdfState.outputUri) },
+                    modifier = Modifier.testTag("share_compressed_pdf"),
+                ) { Text(stringResource(R.string.share_pdf)) }
                 TextButton(onClick = onDismissPdfCompressionResult) {
                     Text(stringResource(R.string.dismiss))
                 }
@@ -4258,8 +4316,14 @@ private fun IdleContent(
                 textAlign = TextAlign.Center,
                 modifier = Modifier.testTag("protect_pdf_success"),
             )
-            TextButton(onClick = onDismissPdfProtectionResult) {
-                Text(stringResource(R.string.dismiss))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(
+                    onClick = { onSharePdf(protectPdfState.outputUri) },
+                    modifier = Modifier.testTag("share_protected_pdf"),
+                ) { Text(stringResource(R.string.share_pdf)) }
+                TextButton(onClick = onDismissPdfProtectionResult) {
+                    Text(stringResource(R.string.dismiss))
+                }
             }
         }
         else -> Unit
@@ -4292,6 +4356,10 @@ private fun IdleContent(
                 ) {
                     Text(stringResource(R.string.open_pdf))
                 }
+                TextButton(
+                    onClick = { onSharePdf(removePasswordState.outputUri) },
+                    modifier = Modifier.testTag("share_password_removed_pdf"),
+                ) { Text(stringResource(R.string.share_pdf)) }
                 TextButton(onClick = onDismissPasswordRemovalResult) {
                     Text(stringResource(R.string.dismiss))
                 }
@@ -4320,8 +4388,14 @@ private fun IdleContent(
                 textAlign = TextAlign.Center,
                 modifier = Modifier.testTag("change_password_success"),
             )
-            TextButton(onClick = onDismissPasswordChangeResult) {
-                Text(stringResource(R.string.dismiss))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(
+                    onClick = { onSharePdf(changePasswordState.outputUri) },
+                    modifier = Modifier.testTag("share_password_changed_pdf"),
+                ) { Text(stringResource(R.string.share_pdf)) }
+                TextButton(onClick = onDismissPasswordChangeResult) {
+                    Text(stringResource(R.string.dismiss))
+                }
             }
         }
         else -> Unit
@@ -4356,6 +4430,10 @@ private fun IdleContent(
                     onClick = onOpenTextWatermarkedPdf,
                     modifier = Modifier.testTag("open_text_watermarked_pdf"),
                 ) { Text(stringResource(R.string.open_pdf)) }
+                TextButton(
+                    onClick = { onSharePdf(textWatermarkState.outputUri) },
+                    modifier = Modifier.testTag("share_text_watermarked_pdf"),
+                ) { Text(stringResource(R.string.share_pdf)) }
                 TextButton(onClick = onDismissTextWatermarkResult) {
                     Text(stringResource(R.string.dismiss))
                 }
@@ -4393,6 +4471,10 @@ private fun IdleContent(
                     onClick = onOpenImageWatermarkedPdf,
                     modifier = Modifier.testTag("open_image_watermarked_pdf"),
                 ) { Text(stringResource(R.string.open_pdf)) }
+                TextButton(
+                    onClick = { onSharePdf(imageWatermarkState.outputUri) },
+                    modifier = Modifier.testTag("share_image_watermarked_pdf"),
+                ) { Text(stringResource(R.string.share_pdf)) }
                 TextButton(onClick = onDismissImageWatermarkResult) {
                     Text(stringResource(R.string.dismiss))
                 }
@@ -4462,6 +4544,10 @@ private fun IdleContent(
                     onClick = onOpenFilledFormPdf,
                     modifier = Modifier.testTag("open_filled_form_pdf"),
                 ) { Text(stringResource(R.string.open_pdf)) }
+                TextButton(
+                    onClick = { onSharePdf(fillFormsState.outputUri) },
+                    modifier = Modifier.testTag("share_filled_form_pdf"),
+                ) { Text(stringResource(R.string.share_pdf)) }
                 TextButton(onClick = onDismissFillFormsResult) {
                     Text(stringResource(R.string.dismiss))
                 }
@@ -4495,6 +4581,10 @@ private fun IdleContent(
                     onClick = onOpenSignedPdf,
                     modifier = Modifier.testTag("open_signed_pdf"),
                 ) { Text(stringResource(R.string.open_pdf)) }
+                TextButton(
+                    onClick = { onSharePdf(signPdfState.outputUri) },
+                    modifier = Modifier.testTag("share_signed_pdf"),
+                ) { Text(stringResource(R.string.share_pdf)) }
                 TextButton(onClick = onDismissSignPdfResult) {
                     Text(stringResource(R.string.dismiss))
                 }
@@ -4532,6 +4622,10 @@ private fun IdleContent(
                     onClick = onOpenAnnotatedPdf,
                     modifier = Modifier.testTag("open_annotated_pdf"),
                 ) { Text(stringResource(R.string.open_pdf)) }
+                TextButton(
+                    onClick = { onSharePdf(annotatePdfState.outputUri) },
+                    modifier = Modifier.testTag("share_annotated_pdf"),
+                ) { Text(stringResource(R.string.share_pdf)) }
                 TextButton(onClick = onDismissAnnotatePdfResult) {
                     Text(stringResource(R.string.dismiss))
                 }
@@ -4567,6 +4661,10 @@ private fun IdleContent(
                 ) {
                     Text(stringResource(R.string.open_pdf))
                 }
+                TextButton(
+                    onClick = { onSharePdf(scannerCaptureState.outputUri) },
+                    modifier = Modifier.testTag("share_scanner_pdf"),
+                ) { Text(stringResource(R.string.share_pdf)) }
                 TextButton(onClick = onDismissScannerResult) {
                     Text(stringResource(R.string.dismiss))
                 }
