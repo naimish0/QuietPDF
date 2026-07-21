@@ -224,7 +224,31 @@ sealed interface ScannerCropResult {
     data object Failed : ScannerCropResult
 }
 
+sealed interface ScannerCropPreviewResult {
+    data class Ready(val bitmap: Bitmap) : ScannerCropPreviewResult
+    data object InvalidCrop : ScannerCropPreviewResult
+    data object InsufficientMemory : ScannerCropPreviewResult
+    data object Failed : ScannerCropPreviewResult
+}
+
 class ScannerCropCorrectionEngine(private val cacheDir: File) {
+    suspend fun correctPreview(
+        source: Bitmap,
+        selection: ScannerCropSelection,
+    ): ScannerCropPreviewResult = withContext(Dispatchers.Default) {
+        try {
+            val corrected = correctBitmap(source, selection, PreviewMaxDimension)
+                ?: return@withContext ScannerCropPreviewResult.InvalidCrop
+            ScannerCropPreviewResult.Ready(corrected)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: OutOfMemoryError) {
+            ScannerCropPreviewResult.InsufficientMemory
+        } catch (_: Exception) {
+            ScannerCropPreviewResult.Failed
+        }
+    }
+
     suspend fun correct(captureFile: File, selection: ScannerCropSelection): ScannerCropResult =
         withContext(Dispatchers.IO) {
             if (!captureFile.isFile || captureFile.length() <= 0L) {
@@ -246,37 +270,11 @@ class ScannerCropCorrectionEngine(private val cacheDir: File) {
                         )
                     }
                 }
-                val size = ScannerCropGeometry.outputSize(source.width, source.height, selection)
-                    ?: return@withContext ScannerCropResult.InvalidCrop
-                corrected = Bitmap.createBitmap(size.width, size.height, Bitmap.Config.ARGB_8888)
-                val sourcePoints = floatArrayOf(
-                    selection.topLeft.x * source.width,
-                    selection.topLeft.y * source.height,
-                    selection.topRight.x * source.width,
-                    selection.topRight.y * source.height,
-                    selection.bottomRight.x * source.width,
-                    selection.bottomRight.y * source.height,
-                    selection.bottomLeft.x * source.width,
-                    selection.bottomLeft.y * source.height,
-                )
-                val destinationPoints = floatArrayOf(
-                    0f, 0f,
-                    size.width.toFloat(), 0f,
-                    size.width.toFloat(), size.height.toFloat(),
-                    0f, size.height.toFloat(),
-                )
-                val transform = Matrix()
-                if (!transform.setPolyToPoly(sourcePoints, 0, destinationPoints, 0, 4)) {
-                    return@withContext ScannerCropResult.InvalidCrop
-                }
-                Canvas(corrected).apply {
-                    drawColor(Color.WHITE)
-                    drawBitmap(
-                        source,
-                        transform,
-                        Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG or Paint.DITHER_FLAG),
-                    )
-                }
+                corrected = correctBitmap(
+                    source,
+                    selection,
+                    ScannerCropGeometry.MaxCorrectedDimension,
+                ) ?: return@withContext ScannerCropResult.InvalidCrop
                 output = File.createTempFile("scanner-corrected-", ".jpg", cacheDir)
                 val written = output.outputStream().use { stream ->
                     corrected.compress(Bitmap.CompressFormat.JPEG, JpegQuality, stream)
@@ -300,7 +298,52 @@ class ScannerCropCorrectionEngine(private val cacheDir: File) {
             }
         }
 
+    private fun correctBitmap(
+        source: Bitmap,
+        selection: ScannerCropSelection,
+        maxDimension: Int,
+    ): Bitmap? {
+        val size = ScannerCropGeometry.outputSize(
+            source.width,
+            source.height,
+            selection,
+            maxDimension,
+        ) ?: return null
+        val corrected = Bitmap.createBitmap(size.width, size.height, Bitmap.Config.ARGB_8888)
+        val sourcePoints = floatArrayOf(
+            selection.topLeft.x * source.width,
+            selection.topLeft.y * source.height,
+            selection.topRight.x * source.width,
+            selection.topRight.y * source.height,
+            selection.bottomRight.x * source.width,
+            selection.bottomRight.y * source.height,
+            selection.bottomLeft.x * source.width,
+            selection.bottomLeft.y * source.height,
+        )
+        val destinationPoints = floatArrayOf(
+            0f, 0f,
+            size.width.toFloat(), 0f,
+            size.width.toFloat(), size.height.toFloat(),
+            0f, size.height.toFloat(),
+        )
+        val transform = Matrix()
+        if (!transform.setPolyToPoly(sourcePoints, 0, destinationPoints, 0, 4)) {
+            corrected.recycle()
+            return null
+        }
+        Canvas(corrected).apply {
+            drawColor(Color.WHITE)
+            drawBitmap(
+                source,
+                transform,
+                Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG or Paint.DITHER_FLAG),
+            )
+        }
+        return corrected
+    }
+
     private companion object {
+        const val PreviewMaxDimension = 1400
         const val JpegQuality = 94
     }
 }

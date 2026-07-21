@@ -26,7 +26,7 @@ COMPLETED T19-Duplicate-Pages
 COMPLETED T20-Compress-PDF
 COMPLETED T21-Target-File-Size
 COMPLETED T22-Scanner-Capture
-T23-Scanner-Crop-Correction
+COMPLETED T23-Scanner-Crop-Correction
 T24-Scanner-Enhancement
 T25-Scanner-Multi-Page
 T26-Protect-PDF

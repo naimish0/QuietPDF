@@ -50,6 +50,7 @@ class ScannerCaptureEngine(context: Context) {
     private val contentResolver: ContentResolver = appContext.contentResolver
     private val imagesToPdfEngine = ImagesToPdfEngine(contentResolver, appContext.cacheDir)
     private val cropCorrectionEngine = ScannerCropCorrectionEngine(appContext.cacheDir)
+    private val enhancementEngine = ScannerEnhancementEngine(appContext.cacheDir)
 
     fun createCaptureFile(): File = File.createTempFile("scanner-capture-", ".jpg", appContext.cacheDir)
 
@@ -101,9 +102,11 @@ class ScannerCaptureEngine(context: Context) {
         captureFile: File,
         outputUri: Uri,
         crop: ScannerCropSelection = ScannerCropSelection.fullImage(),
+        enhancement: ScannerEnhancementSettings = ScannerEnhancementSettings(),
     ): ScannerPdfResult {
         if (!captureFile.isFile || captureFile.length() <= 0L) return ScannerPdfResult.InvalidImage
         var correctedFile: File? = null
+        var enhancedFile: File? = null
         return try {
             when (val correction = cropCorrectionEngine.correct(captureFile, crop)) {
                 is ScannerCropResult.Ready -> correctedFile = correction.file
@@ -113,8 +116,21 @@ class ScannerCaptureEngine(context: Context) {
                 ScannerCropResult.Failed -> return ScannerPdfResult.Failed
             }
             when (
+                val enhanced = enhancementEngine.enhanceFile(
+                    requireNotNull(correctedFile),
+                    enhancement,
+                )
+            ) {
+                is ScannerEnhancementFileResult.Ready -> enhancedFile = enhanced.file
+                ScannerEnhancementFileResult.InvalidImage -> return ScannerPdfResult.InvalidImage
+                ScannerEnhancementFileResult.InsufficientMemory -> {
+                    return ScannerPdfResult.InsufficientMemory
+                }
+                ScannerEnhancementFileResult.Failed -> return ScannerPdfResult.Failed
+            }
+            when (
                 val result = imagesToPdfEngine.create(
-                    imageUris = listOf(Uri.fromFile(requireNotNull(correctedFile))),
+                    imageUris = listOf(Uri.fromFile(requireNotNull(enhancedFile))),
                     outputUri = outputUri,
                     layout = ImagePdfLayout(
                         orientation = ImagePdfOrientation.Auto,
@@ -142,6 +158,7 @@ class ScannerCaptureEngine(context: Context) {
             cleanupNewPdfOutput(appContext, contentResolver, outputUri)
             throw cancelled
         } finally {
+            enhancedFile?.delete()
             correctedFile?.delete()
         }
     }

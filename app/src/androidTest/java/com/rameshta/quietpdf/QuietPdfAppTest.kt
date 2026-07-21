@@ -63,6 +63,8 @@ import com.rameshta.quietpdf.pdf.PdfCompressionRequest
 import com.rameshta.quietpdf.pdf.ScannerCaptureFailure
 import com.rameshta.quietpdf.pdf.ScannerCapturePreview
 import com.rameshta.quietpdf.pdf.ScannerCaptureState
+import com.rameshta.quietpdf.pdf.ScannerColorMode
+import com.rameshta.quietpdf.pdf.ScannerEnhancementSettings
 import com.rameshta.quietpdf.ui.theme.QuietPDFTheme
 import org.junit.Rule
 import org.junit.Assert.assertEquals
@@ -1090,6 +1092,7 @@ class QuietPdfAppTest {
         val retakes = AtomicInteger()
         val saves = AtomicInteger()
         val resets = AtomicInteger()
+        val enhancementUpdates = CopyOnWriteArrayList<ScannerEnhancementSettings>()
         val bitmap = Bitmap.createBitmap(300, 400, Bitmap.Config.ARGB_8888)
         try {
             setContent(
@@ -1099,6 +1102,7 @@ class QuietPdfAppTest {
                 ),
                 onRetakeScannerCapture = retakes::incrementAndGet,
                 onResetScannerCrop = resets::incrementAndGet,
+                onUpdateScannerEnhancement = enhancementUpdates::add,
                 onSaveScannerPdf = saves::incrementAndGet,
             )
 
@@ -1110,11 +1114,17 @@ class QuietPdfAppTest {
                 .performScrollTo().assertIsDisplayed()
             composeRule.onNodeWithTag("scanner_crop_reset")
                 .performScrollTo().assertIsDisplayed().performClick()
+            composeRule.onNodeWithTag("scanner_mode_Grayscale")
+                .performScrollTo().performClick()
+            composeRule.onNodeWithTag("scanner_shadow_reduction")
+                .performScrollTo().performClick()
             composeRule.onNodeWithTag("scanner_retake").performScrollTo().performClick()
             composeRule.onNodeWithTag("scanner_save_pdf").performScrollTo().performClick()
             assertEquals(1, retakes.get())
             assertEquals(1, saves.get())
             assertEquals(1, resets.get())
+            assertEquals(ScannerColorMode.Grayscale, enhancementUpdates[0].mode)
+            assertEquals(false, enhancementUpdates[1].shadowReduction)
         } finally {
             bitmap.recycle()
         }
@@ -1191,6 +1201,7 @@ class QuietPdfAppTest {
         onScanDocument: () -> Unit = {},
         onRetakeScannerCapture: () -> Unit = {},
         onResetScannerCrop: () -> Unit = {},
+        onUpdateScannerEnhancement: (ScannerEnhancementSettings) -> Unit = {},
         onSaveScannerPdf: () -> Unit = {},
     ) {
         composeRule.setContent {
@@ -1243,6 +1254,7 @@ class QuietPdfAppTest {
                     onScanDocument = onScanDocument,
                     onRetakeScannerCapture = onRetakeScannerCapture,
                     onResetScannerCrop = onResetScannerCrop,
+                    onUpdateScannerEnhancement = onUpdateScannerEnhancement,
                     onSaveScannerPdf = onSaveScannerPdf,
                 )
             }

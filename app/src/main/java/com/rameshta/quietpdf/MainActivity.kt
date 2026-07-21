@@ -33,11 +33,14 @@ import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -117,6 +120,8 @@ import com.rameshta.quietpdf.pdf.TargetFileSize
 import com.rameshta.quietpdf.pdf.ScannerCaptureState
 import com.rameshta.quietpdf.pdf.ScannerCropPoint
 import com.rameshta.quietpdf.pdf.ScannerCropSelection
+import com.rameshta.quietpdf.pdf.ScannerColorMode
+import com.rameshta.quietpdf.pdf.ScannerEnhancementSettings
 import com.rameshta.quietpdf.ui.reader.PdfReaderScreen
 import com.rameshta.quietpdf.ui.theme.QuietPDFTheme
 import androidx.camera.core.CameraSelector
@@ -394,6 +399,7 @@ class MainActivity : ComponentActivity() {
                     onRetakeScannerCapture = viewModel::retakeScannerCapture,
                     onUpdateScannerCrop = viewModel::updateScannerCrop,
                     onResetScannerCrop = viewModel::resetScannerCrop,
+                    onUpdateScannerEnhancement = viewModel::updateScannerEnhancement,
                     onSaveScannerPdf = { createScannedPdf.launch("QuietPDF-scan.pdf") },
                     onCancelScannerCapture = viewModel::cancelScannerCapture,
                     onOpenScannerPdf = viewModel::openScannerPdf,
@@ -520,6 +526,7 @@ fun QuietPdfApp(
     onRetakeScannerCapture: () -> Unit = {},
     onUpdateScannerCrop: (ScannerCropSelection) -> Unit = {},
     onResetScannerCrop: () -> Unit = {},
+    onUpdateScannerEnhancement: (ScannerEnhancementSettings) -> Unit = {},
     onSaveScannerPdf: () -> Unit = {},
     onCancelScannerCapture: () -> Unit = {},
     onOpenScannerPdf: () -> Unit = {},
@@ -553,6 +560,7 @@ fun QuietPdfApp(
             onRetake = onRetakeScannerCapture,
             onUpdateCrop = onUpdateScannerCrop,
             onResetCrop = onResetScannerCrop,
+            onUpdateEnhancement = onUpdateScannerEnhancement,
             onSavePdf = onSaveScannerPdf,
             onCancel = onCancelScannerCapture,
         )
@@ -1992,6 +2000,7 @@ private fun ScannerCaptureScreen(
     onRetake: () -> Unit,
     onUpdateCrop: (ScannerCropSelection) -> Unit,
     onResetCrop: () -> Unit,
+    onUpdateEnhancement: (ScannerEnhancementSettings) -> Unit,
     onSavePdf: () -> Unit,
     onCancel: () -> Unit,
 ) {
@@ -2069,6 +2078,30 @@ private fun ScannerCaptureScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center,
                 )
+                ScannerEnhancementControls(
+                    settings = state.enhancement,
+                    processing = state.enhancementInProgress,
+                    failure = state.enhancementFailure,
+                    onSettingsChanged = onUpdateEnhancement,
+                )
+                state.enhancedPreview?.let { preview ->
+                    Text(
+                        text = stringResource(R.string.scanner_result_preview),
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.padding(top = 12.dp),
+                    )
+                    Image(
+                        bitmap = preview.asImageBitmap(),
+                        contentDescription = stringResource(R.string.scanner_result_preview_description),
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 180.dp, max = 420.dp)
+                            .padding(top = 8.dp)
+                            .testTag("scanner_enhanced_preview"),
+                    )
+                }
                 state.saveFailure?.let { failure ->
                     Text(
                         text = stringResource(failure.messageResource),
@@ -2099,6 +2132,101 @@ private fun ScannerCaptureScreen(
             }
             else -> Unit
         }
+    }
+}
+
+@Composable
+private fun ScannerEnhancementControls(
+    settings: ScannerEnhancementSettings,
+    processing: Boolean,
+    failure: com.rameshta.quietpdf.pdf.ScannerCaptureFailure?,
+    onSettingsChanged: (ScannerEnhancementSettings) -> Unit,
+) {
+    Text(
+        text = stringResource(R.string.scanner_enhancement_title),
+        style = MaterialTheme.typography.titleMedium,
+        fontWeight = FontWeight.SemiBold,
+        modifier = Modifier.padding(top = 16.dp),
+    )
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+    ) {
+        listOf(
+            ScannerColorMode.Color to R.string.scanner_mode_color,
+            ScannerColorMode.Grayscale to R.string.scanner_mode_grayscale,
+            ScannerColorMode.BlackAndWhite to R.string.scanner_mode_black_white,
+        ).forEach { (mode, label) ->
+            FilterChip(
+                selected = settings.mode == mode,
+                onClick = { onSettingsChanged(settings.copy(mode = mode)) },
+                label = { Text(stringResource(label)) },
+                modifier = Modifier.testTag("scanner_mode_${mode.name}"),
+            )
+        }
+    }
+    Text(
+        text = stringResource(
+            R.string.scanner_brightness,
+            (settings.brightness * 100).roundToInt(),
+        ),
+        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+    )
+    Slider(
+        value = settings.brightness,
+        onValueChange = { onSettingsChanged(settings.copy(brightness = it)) },
+        valueRange = ScannerEnhancementSettings.MinBrightness..ScannerEnhancementSettings.MaxBrightness,
+        modifier = Modifier.fillMaxWidth().testTag("scanner_brightness_slider"),
+    )
+    Text(
+        text = stringResource(
+            R.string.scanner_contrast,
+            (settings.contrast * 100).roundToInt(),
+        ),
+        modifier = Modifier.fillMaxWidth(),
+    )
+    Slider(
+        value = settings.contrast,
+        onValueChange = { onSettingsChanged(settings.copy(contrast = it)) },
+        valueRange = ScannerEnhancementSettings.MinContrast..ScannerEnhancementSettings.MaxContrast,
+        modifier = Modifier.fillMaxWidth().testTag("scanner_contrast_slider"),
+    )
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(stringResource(R.string.scanner_shadow_reduction))
+            Text(
+                stringResource(R.string.scanner_shadow_reduction_description),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Switch(
+            checked = settings.shadowReduction,
+            onCheckedChange = { onSettingsChanged(settings.copy(shadowReduction = it)) },
+            modifier = Modifier.testTag("scanner_shadow_reduction"),
+        )
+    }
+    if (processing) {
+        Row(
+            modifier = Modifier.padding(top = 8.dp).testTag("scanner_enhancement_progress"),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+            Text(stringResource(R.string.scanner_updating_preview))
+        }
+    }
+    failure?.let {
+        Text(
+            text = stringResource(it.messageResource),
+            color = MaterialTheme.colorScheme.error,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(top = 8.dp).testTag("scanner_enhancement_error"),
+        )
     }
 }
 

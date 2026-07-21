@@ -18,6 +18,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.delay
 
 sealed interface PdfOpenState {
     data object Idle : PdfOpenState
@@ -52,6 +53,10 @@ sealed interface ScannerCaptureState {
     data class Review(
         val preview: ScannerCapturePreview,
         val crop: ScannerCropSelection = preview.suggestedCrop,
+        val enhancement: ScannerEnhancementSettings = ScannerEnhancementSettings(),
+        val enhancedPreview: Bitmap? = null,
+        val enhancementInProgress: Boolean = false,
+        val enhancementFailure: ScannerCaptureFailure? = null,
         val saveFailure: ScannerCaptureFailure? = null,
     ) : ScannerCaptureState
     data object CreatingPdf : ScannerCaptureState
@@ -65,6 +70,7 @@ enum class ScannerCaptureFailure(@get:StringRes val messageResource: Int) {
     CaptureFailed(R.string.scanner_capture_failed),
     InvalidCapture(R.string.scanner_invalid_capture),
     InvalidCrop(R.string.scanner_invalid_crop),
+    EnhancementFailed(R.string.scanner_enhancement_failed),
     InsufficientMemory(R.string.scanner_memory_error),
     UnableToSave(R.string.scanner_save_error),
     SavePermissionDenied(R.string.scanner_save_permission_denied),
@@ -278,6 +284,8 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
     private val duplicatePagesEngine = DuplicatePagesEngine(application)
     private val compressPdfEngine = CompressPdfEngine(application)
     private val scannerCaptureEngine = ScannerCaptureEngine(application)
+    private val scannerCropCorrectionEngine = ScannerCropCorrectionEngine(application.cacheDir)
+    private val scannerEnhancementEngine = ScannerEnhancementEngine(application.cacheDir)
     private var openJob: Job? = null
     private var imageCreationJob: Job? = null
     private var mergeJob: Job? = null
@@ -289,8 +297,10 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
     private var duplicatePagesJob: Job? = null
     private var compressPdfJob: Job? = null
     private var scannerJob: Job? = null
+    private var scannerEnhancementJob: Job? = null
     private var scannerCaptureFile: File? = null
     private var scannerPreview: ScannerCapturePreview? = null
+    private var scannerEnhancedPreview: Bitmap? = null
     private var selectedImageUris: List<Uri> = emptyList()
     private var selectedImageLayout = ImagePdfLayout()
     private var selectedSplitRanges: List<SplitPageRange> = emptyList()
@@ -380,6 +390,7 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
                 is ScannerPreviewResult.Ready -> {
                     scannerPreview = result.preview
                     scannerCaptureState = ScannerCaptureState.Review(result.preview)
+                    refreshScannerEnhancementPreview(debounce = false)
                 }
                 ScannerPreviewResult.InvalidImage -> failScannerCapture(
                     ScannerCaptureFailure.InvalidCapture,
@@ -404,6 +415,8 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
 
     fun retakeScannerCapture() {
         if (scannerCaptureState !is ScannerCaptureState.Review) return
+        scannerEnhancementJob?.cancel()
+        scannerEnhancementJob = null
         releaseScannerCapture()
         scannerCaptureState = ScannerCaptureState.Camera
     }
@@ -412,6 +425,7 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
         val review = scannerCaptureState as? ScannerCaptureState.Review ?: return
         if (!ScannerCropGeometry.isValid(crop)) return
         scannerCaptureState = review.copy(crop = crop, saveFailure = null)
+        refreshScannerEnhancementPreview(debounce = true)
     }
 
     fun resetScannerCrop() {
@@ -422,13 +436,35 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
         )
     }
 
+    fun updateScannerEnhancement(settings: ScannerEnhancementSettings) {
+        val review = scannerCaptureState as? ScannerCaptureState.Review ?: return
+        val normalized = settings.normalized()
+        if (normalized == review.enhancement) return
+        scannerCaptureState = review.copy(
+            enhancement = normalized,
+            enhancementInProgress = true,
+            enhancementFailure = null,
+            saveFailure = null,
+        )
+        refreshScannerEnhancementPreview(debounce = true)
+    }
+
     fun createScannerPdf(outputUri: Uri) {
         val review = scannerCaptureState as? ScannerCaptureState.Review ?: return
         val captureFile = scannerCaptureFile ?: return
+        scannerEnhancementJob?.cancel()
+        scannerEnhancementJob = null
         scannerCaptureState = ScannerCaptureState.CreatingPdf
         scannerJob?.cancel()
         scannerJob = viewModelScope.launch {
-            when (scannerCaptureEngine.createSinglePagePdf(captureFile, outputUri, review.crop)) {
+            when (
+                scannerCaptureEngine.createSinglePagePdf(
+                    captureFile,
+                    outputUri,
+                    review.crop,
+                    review.enhancement,
+                )
+            ) {
                 ScannerPdfResult.Success -> {
                     releaseScannerCapture()
                     scannerCaptureState = ScannerCaptureState.Completed(outputUri)
@@ -1314,6 +1350,7 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
         duplicatePagesJob?.cancel()
         compressPdfJob?.cancel()
         scannerJob?.cancel()
+        scannerEnhancementJob?.cancel()
         releaseScannerCapture()
         searchEngine.close()
         super.onCleared()
@@ -1336,14 +1373,124 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
     private fun clearScannerCapture() {
         scannerJob?.cancel()
         scannerJob = null
+        scannerEnhancementJob?.cancel()
+        scannerEnhancementJob = null
         releaseScannerCapture()
     }
 
     private fun releaseScannerCapture() {
+        scannerEnhancedPreview?.takeUnless(Bitmap::isRecycled)?.recycle()
+        scannerEnhancedPreview = null
         scannerPreview?.bitmap?.takeUnless(Bitmap::isRecycled)?.recycle()
         scannerPreview = null
         scannerCaptureEngine.discard(scannerCaptureFile)
         scannerCaptureFile = null
+    }
+
+    private fun refreshScannerEnhancementPreview(debounce: Boolean) {
+        val review = scannerCaptureState as? ScannerCaptureState.Review ?: return
+        val expectedPreview = review.preview
+        val expectedCrop = review.crop
+        val expectedSettings = review.enhancement
+        scannerCaptureState = review.copy(
+            enhancementInProgress = true,
+            enhancementFailure = null,
+        )
+        scannerEnhancementJob?.cancel()
+        scannerEnhancementJob = viewModelScope.launch {
+            if (debounce) delay(120)
+            val corrected = when (
+                val result = scannerCropCorrectionEngine.correctPreview(
+                    expectedPreview.bitmap,
+                    expectedCrop,
+                )
+            ) {
+                is ScannerCropPreviewResult.Ready -> result.bitmap
+                ScannerCropPreviewResult.InvalidCrop -> {
+                    updateScannerPreviewFailure(
+                        expectedPreview,
+                        expectedCrop,
+                        expectedSettings,
+                        ScannerCaptureFailure.InvalidCrop,
+                    )
+                    return@launch
+                }
+                ScannerCropPreviewResult.InsufficientMemory -> {
+                    updateScannerPreviewFailure(
+                        expectedPreview,
+                        expectedCrop,
+                        expectedSettings,
+                        ScannerCaptureFailure.InsufficientMemory,
+                    )
+                    return@launch
+                }
+                ScannerCropPreviewResult.Failed -> {
+                    updateScannerPreviewFailure(
+                        expectedPreview,
+                        expectedCrop,
+                        expectedSettings,
+                        ScannerCaptureFailure.EnhancementFailed,
+                    )
+                    return@launch
+                }
+            }
+            val enhancementResult = try {
+                scannerEnhancementEngine.enhancePreview(corrected, expectedSettings)
+            } finally {
+                corrected.recycle()
+            }
+            when (val result = enhancementResult) {
+                is ScannerEnhancementPreviewResult.Ready -> {
+                    val current = scannerCaptureState as? ScannerCaptureState.Review
+                    if (current?.preview !== expectedPreview || current.crop != expectedCrop ||
+                        current.enhancement != expectedSettings
+                    ) {
+                        result.bitmap.recycle()
+                        return@launch
+                    }
+                    scannerEnhancedPreview?.takeUnless(Bitmap::isRecycled)?.recycle()
+                    scannerEnhancedPreview = result.bitmap
+                    scannerCaptureState = current.copy(
+                        enhancedPreview = result.bitmap,
+                        enhancementInProgress = false,
+                        enhancementFailure = null,
+                    )
+                }
+                ScannerEnhancementPreviewResult.InsufficientMemory -> {
+                    updateScannerPreviewFailure(
+                        expectedPreview,
+                        expectedCrop,
+                        expectedSettings,
+                        ScannerCaptureFailure.InsufficientMemory,
+                    )
+                }
+                ScannerEnhancementPreviewResult.Failed -> {
+                    updateScannerPreviewFailure(
+                        expectedPreview,
+                        expectedCrop,
+                        expectedSettings,
+                        ScannerCaptureFailure.EnhancementFailed,
+                    )
+                }
+            }
+        }
+    }
+
+    private fun updateScannerPreviewFailure(
+        expectedPreview: ScannerCapturePreview,
+        expectedCrop: ScannerCropSelection,
+        expectedSettings: ScannerEnhancementSettings,
+        failure: ScannerCaptureFailure,
+    ) {
+        val current = scannerCaptureState as? ScannerCaptureState.Review ?: return
+        if (current.preview === expectedPreview && current.crop == expectedCrop &&
+            current.enhancement == expectedSettings
+        ) {
+            scannerCaptureState = current.copy(
+                enhancementInProgress = false,
+                enhancementFailure = failure,
+            )
+        }
     }
 
     private fun queryDisplayName(uri: Uri): String? = try {
