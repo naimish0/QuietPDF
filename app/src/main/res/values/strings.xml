@@ -547,6 +547,17 @@
     <string name="history_fill_forms">Filled PDF form</string>
     <string name="history_sign_pdf">Added visible signature</string>
     <string name="history_annotate_pdf">Annotated PDF</string>
+    <string name="file_search">Search files</string>
+    <string name="file_search_hint">Search recent and favorite filenames</string>
+    <string name="file_sort">Sort files</string>
+    <string name="file_sort_selected">Sort files: %1$s</string>
+    <string name="file_sort_newest">Newest first</string>
+    <string name="file_sort_oldest">Oldest first</string>
+    <string name="file_sort_name_ascending">Name A–Z</string>
+    <string name="file_sort_name_descending">Name Z–A</string>
+    <string name="file_sort_pages_ascending">Fewest pages</string>
+    <string name="file_sort_pages_descending">Most pages</string>
+    <string name="file_search_no_results">No matching recent or favorite files</string>
     <plurals name="recent_file_pages">
         <item quantity="one">%d page</item>
         <item quantity="other">%d pages</item>

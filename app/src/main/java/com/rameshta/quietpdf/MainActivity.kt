@@ -38,6 +38,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
@@ -152,6 +154,8 @@ import com.rameshta.quietpdf.pdf.PdfAnnotationItem
 import com.rameshta.quietpdf.pdf.RecentPdf
 import com.rameshta.quietpdf.pdf.FavoritePdf
 import com.rameshta.quietpdf.pdf.PdfHistoryEntry
+import com.rameshta.quietpdf.pdf.PdfFileOrganizer
+import com.rameshta.quietpdf.pdf.PdfFileSortOrder
 import com.rameshta.quietpdf.pdf.PdfCompressionMode
 import com.rameshta.quietpdf.pdf.PdfCompressionRequest
 import com.rameshta.quietpdf.pdf.TargetFileSize
@@ -3527,6 +3531,7 @@ private fun OpenPdfContent(
 @Composable
 private fun RecentFilesSection(
     recentPdfs: List<RecentPdf>,
+    showAll: Boolean,
     favoriteUris: Set<Uri>,
     onOpen: (Uri) -> Unit,
     onToggleFavorite: (Uri) -> Unit,
@@ -3550,7 +3555,8 @@ private fun RecentFilesSection(
             modifier = Modifier.testTag("recent_files_clear"),
         ) { Text(stringResource(R.string.recent_files_clear)) }
     }
-    recentPdfs.take(5).forEachIndexed { index, recent ->
+    val displayed = if (showAll) recentPdfs else recentPdfs.take(5)
+    displayed.forEachIndexed { index, recent ->
         val name = recent.displayName ?: stringResource(R.string.recent_file_unnamed)
         Row(
             modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
@@ -3654,6 +3660,69 @@ private fun FavoriteFilesSection(
                 onClick = { onRemove(favorite.uri) },
                 modifier = Modifier.testTag("favorite_file_remove_$index"),
             ) { Text(stringResource(R.string.favorite_file_remove)) }
+        }
+    }
+}
+
+@Composable
+private fun FileOrganizerControls(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    sortOrder: PdfFileSortOrder,
+    onSortOrderChange: (PdfFileSortOrder) -> Unit,
+) {
+    var sortExpanded by remember { mutableStateOf(false) }
+    val sortLabel = stringResource(
+        when (sortOrder) {
+            PdfFileSortOrder.Newest -> R.string.file_sort_newest
+            PdfFileSortOrder.Oldest -> R.string.file_sort_oldest
+            PdfFileSortOrder.NameAscending -> R.string.file_sort_name_ascending
+            PdfFileSortOrder.NameDescending -> R.string.file_sort_name_descending
+            PdfFileSortOrder.PageCountAscending -> R.string.file_sort_pages_ascending
+            PdfFileSortOrder.PageCountDescending -> R.string.file_sort_pages_descending
+        },
+    )
+    Column(modifier = Modifier.fillMaxWidth().padding(top = 20.dp)) {
+        OutlinedTextField(
+            value = query,
+            onValueChange = onQueryChange,
+            label = { Text(stringResource(R.string.file_search)) },
+            placeholder = { Text(stringResource(R.string.file_search_hint)) },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth().testTag("file_search_field"),
+        )
+        Box(modifier = Modifier.align(Alignment.End)) {
+            TextButton(
+                onClick = { sortExpanded = true },
+                modifier = Modifier.testTag("file_sort_button"),
+            ) { Text(stringResource(R.string.file_sort_selected, sortLabel)) }
+            DropdownMenu(
+                expanded = sortExpanded,
+                onDismissRequest = { sortExpanded = false },
+            ) {
+                PdfFileSortOrder.entries.forEach { option ->
+                    val label = stringResource(
+                        when (option) {
+                            PdfFileSortOrder.Newest -> R.string.file_sort_newest
+                            PdfFileSortOrder.Oldest -> R.string.file_sort_oldest
+                            PdfFileSortOrder.NameAscending -> R.string.file_sort_name_ascending
+                            PdfFileSortOrder.NameDescending -> R.string.file_sort_name_descending
+                            PdfFileSortOrder.PageCountAscending -> R.string.file_sort_pages_ascending
+                            PdfFileSortOrder.PageCountDescending -> R.string.file_sort_pages_descending
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text(label) },
+                        onClick = {
+                            sortExpanded = false
+                            onSortOrderChange(option)
+                        },
+                        modifier = Modifier
+                            .semantics { selected = option == sortOrder }
+                            .testTag("file_sort_${option.name}"),
+                    )
+                }
+            }
         }
     }
 }
@@ -3814,6 +3883,25 @@ private fun IdleContent(
     onOpenScannerPdf: () -> Unit,
     onDismissScannerResult: () -> Unit,
 ) {
+    var fileQuery by remember { mutableStateOf("") }
+    var fileSortOrder by remember { mutableStateOf(PdfFileSortOrder.Newest) }
+    val unnamedPdfName = stringResource(R.string.recent_file_unnamed)
+    val organizedFavorites = PdfFileOrganizer.organize(
+        files = favoritePdfs,
+        query = fileQuery,
+        sortOrder = fileSortOrder,
+        displayName = { it.displayName ?: unnamedPdfName },
+        pageCount = FavoritePdf::pageCount,
+        timestamp = FavoritePdf::addedEpochMillis,
+    )
+    val organizedRecents = PdfFileOrganizer.organize(
+        files = recentPdfs,
+        query = fileQuery,
+        sortOrder = fileSortOrder,
+        displayName = { it.displayName ?: unnamedPdfName },
+        pageCount = RecentPdf::pageCount,
+        timestamp = RecentPdf::lastOpenedEpochMillis,
+    )
     Text(
         text = stringResource(R.string.home_title),
         style = MaterialTheme.typography.headlineSmall,
@@ -3827,21 +3915,39 @@ private fun IdleContent(
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         textAlign = TextAlign.Center,
     )
-    if (favoritePdfs.isNotEmpty()) {
+    if (favoritePdfs.isNotEmpty() || recentPdfs.isNotEmpty()) {
+        FileOrganizerControls(
+            query = fileQuery,
+            onQueryChange = { fileQuery = it },
+            sortOrder = fileSortOrder,
+            onSortOrderChange = { fileSortOrder = it },
+        )
+    }
+    if (organizedFavorites.isNotEmpty()) {
         FavoriteFilesSection(
-            favoritePdfs = favoritePdfs,
+            favoritePdfs = organizedFavorites,
             onOpen = onOpenFavoritePdf,
             onRemove = onRemoveFavoritePdf,
         )
     }
-    if (recentPdfs.isNotEmpty()) {
+    if (organizedRecents.isNotEmpty()) {
         RecentFilesSection(
-            recentPdfs = recentPdfs,
+            recentPdfs = organizedRecents,
+            showAll = fileQuery.isNotBlank() || fileSortOrder != PdfFileSortOrder.Newest,
             favoriteUris = favoritePdfs.mapTo(mutableSetOf(), FavoritePdf::uri),
             onOpen = onOpenRecentPdf,
             onToggleFavorite = onToggleFavoritePdf,
             onRemove = onRemoveRecentPdf,
             onClear = onClearRecentPdfs,
+        )
+    }
+    if (fileQuery.isNotBlank() && organizedFavorites.isEmpty() && organizedRecents.isEmpty()) {
+        Text(
+            text = stringResource(R.string.file_search_no_results),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.fillMaxWidth().padding(top = 16.dp).testTag("file_search_no_results"),
+            textAlign = TextAlign.Center,
         )
     }
     if (history.isNotEmpty()) {
