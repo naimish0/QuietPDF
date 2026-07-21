@@ -260,6 +260,41 @@ sealed interface TextWatermarkState {
     data class Failed(val failure: TextWatermarkFailure) : TextWatermarkState
 }
 
+sealed interface ImageWatermarkState {
+    data object Idle : ImageWatermarkState
+    data object PreparingPdf : ImageWatermarkState
+    data class AwaitingImage(
+        val sourceUri: Uri,
+        val displayName: String,
+        val pageCount: Int,
+    ) : ImageWatermarkState
+    data object PreparingImage : ImageWatermarkState
+    data class Configuring(
+        val sourceUri: Uri,
+        val imageUri: Uri,
+        val displayName: String,
+        val pageCount: Int,
+        val imageInfo: WatermarkImageInfo,
+    ) : ImageWatermarkState
+    data class Applying(val selectedPageCount: Int) : ImageWatermarkState
+    data class Completed(
+        val outputUri: Uri,
+        val pageCount: Int,
+        val watermarkedPageCount: Int,
+    ) : ImageWatermarkState
+    data class Failed(val failure: ImageWatermarkFailure) : ImageWatermarkState
+}
+
+enum class ImageWatermarkFailure(@get:StringRes val messageResource: Int) {
+    PasswordProtected(R.string.image_watermark_password_protected),
+    InvalidDocument(R.string.image_watermark_invalid_document),
+    InvalidImage(R.string.image_watermark_invalid_image),
+    InvalidSettings(R.string.image_watermark_invalid_settings),
+    PermissionDenied(R.string.image_watermark_permission_denied),
+    InsufficientMemory(R.string.image_watermark_memory_error),
+    UnableToSave(R.string.image_watermark_save_error),
+}
+
 enum class TextWatermarkFailure(@get:StringRes val messageResource: Int) {
     PasswordProtected(R.string.text_watermark_password_protected),
     InvalidDocument(R.string.text_watermark_invalid_document),
@@ -385,6 +420,7 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
     private val removePasswordEngine = RemovePasswordEngine(application)
     private val changePasswordEngine = ChangePasswordEngine(application)
     private val textWatermarkEngine = TextWatermarkEngine(application)
+    private val imageWatermarkEngine = ImageWatermarkEngine(application)
     private val scannerCaptureEngine = ScannerCaptureEngine(application)
     private val scannerCropCorrectionEngine = ScannerCropCorrectionEngine(application.cacheDir)
     private val scannerEnhancementEngine = ScannerEnhancementEngine(application.cacheDir)
@@ -402,6 +438,7 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
     private var removePasswordJob: Job? = null
     private var changePasswordJob: Job? = null
     private var textWatermarkJob: Job? = null
+    private var imageWatermarkJob: Job? = null
     private var scannerJob: Job? = null
     private var scannerEnhancementJob: Job? = null
     private var scannerCaptureFile: File? = null
@@ -464,6 +501,9 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
         private set
 
     var textWatermarkState: TextWatermarkState by mutableStateOf(TextWatermarkState.Idle)
+        private set
+
+    var imageWatermarkState: ImageWatermarkState by mutableStateOf(ImageWatermarkState.Idle)
         private set
 
     var scannerCaptureState: ScannerCaptureState by mutableStateOf(ScannerCaptureState.Idle)
@@ -1809,6 +1849,118 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
 
     fun clearTextWatermarkResult() {
         textWatermarkState = TextWatermarkState.Idle
+    }
+
+    fun selectPdfForImageWatermark(uri: Uri) {
+        imageWatermarkJob?.cancel()
+        imageWatermarkState = ImageWatermarkState.PreparingPdf
+        imageWatermarkJob = viewModelScope.launch {
+            imageWatermarkState = when (val result = imageWatermarkEngine.analyzePdf(uri)) {
+                is ImageWatermarkAnalysisResult.Ready -> ImageWatermarkState.AwaitingImage(
+                    sourceUri = uri,
+                    displayName = withContext(Dispatchers.IO) { queryDisplayName(uri) } ?: "PDF",
+                    pageCount = result.analysis.pageCount,
+                )
+                ImageWatermarkAnalysisResult.PasswordProtected ->
+                    ImageWatermarkState.Failed(ImageWatermarkFailure.PasswordProtected)
+                ImageWatermarkAnalysisResult.InvalidDocument ->
+                    ImageWatermarkState.Failed(ImageWatermarkFailure.InvalidDocument)
+                ImageWatermarkAnalysisResult.PermissionDenied ->
+                    ImageWatermarkState.Failed(ImageWatermarkFailure.PermissionDenied)
+                ImageWatermarkAnalysisResult.InsufficientMemory ->
+                    ImageWatermarkState.Failed(ImageWatermarkFailure.InsufficientMemory)
+            }
+        }
+    }
+
+    fun selectImageForWatermark(uri: Uri) {
+        val awaiting = imageWatermarkState as? ImageWatermarkState.AwaitingImage ?: return
+        imageWatermarkJob?.cancel()
+        imageWatermarkState = ImageWatermarkState.PreparingImage
+        imageWatermarkJob = viewModelScope.launch {
+            imageWatermarkState = when (val result = imageWatermarkEngine.analyzeImage(uri)) {
+                is WatermarkImageAnalysisResult.Ready -> ImageWatermarkState.Configuring(
+                    sourceUri = awaiting.sourceUri,
+                    imageUri = uri,
+                    displayName = awaiting.displayName,
+                    pageCount = awaiting.pageCount,
+                    imageInfo = result.info,
+                )
+                WatermarkImageAnalysisResult.InvalidImage ->
+                    ImageWatermarkState.Failed(ImageWatermarkFailure.InvalidImage)
+                WatermarkImageAnalysisResult.PermissionDenied ->
+                    ImageWatermarkState.Failed(ImageWatermarkFailure.PermissionDenied)
+                WatermarkImageAnalysisResult.InsufficientMemory ->
+                    ImageWatermarkState.Failed(ImageWatermarkFailure.InsufficientMemory)
+            }
+        }
+    }
+
+    suspend fun renderImageWatermarkPreview(
+        settings: ImageWatermarkSettings,
+        targetWidth: Int,
+    ): ImageWatermarkPreviewResult {
+        val configuring = imageWatermarkState as? ImageWatermarkState.Configuring
+            ?: return ImageWatermarkPreviewResult.Failed
+        return imageWatermarkEngine.preview(
+            configuring.sourceUri,
+            configuring.imageUri,
+            settings.pageIndices.minOrNull() ?: 0,
+            settings,
+            targetWidth,
+        )
+    }
+
+    fun applyImageWatermark(outputUri: Uri, settings: ImageWatermarkSettings) {
+        val configuring = imageWatermarkState as? ImageWatermarkState.Configuring ?: return
+        if (!settings.isValid(configuring.pageCount)) {
+            imageWatermarkState = ImageWatermarkState.Failed(ImageWatermarkFailure.InvalidSettings)
+            return
+        }
+        imageWatermarkJob?.cancel()
+        imageWatermarkState = ImageWatermarkState.Applying(settings.pageIndices.size)
+        imageWatermarkJob = viewModelScope.launch {
+            imageWatermarkState = when (val result = imageWatermarkEngine.apply(
+                configuring.sourceUri,
+                configuring.imageUri,
+                outputUri,
+                settings,
+                configuring.pageCount,
+            )) {
+                is ImageWatermarkResult.Success -> ImageWatermarkState.Completed(
+                    outputUri, result.pageCount, result.watermarkedPageCount,
+                )
+                ImageWatermarkResult.PasswordProtected ->
+                    ImageWatermarkState.Failed(ImageWatermarkFailure.PasswordProtected)
+                ImageWatermarkResult.InvalidDocument ->
+                    ImageWatermarkState.Failed(ImageWatermarkFailure.InvalidDocument)
+                ImageWatermarkResult.InvalidImage ->
+                    ImageWatermarkState.Failed(ImageWatermarkFailure.InvalidImage)
+                ImageWatermarkResult.InvalidSettings ->
+                    ImageWatermarkState.Failed(ImageWatermarkFailure.InvalidSettings)
+                ImageWatermarkResult.PermissionDenied ->
+                    ImageWatermarkState.Failed(ImageWatermarkFailure.PermissionDenied)
+                ImageWatermarkResult.InsufficientMemory ->
+                    ImageWatermarkState.Failed(ImageWatermarkFailure.InsufficientMemory)
+                ImageWatermarkResult.Failed ->
+                    ImageWatermarkState.Failed(ImageWatermarkFailure.UnableToSave)
+            }
+        }
+    }
+
+    fun openImageWatermarkedPdf() {
+        val completed = imageWatermarkState as? ImageWatermarkState.Completed ?: return
+        imageWatermarkState = ImageWatermarkState.Idle
+        open(completed.outputUri)
+    }
+
+    fun cancelImageWatermark() {
+        imageWatermarkJob?.cancel()
+        imageWatermarkState = ImageWatermarkState.Idle
+    }
+
+    fun clearImageWatermarkResult() {
+        imageWatermarkState = ImageWatermarkState.Idle
     }
 
     fun rejectUnsupportedUri() {

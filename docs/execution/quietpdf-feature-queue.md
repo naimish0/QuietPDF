@@ -32,8 +32,8 @@ COMPLETED T25-Scanner-Multi-Page
 COMPLETED T26-Protect-PDF
 COMPLETED T27-Remove-Password
 COMPLETED 28-Change-Password
-T29-Text-Watermark
-T30-Image-Watermark
+COMPLETED T29-Text-Watermark
+COMPLETED T30-Image-Watermark
 T31-Extract-Images
 T32-Fill-Forms
 T33-Sign-PDF

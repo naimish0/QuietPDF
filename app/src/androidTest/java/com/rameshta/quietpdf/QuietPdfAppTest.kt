@@ -68,6 +68,11 @@ import com.rameshta.quietpdf.pdf.TextWatermarkFailure
 import com.rameshta.quietpdf.pdf.TextWatermarkPreviewResult
 import com.rameshta.quietpdf.pdf.TextWatermarkSettings
 import com.rameshta.quietpdf.pdf.TextWatermarkState
+import com.rameshta.quietpdf.pdf.ImageWatermarkPosition
+import com.rameshta.quietpdf.pdf.ImageWatermarkPreviewResult
+import com.rameshta.quietpdf.pdf.ImageWatermarkSettings
+import com.rameshta.quietpdf.pdf.ImageWatermarkState
+import com.rameshta.quietpdf.pdf.WatermarkImageInfo
 import com.rameshta.quietpdf.pdf.CompressibleImage
 import com.rameshta.quietpdf.pdf.PdfCompressionMode
 import com.rameshta.quietpdf.pdf.PdfCompressionRequest
@@ -1003,6 +1008,53 @@ class QuietPdfAppTest {
     }
 
     @Test
+    fun imageWatermark_buttonStartsPdfSelection() {
+        val selections = AtomicInteger()
+        setContent(state = PdfOpenState.Idle, onImageWatermark = { selections.incrementAndGet() })
+        composeRule.onNodeWithTag("image_watermark_button").performScrollTo().performClick()
+        assertEquals(1, selections.get())
+    }
+
+    @Test
+    fun imageWatermark_requestsImageAfterPdfValidation() {
+        val selections = AtomicInteger()
+        setContent(
+            state = PdfOpenState.Idle,
+            imageWatermarkState = ImageWatermarkState.AwaitingImage(
+                Uri.parse("content://test/source"), "report.pdf", 4,
+            ),
+            onChooseWatermarkImage = { selections.incrementAndGet() },
+        )
+        composeRule.onNodeWithTag("image_watermark_choose_dialog").assertIsDisplayed()
+        composeRule.onNodeWithTag("image_watermark_choose_image").performClick()
+        assertEquals(1, selections.get())
+    }
+
+    @Test
+    fun imageWatermark_showsPreviewAndReturnsConfiguredSettings() {
+        val selected = AtomicReference<ImageWatermarkSettings>()
+        setContent(
+            state = PdfOpenState.Idle,
+            imageWatermarkState = ImageWatermarkState.Configuring(
+                Uri.parse("content://test/source"), Uri.parse("content://test/image"),
+                "report.pdf", 5, WatermarkImageInfo(640, 320),
+            ),
+            renderImageWatermarkPreview = { _, _ ->
+                ImageWatermarkPreviewResult.Ready(Bitmap.createBitmap(500, 700, Bitmap.Config.ARGB_8888))
+            },
+            onConfirmImageWatermark = selected::set,
+        )
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("image_watermark_preview").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("image_watermark_horizontal_2").performScrollTo().performClick()
+        composeRule.onNodeWithTag("image_watermark_vertical_0").performScrollTo().performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("image_watermark_confirm").performClick()
+        assertEquals(setOf(0, 1, 2, 3, 4), selected.get().pageIndices)
+        assertEquals(ImageWatermarkPosition.TopRight, selected.get().position)
+    }
+
+    @Test
     fun openedState_showsNameAndPageCount() {
         setContent(
             PdfOpenState.Opened(
@@ -1509,6 +1561,13 @@ class QuietPdfAppTest {
         onConfirmTextWatermark: (TextWatermarkSettings) -> Unit = {},
         onCancelTextWatermark: () -> Unit = {},
         onOpenTextWatermarkedPdf: () -> Unit = {},
+        imageWatermarkState: ImageWatermarkState = ImageWatermarkState.Idle,
+        onImageWatermark: () -> Unit = {},
+        onChooseWatermarkImage: () -> Unit = {},
+        renderImageWatermarkPreview: suspend (ImageWatermarkSettings, Int) -> ImageWatermarkPreviewResult = { _, _ ->
+            ImageWatermarkPreviewResult.Failed
+        },
+        onConfirmImageWatermark: (ImageWatermarkSettings) -> Unit = {},
         scannerCaptureState: ScannerCaptureState = ScannerCaptureState.Idle,
         onScanDocument: () -> Unit = {},
         onRetakeScannerCapture: () -> Unit = {},
@@ -1582,6 +1641,11 @@ class QuietPdfAppTest {
                     onConfirmTextWatermark = onConfirmTextWatermark,
                     onCancelTextWatermark = onCancelTextWatermark,
                     onOpenTextWatermarkedPdf = onOpenTextWatermarkedPdf,
+                    imageWatermarkState = imageWatermarkState,
+                    onImageWatermark = onImageWatermark,
+                    onChooseWatermarkImage = onChooseWatermarkImage,
+                    renderImageWatermarkPreview = renderImageWatermarkPreview,
+                    onConfirmImageWatermark = onConfirmImageWatermark,
                     scannerCaptureState = scannerCaptureState,
                     onScanDocument = onScanDocument,
                     onRetakeScannerCapture = onRetakeScannerCapture,
