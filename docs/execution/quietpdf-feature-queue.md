@@ -35,7 +35,7 @@ COMPLETED 28-Change-Password
 COMPLETED T29-Text-Watermark
 COMPLETED T30-Image-Watermark
 COMPLETED T31-Extract-Images
-T32-Fill-Forms
+COMPLETED T32-Fill-Forms
 T33-Sign-PDF
 T34-Annotate-PDF
 T35-Recent-Files

@@ -327,6 +327,34 @@ enum class ExtractImagesFailure(@get:StringRes val messageResource: Int) {
     UnableToShare(R.string.extract_images_share_error),
 }
 
+sealed interface FillFormsState {
+    data object Idle : FillFormsState
+    data object Preparing : FillFormsState
+    data class Configuring(
+        val sourceUri: Uri,
+        val displayName: String,
+        val analysis: FillFormsAnalysis,
+    ) : FillFormsState
+    data class Saving(val fieldCount: Int) : FillFormsState
+    data class Completed(
+        val outputUri: Uri,
+        val pageCount: Int,
+        val updatedFieldCount: Int,
+    ) : FillFormsState
+    data class Failed(val failure: FillFormsFailure) : FillFormsState
+}
+
+enum class FillFormsFailure(@get:StringRes val messageResource: Int) {
+    NoForm(R.string.fill_forms_no_form),
+    UnsupportedForm(R.string.fill_forms_unsupported),
+    PasswordProtected(R.string.fill_forms_password_protected),
+    InvalidDocument(R.string.fill_forms_invalid_document),
+    InvalidValues(R.string.fill_forms_invalid_values),
+    PermissionDenied(R.string.fill_forms_permission_denied),
+    InsufficientMemory(R.string.fill_forms_memory_error),
+    UnableToSave(R.string.fill_forms_save_error),
+}
+
 enum class TextWatermarkFailure(@get:StringRes val messageResource: Int) {
     PasswordProtected(R.string.text_watermark_password_protected),
     InvalidDocument(R.string.text_watermark_invalid_document),
@@ -454,6 +482,7 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
     private val textWatermarkEngine = TextWatermarkEngine(application)
     private val imageWatermarkEngine = ImageWatermarkEngine(application)
     private val extractImagesEngine = ExtractImagesEngine(application)
+    private val fillFormsEngine = FillFormsEngine(application)
     private val scannerCaptureEngine = ScannerCaptureEngine(application)
     private val scannerCropCorrectionEngine = ScannerCropCorrectionEngine(application.cacheDir)
     private val scannerEnhancementEngine = ScannerEnhancementEngine(application.cacheDir)
@@ -473,6 +502,7 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
     private var textWatermarkJob: Job? = null
     private var imageWatermarkJob: Job? = null
     private var extractImagesJob: Job? = null
+    private var fillFormsJob: Job? = null
     private var extractImagesConfiguration: ExtractImagesState.Configuring? = null
     private var scannerJob: Job? = null
     private var scannerEnhancementJob: Job? = null
@@ -542,6 +572,9 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
         private set
 
     var extractImagesState: ExtractImagesState by mutableStateOf(ExtractImagesState.Idle)
+        private set
+
+    var fillFormsState: FillFormsState by mutableStateOf(FillFormsState.Idle)
         private set
 
     var scannerCaptureState: ScannerCaptureState by mutableStateOf(ScannerCaptureState.Idle)
@@ -2003,6 +2036,7 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
 
     fun selectPdfForImageExtraction(uri: Uri) {
         extractImagesJob?.cancel()
+        fillFormsJob?.cancel()
         clearExtractImagesConfiguration()
         extractImagesEngine.clearShareFiles()
         extractImagesState = ExtractImagesState.Preparing
@@ -2131,6 +2165,68 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
     private fun clearExtractImagesConfiguration() {
         extractImagesConfiguration?.analysis?.images?.forEach { preview -> preview.bitmap?.recycle() }
         extractImagesConfiguration = null
+    }
+
+    fun selectPdfForFormFilling(uri: Uri) {
+        fillFormsJob?.cancel()
+        fillFormsState = FillFormsState.Preparing
+        fillFormsJob = viewModelScope.launch {
+            fillFormsState = when (val result = fillFormsEngine.analyze(uri)) {
+                is FillFormsAnalysisResult.Ready -> FillFormsState.Configuring(
+                    uri,
+                    withContext(Dispatchers.IO) { queryDisplayName(uri) } ?: "PDF",
+                    result.analysis,
+                )
+                FillFormsAnalysisResult.NoForm -> FillFormsState.Failed(FillFormsFailure.NoForm)
+                FillFormsAnalysisResult.UnsupportedForm ->
+                    FillFormsState.Failed(FillFormsFailure.UnsupportedForm)
+                FillFormsAnalysisResult.PasswordProtected ->
+                    FillFormsState.Failed(FillFormsFailure.PasswordProtected)
+                FillFormsAnalysisResult.InvalidDocument ->
+                    FillFormsState.Failed(FillFormsFailure.InvalidDocument)
+                FillFormsAnalysisResult.PermissionDenied ->
+                    FillFormsState.Failed(FillFormsFailure.PermissionDenied)
+                FillFormsAnalysisResult.InsufficientMemory ->
+                    FillFormsState.Failed(FillFormsFailure.InsufficientMemory)
+            }
+        }
+    }
+
+    fun fillSelectedPdfForm(outputUri: Uri, updates: List<FormFieldUpdate>) {
+        val configuring = fillFormsState as? FillFormsState.Configuring ?: return
+        fillFormsJob?.cancel()
+        fillFormsState = FillFormsState.Saving(updates.size)
+        fillFormsJob = viewModelScope.launch {
+            fillFormsState = when (val result = fillFormsEngine.fill(
+                configuring.sourceUri, outputUri, updates, configuring.analysis.pageCount,
+            )) {
+                is FillFormsResult.Success -> FillFormsState.Completed(
+                    outputUri, result.pageCount, result.updatedFieldCount,
+                )
+                FillFormsResult.UnsupportedForm -> FillFormsState.Failed(FillFormsFailure.UnsupportedForm)
+                FillFormsResult.InvalidValues -> FillFormsState.Failed(FillFormsFailure.InvalidValues)
+                FillFormsResult.PasswordProtected -> FillFormsState.Failed(FillFormsFailure.PasswordProtected)
+                FillFormsResult.InvalidDocument -> FillFormsState.Failed(FillFormsFailure.InvalidDocument)
+                FillFormsResult.PermissionDenied -> FillFormsState.Failed(FillFormsFailure.PermissionDenied)
+                FillFormsResult.InsufficientMemory -> FillFormsState.Failed(FillFormsFailure.InsufficientMemory)
+                FillFormsResult.Failed -> FillFormsState.Failed(FillFormsFailure.UnableToSave)
+            }
+        }
+    }
+
+    fun openFilledFormPdf() {
+        val completed = fillFormsState as? FillFormsState.Completed ?: return
+        fillFormsState = FillFormsState.Idle
+        open(completed.outputUri)
+    }
+
+    fun cancelFormFilling() {
+        fillFormsJob?.cancel()
+        fillFormsState = FillFormsState.Idle
+    }
+
+    fun clearFillFormsResult() {
+        fillFormsState = FillFormsState.Idle
     }
 
     fun rejectUnsupportedUri() {

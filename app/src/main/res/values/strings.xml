@@ -412,4 +412,26 @@
     <string name="extract_images_memory_error">The PDF contains images that need more memory than is available. Close other apps or try a smaller PDF.</string>
     <string name="extract_images_save_error">The extracted images could not be created and reopened safely. Try another output location.</string>
     <string name="extract_images_share_error">The selected images could not be prepared safely for sharing. Try a smaller selection.</string>
+    <string name="fill_forms">Fill forms</string>
+    <string name="fill_forms_title">Fill PDF form</string>
+    <string name="fill_forms_summary">%1$s · %2$d supported fields</string>
+    <string name="fill_forms_page">Page %1$d</string>
+    <string name="fill_forms_required">Required</string>
+    <string name="fill_forms_read_only">Read only</string>
+    <string name="fill_forms_unsupported_count">%1$d unsupported fields are shown unchanged and will not be edited.</string>
+    <string name="fill_forms_text_value">Value</string>
+    <string name="fill_forms_checked">Checked</string>
+    <string name="fill_forms_clear">Clear selection</string>
+    <string name="fill_forms_save">Save filled PDF</string>
+    <string name="fill_forms_preparing">Checking this PDF for supported AcroForm fields…</string>
+    <string name="fill_forms_saving">Writing %1$d form values and validating the saved copy…</string>
+    <string name="fill_forms_completed">Saved %1$d form values across %2$d pages and validated the copy.</string>
+    <string name="fill_forms_no_form">This PDF does not contain an AcroForm to fill.</string>
+    <string name="fill_forms_unsupported">This form uses XFA or only unsupported field types. QuietPDF will not fake form filling with visual overlays.</string>
+    <string name="fill_forms_password_protected">This PDF is password protected. Remove its password first, then fill the form.</string>
+    <string name="fill_forms_invalid_document">This file changed or is not a readable PDF form. Keep the original and choose it again.</string>
+    <string name="fill_forms_invalid_values">Complete all required fields and use values supported by the form.</string>
+    <string name="fill_forms_permission_denied">QuietPDF lost access to the PDF or save location. Choose them again.</string>
+    <string name="fill_forms_memory_error">This form needs more memory than is available. Close other apps or try a smaller PDF.</string>
+    <string name="fill_forms_save_error">The filled PDF could not be created and reopened safely. The original was not changed; choose another save location.</string>
 </resources>
