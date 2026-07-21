@@ -62,6 +62,8 @@ import com.rameshta.quietpdf.pdf.ProtectPdfFailure
 import com.rameshta.quietpdf.pdf.ProtectPdfState
 import com.rameshta.quietpdf.pdf.RemovePasswordFailure
 import com.rameshta.quietpdf.pdf.RemovePasswordState
+import com.rameshta.quietpdf.pdf.ChangePasswordFailure
+import com.rameshta.quietpdf.pdf.ChangePasswordState
 import com.rameshta.quietpdf.pdf.CompressibleImage
 import com.rameshta.quietpdf.pdf.PdfCompressionMode
 import com.rameshta.quietpdf.pdf.PdfCompressionRequest
@@ -845,6 +847,71 @@ class QuietPdfAppTest {
     }
 
     @Test
+    fun changePassword_buttonStartsSelection() {
+        val selections = AtomicInteger()
+        setContent(state = PdfOpenState.Idle, onChangePassword = { selections.incrementAndGet() })
+        composeRule.onNodeWithTag("change_password_button").performScrollTo().performClick()
+        assertEquals(1, selections.get())
+    }
+
+    @Test
+    fun changePassword_requiresDifferentMatchingStrongPassword() {
+        val selected = AtomicReference<Pair<CharArray, CharArray>>()
+        setContent(
+            state = PdfOpenState.Idle,
+            changePasswordState = ChangePasswordState.Configuring(
+                Uri.parse("content://test/change"), "locked.pdf",
+            ),
+            onConfirmPasswordChange = { current, new -> selected.set(current to new) },
+        )
+        composeRule.onNodeWithText("AES-256", substring = true).assertIsDisplayed()
+        composeRule.onNodeWithTag("change_password_current").performTextInput("old pass")
+        composeRule.onNodeWithTag("change_password_new").performTextInput("old pass")
+        composeRule.onNodeWithTag("change_password_confirm_new").performTextInput("old pass")
+        composeRule.onNodeWithTag("change_password_confirm").assertIsNotEnabled()
+        composeRule.onNodeWithTag("change_password_new").performTextClearance()
+        composeRule.onNodeWithTag("change_password_confirm_new").performTextClearance()
+        composeRule.onNodeWithTag("change_password_new").performTextInput("new pass")
+        composeRule.onNodeWithTag("change_password_confirm_new").performTextInput("different")
+        composeRule.onNodeWithTag("change_password_confirm").assertIsNotEnabled()
+        composeRule.onNodeWithTag("change_password_confirm_new").performTextClearance()
+        composeRule.onNodeWithTag("change_password_confirm_new").performTextInput("new pass")
+        composeRule.onNodeWithTag("change_password_confirm").performClick()
+        assertArrayEquals("old pass".toCharArray(), selected.get().first)
+        assertArrayEquals("new pass".toCharArray(), selected.get().second)
+    }
+
+    @Test
+    fun changePassword_incorrectCurrentPasswordSupportsRetry() {
+        setContent(
+            state = PdfOpenState.Idle,
+            changePasswordState = ChangePasswordState.Configuring(
+                Uri.parse("content://test/change"), "locked.pdf", currentPasswordError = true,
+            ),
+        )
+        composeRule.onNodeWithText("incorrect", substring = true).assertIsDisplayed()
+        composeRule.onNodeWithTag("change_password_current").assertIsDisplayed()
+    }
+
+    @Test
+    fun changePassword_successIsShown() {
+        setContent(
+            state = PdfOpenState.Idle,
+            changePasswordState = ChangePasswordState.Completed(3),
+        )
+        composeRule.onNodeWithTag("change_password_success").performScrollTo().assertIsDisplayed()
+    }
+
+    @Test
+    fun changePassword_failureIsActionable() {
+        setContent(
+            state = PdfOpenState.Idle,
+            changePasswordState = ChangePasswordState.Failed(ChangePasswordFailure.NotProtected),
+        )
+        composeRule.onNodeWithTag("change_password_error").performScrollTo().assertIsDisplayed()
+    }
+
+    @Test
     fun openedState_showsNameAndPageCount() {
         setContent(
             PdfOpenState.Opened(
@@ -1340,6 +1407,9 @@ class QuietPdfAppTest {
         onRemovePassword: () -> Unit = {},
         onConfirmPasswordRemoval: (CharArray) -> Unit = {},
         onOpenPasswordRemovedPdf: () -> Unit = {},
+        changePasswordState: ChangePasswordState = ChangePasswordState.Idle,
+        onChangePassword: () -> Unit = {},
+        onConfirmPasswordChange: (CharArray, CharArray) -> Unit = { _, _ -> },
         scannerCaptureState: ScannerCaptureState = ScannerCaptureState.Idle,
         onScanDocument: () -> Unit = {},
         onRetakeScannerCapture: () -> Unit = {},
@@ -1404,6 +1474,9 @@ class QuietPdfAppTest {
                     onRemovePassword = onRemovePassword,
                     onConfirmPasswordRemoval = onConfirmPasswordRemoval,
                     onOpenPasswordRemovedPdf = onOpenPasswordRemovedPdf,
+                    changePasswordState = changePasswordState,
+                    onChangePassword = onChangePassword,
+                    onConfirmPasswordChange = onConfirmPasswordChange,
                     scannerCaptureState = scannerCaptureState,
                     onScanDocument = onScanDocument,
                     onRetakeScannerCapture = onRetakeScannerCapture,

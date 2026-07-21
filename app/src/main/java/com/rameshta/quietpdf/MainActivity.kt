@@ -118,6 +118,7 @@ import com.rameshta.quietpdf.pdf.CompressPdfState
 import com.rameshta.quietpdf.pdf.ProtectPdfPassword
 import com.rameshta.quietpdf.pdf.ProtectPdfState
 import com.rameshta.quietpdf.pdf.RemovePasswordState
+import com.rameshta.quietpdf.pdf.ChangePasswordState
 import com.rameshta.quietpdf.pdf.PdfCompressionMode
 import com.rameshta.quietpdf.pdf.PdfCompressionRequest
 import com.rameshta.quietpdf.pdf.TargetFileSize
@@ -151,6 +152,9 @@ class MainActivity : ComponentActivity() {
             QuietPDFTheme {
                 var pendingProtectPassword by remember { mutableStateOf<CharArray?>(null) }
                 var pendingRemovalPassword by remember { mutableStateOf<CharArray?>(null) }
+                var pendingPasswordChange by remember {
+                    mutableStateOf<Pair<CharArray, CharArray>?>(null)
+                }
                 val picker = rememberLauncherForActivityResult(
                     contract = ActivityResultContracts.OpenDocument(),
                 ) { uri ->
@@ -328,6 +332,27 @@ class MainActivity : ComponentActivity() {
                         viewModel.selectPdfForPasswordRemoval(uri)
                     }
                 }
+                val createPasswordChangedPdf = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.CreateDocument("application/pdf"),
+                ) { uri ->
+                    val passwords = pendingPasswordChange
+                    pendingPasswordChange = null
+                    if (uri == null || passwords == null) {
+                        passwords?.first?.fill('\u0000')
+                        passwords?.second?.fill('\u0000')
+                        viewModel.cancelChangePassword()
+                    } else {
+                        viewModel.changeSelectedPdfPassword(uri, passwords.first, passwords.second)
+                    }
+                }
+                val changePasswordPicker = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.OpenDocument(),
+                ) { uri ->
+                    if (uri != null) {
+                        retainReadPermission(uri)
+                        viewModel.selectPdfForPasswordChange(uri)
+                    }
+                }
                 val createScannedPdf = rememberLauncherForActivityResult(
                     contract = ActivityResultContracts.CreateDocument("application/pdf"),
                 ) { uri ->
@@ -457,6 +482,25 @@ class MainActivity : ComponentActivity() {
                     },
                     onOpenPasswordRemovedPdf = viewModel::openPasswordRemovedPdf,
                     onDismissPasswordRemovalResult = viewModel::clearRemovePasswordResult,
+                    changePasswordState = viewModel.changePasswordState,
+                    onChangePassword = {
+                        changePasswordPicker.launch(arrayOf("application/pdf"))
+                    },
+                    onConfirmPasswordChange = { currentPassword, newPassword ->
+                        pendingPasswordChange?.first?.fill('\u0000')
+                        pendingPasswordChange?.second?.fill('\u0000')
+                        pendingPasswordChange = currentPassword.copyOf() to newPassword.copyOf()
+                        currentPassword.fill('\u0000')
+                        newPassword.fill('\u0000')
+                        createPasswordChangedPdf.launch("QuietPDF-password-changed.pdf")
+                    },
+                    onCancelPasswordChange = {
+                        pendingPasswordChange?.first?.fill('\u0000')
+                        pendingPasswordChange?.second?.fill('\u0000')
+                        pendingPasswordChange = null
+                        viewModel.cancelChangePassword()
+                    },
+                    onDismissPasswordChangeResult = viewModel::clearChangePasswordResult,
                     scannerCaptureState = viewModel.scannerCaptureState,
                     onScanDocument = {
                         if (ContextCompat.checkSelfPermission(
@@ -609,6 +653,11 @@ fun QuietPdfApp(
     onCancelPasswordRemoval: () -> Unit = {},
     onOpenPasswordRemovedPdf: () -> Unit = {},
     onDismissPasswordRemovalResult: () -> Unit = {},
+    changePasswordState: ChangePasswordState = ChangePasswordState.Idle,
+    onChangePassword: () -> Unit = {},
+    onConfirmPasswordChange: (CharArray, CharArray) -> Unit = { _, _ -> },
+    onCancelPasswordChange: () -> Unit = {},
+    onDismissPasswordChangeResult: () -> Unit = {},
     scannerCaptureState: ScannerCaptureState = ScannerCaptureState.Idle,
     onScanDocument: () -> Unit = {},
     onBeginScannerCapture: () -> File? = { null },
@@ -732,6 +781,10 @@ fun QuietPdfApp(
                     onCancelPasswordRemoval = onCancelPasswordRemoval,
                     onOpenPasswordRemovedPdf = onOpenPasswordRemovedPdf,
                     onDismissPasswordRemovalResult = onDismissPasswordRemovalResult,
+                    changePasswordState = changePasswordState,
+                    onChangePassword = onChangePassword,
+                    onCancelPasswordChange = onCancelPasswordChange,
+                    onDismissPasswordChangeResult = onDismissPasswordChangeResult,
                     scannerCaptureState = scannerCaptureState,
                     onScanDocument = onScanDocument,
                     onOpenScannerPdf = onOpenScannerPdf,
@@ -829,6 +882,14 @@ fun QuietPdfApp(
             passwordError = removePasswordState.passwordError,
             onConfirm = onConfirmPasswordRemoval,
             onCancel = onCancelPasswordRemoval,
+        )
+    }
+    if (changePasswordState is ChangePasswordState.Configuring) {
+        ChangePasswordDialog(
+            documentName = changePasswordState.displayName,
+            currentPasswordError = changePasswordState.currentPasswordError,
+            onConfirm = onConfirmPasswordChange,
+            onCancel = onCancelPasswordChange,
         )
     }
 }
@@ -1086,6 +1147,112 @@ private fun RemovePasswordDialog(
             }
         },
         modifier = Modifier.testTag("remove_password_dialog"),
+    )
+}
+
+@Composable
+private fun ChangePasswordDialog(
+    documentName: String,
+    currentPasswordError: Boolean,
+    onConfirm: (CharArray, CharArray) -> Unit,
+    onCancel: () -> Unit,
+) {
+    var currentPassword by remember(documentName, currentPasswordError) { mutableStateOf("") }
+    var newPassword by remember(documentName, currentPasswordError) { mutableStateOf("") }
+    var confirmation by remember(documentName, currentPasswordError) { mutableStateOf("") }
+    val newPasswordIsValid = ProtectPdfPassword.isValid(newPassword)
+    val passwordsMatch = newPassword == confirmation
+    val passwordChanged = currentPassword != newPassword
+    AlertDialog(
+        onDismissRequest = onCancel,
+        title = { Text(stringResource(R.string.change_password_title)) },
+        text = {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                Text(stringResource(R.string.change_password_document_summary, documentName))
+                OutlinedTextField(
+                    value = currentPassword,
+                    onValueChange = { if (it.length <= 127) currentPassword = it },
+                    label = { Text(stringResource(R.string.current_password)) },
+                    supportingText = {
+                        if (currentPasswordError) Text(stringResource(R.string.change_password_incorrect))
+                    },
+                    isError = currentPasswordError,
+                    visualTransformation = PasswordVisualTransformation(),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                        .testTag("change_password_current"),
+                )
+                OutlinedTextField(
+                    value = newPassword,
+                    onValueChange = { if (it.length <= ProtectPdfPassword.MAX_LENGTH) newPassword = it },
+                    label = { Text(stringResource(R.string.new_password)) },
+                    supportingText = {
+                        Text(
+                            when {
+                                newPassword.isNotEmpty() && !newPasswordIsValid -> {
+                                    stringResource(R.string.protect_pdf_invalid_password)
+                                }
+                                newPassword.isNotEmpty() && !passwordChanged -> {
+                                    stringResource(R.string.change_password_must_differ)
+                                }
+                                else -> stringResource(
+                                    R.string.protect_pdf_password_help,
+                                    ProtectPdfPassword.MIN_LENGTH,
+                                )
+                            },
+                        )
+                    },
+                    isError = newPassword.isNotEmpty() && (!newPasswordIsValid || !passwordChanged),
+                    visualTransformation = PasswordVisualTransformation(),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                        .testTag("change_password_new"),
+                )
+                OutlinedTextField(
+                    value = confirmation,
+                    onValueChange = { if (it.length <= ProtectPdfPassword.MAX_LENGTH) confirmation = it },
+                    label = { Text(stringResource(R.string.protect_pdf_confirm_password)) },
+                    supportingText = {
+                        if (confirmation.isNotEmpty() && !passwordsMatch) {
+                            Text(stringResource(R.string.protect_pdf_password_mismatch))
+                        }
+                    },
+                    isError = confirmation.isNotEmpty() && !passwordsMatch,
+                    visualTransformation = PasswordVisualTransformation(),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                        .testTag("change_password_confirm_new"),
+                )
+                Text(
+                    text = stringResource(R.string.change_password_note),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 12.dp),
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    val currentChars = currentPassword.toCharArray()
+                    val newChars = newPassword.toCharArray()
+                    currentPassword = ""
+                    newPassword = ""
+                    confirmation = ""
+                    onConfirm(currentChars, newChars)
+                },
+                enabled = newPasswordIsValid && passwordsMatch && passwordChanged,
+                modifier = Modifier.testTag("change_password_confirm"),
+            ) {
+                Text(stringResource(R.string.save_changed_password_pdf))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onCancel, modifier = Modifier.testTag("change_password_cancel")) {
+                Text(stringResource(R.string.cancel))
+            }
+        },
+        modifier = Modifier.testTag("change_password_dialog"),
     )
 }
 
@@ -1732,6 +1899,10 @@ private fun OpenPdfContent(
     onCancelPasswordRemoval: () -> Unit,
     onOpenPasswordRemovedPdf: () -> Unit,
     onDismissPasswordRemovalResult: () -> Unit,
+    changePasswordState: ChangePasswordState,
+    onChangePassword: () -> Unit,
+    onCancelPasswordChange: () -> Unit,
+    onDismissPasswordChangeResult: () -> Unit,
     scannerCaptureState: ScannerCaptureState,
     onScanDocument: () -> Unit,
     onOpenScannerPdf: () -> Unit,
@@ -1751,6 +1922,8 @@ private fun OpenPdfContent(
         || protectPdfState is ProtectPdfState.Failed || protectPdfState is ProtectPdfState.Completed
         || removePasswordState is RemovePasswordState.Failed ||
         removePasswordState is RemovePasswordState.Completed
+        || changePasswordState is ChangePasswordState.Failed ||
+        changePasswordState is ChangePasswordState.Completed
         || scannerCaptureState is ScannerCaptureState.Failed ||
         scannerCaptureState is ScannerCaptureState.Completed
     LaunchedEffect(hasResult) {
@@ -1930,6 +2103,20 @@ private fun OpenPdfContent(
             }
             else -> Unit
         }
+        when (changePasswordState) {
+            ChangePasswordState.Preparing -> {
+                OperationProgressContent(R.string.change_password_preparing)
+                return@Column
+            }
+            ChangePasswordState.Changing -> {
+                OperationProgressContent(
+                    messageResource = R.string.change_password_changing,
+                    onCancel = onCancelPasswordChange,
+                )
+                return@Column
+            }
+            else -> Unit
+        }
         when (state) {
             PdfOpenState.Idle -> IdleContent(
                 onOpenPdf = onOpenPdf,
@@ -1968,6 +2155,9 @@ private fun OpenPdfContent(
                 onRemovePassword = onRemovePassword,
                 onOpenPasswordRemovedPdf = onOpenPasswordRemovedPdf,
                 onDismissPasswordRemovalResult = onDismissPasswordRemovalResult,
+                changePasswordState = changePasswordState,
+                onChangePassword = onChangePassword,
+                onDismissPasswordChangeResult = onDismissPasswordChangeResult,
                 scannerCaptureState = scannerCaptureState,
                 onScanDocument = onScanDocument,
                 onOpenScannerPdf = onOpenScannerPdf,
@@ -2018,6 +2208,9 @@ private fun IdleContent(
     onRemovePassword: () -> Unit,
     onOpenPasswordRemovedPdf: () -> Unit,
     onDismissPasswordRemovalResult: () -> Unit,
+    changePasswordState: ChangePasswordState,
+    onChangePassword: () -> Unit,
+    onDismissPasswordChangeResult: () -> Unit,
     scannerCaptureState: ScannerCaptureState,
     onScanDocument: () -> Unit,
     onOpenScannerPdf: () -> Unit,
@@ -2109,6 +2302,12 @@ private fun IdleContent(
         label = stringResource(R.string.remove_password),
         onClick = onRemovePassword,
         testTag = "remove_password_button",
+    )
+    Spacer(Modifier.height(4.dp))
+    OpenButton(
+        label = stringResource(R.string.change_password),
+        onClick = onChangePassword,
+        testTag = "change_password_button",
     )
     if (imagesToPdfState is ImagesToPdfState.Failed) {
         Spacer(Modifier.height(20.dp))
@@ -2336,6 +2535,33 @@ private fun IdleContent(
                 TextButton(onClick = onDismissPasswordRemovalResult) {
                     Text(stringResource(R.string.dismiss))
                 }
+            }
+        }
+        else -> Unit
+    }
+    when (changePasswordState) {
+        is ChangePasswordState.Failed -> {
+            Spacer(Modifier.height(20.dp))
+            Text(
+                text = stringResource(changePasswordState.failure.messageResource),
+                color = MaterialTheme.colorScheme.error,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.testTag("change_password_error"),
+            )
+            TextButton(onClick = onDismissPasswordChangeResult) {
+                Text(stringResource(R.string.dismiss))
+            }
+        }
+        is ChangePasswordState.Completed -> {
+            Spacer(Modifier.height(20.dp))
+            Text(
+                text = stringResource(R.string.change_password_completed, changePasswordState.pageCount),
+                color = MaterialTheme.colorScheme.primary,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.testTag("change_password_success"),
+            )
+            TextButton(onClick = onDismissPasswordChangeResult) {
+                Text(stringResource(R.string.dismiss))
             }
         }
         else -> Unit
