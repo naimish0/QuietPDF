@@ -31,6 +31,8 @@ import com.rameshta.quietpdf.pdf.PdfOutlineEntry
 import com.rameshta.quietpdf.pdf.PdfTableOfContentsResult
 import com.rameshta.quietpdf.pdf.PdfHealthReport
 import com.rameshta.quietpdf.pdf.PdfHealthResult
+import com.rameshta.quietpdf.pdf.ImagesToPdfFailure
+import com.rameshta.quietpdf.pdf.ImagesToPdfState
 import com.rameshta.quietpdf.ui.theme.QuietPDFTheme
 import org.junit.Rule
 import org.junit.Assert.assertEquals
@@ -51,6 +53,39 @@ class QuietPdfAppTest {
 
         composeRule.onNodeWithText("Your PDFs stay on this device").assertIsDisplayed()
         composeRule.onNodeWithTag("open_pdf_button").assertTextEquals("Open PDF")
+        composeRule.onNodeWithTag("images_to_pdf_button").assertTextEquals("Images to PDF")
+    }
+
+    @Test
+    fun imagesToPdf_buttonStartsSelection() {
+        val selections = AtomicInteger()
+        setContent(
+            state = PdfOpenState.Idle,
+            onImagesToPdf = { selections.incrementAndGet() },
+        )
+        composeRule.onNodeWithTag("images_to_pdf_button").performClick()
+        assertEquals(1, selections.get())
+    }
+
+    @Test
+    fun imagesToPdf_creationShowsProgress() {
+        setContent(
+            state = PdfOpenState.Idle,
+            imagesToPdfState = ImagesToPdfState.Creating(imageCount = 3),
+        )
+        composeRule.onNodeWithTag("images_to_pdf_progress").assertIsDisplayed()
+        composeRule.onNodeWithText("Creating a PDF from 3 images…").assertIsDisplayed()
+    }
+
+    @Test
+    fun imagesToPdf_failureIsActionable() {
+        setContent(
+            state = PdfOpenState.Idle,
+            imagesToPdfState = ImagesToPdfState.Failed(ImagesToPdfFailure.InvalidImage),
+        )
+
+        composeRule.onNodeWithTag("images_to_pdf_error").assertIsDisplayed()
+        composeRule.onNodeWithText("Dismiss").assertIsDisplayed()
     }
 
     @Test
@@ -405,6 +440,8 @@ class QuietPdfAppTest {
             PdfTableOfContentsResult.Failed
         },
         inspectHealth: suspend () -> PdfHealthResult = { PdfHealthResult.Failed },
+        imagesToPdfState: ImagesToPdfState = ImagesToPdfState.Idle,
+        onImagesToPdf: () -> Unit = {},
     ) {
         composeRule.setContent {
             QuietPDFTheme(dynamicColor = false) {
@@ -417,6 +454,8 @@ class QuietPdfAppTest {
                     onToggleBookmark = onToggleBookmark,
                     loadTableOfContents = loadTableOfContents,
                     inspectHealth = inspectHealth,
+                    imagesToPdfState = imagesToPdfState,
+                    onImagesToPdf = onImagesToPdf,
                 )
             }
         }

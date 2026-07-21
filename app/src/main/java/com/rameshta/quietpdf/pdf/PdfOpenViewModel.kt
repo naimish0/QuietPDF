@@ -35,6 +35,19 @@ sealed interface PageRenderResult {
     data class Failed(val reason: PageRenderFailure) : PageRenderResult
 }
 
+sealed interface ImagesToPdfState {
+    data object Idle : ImagesToPdfState
+    data class Creating(val imageCount: Int) : ImagesToPdfState
+    data class Failed(val failure: ImagesToPdfFailure) : ImagesToPdfState
+}
+
+enum class ImagesToPdfFailure(@get:StringRes val messageResource: Int) {
+    InvalidImage(R.string.images_to_pdf_invalid_image),
+    PermissionDenied(R.string.images_to_pdf_permission_denied),
+    InsufficientMemory(R.string.images_to_pdf_memory_error),
+    UnableToSave(R.string.images_to_pdf_save_error),
+}
+
 enum class PageRenderFailure(@get:StringRes val messageResource: Int) {
     UnableToRender(R.string.page_render_error),
     PermissionDenied(R.string.page_render_permission_error),
@@ -49,13 +62,19 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
     private val bookmarkStore = PdfBookmarkStore(application)
     private val tableOfContentsEngine = PdfTableOfContentsEngine(application)
     private val healthEngine = PdfHealthEngine(application)
+    private val imagesToPdfEngine = ImagesToPdfEngine(application.contentResolver, application.cacheDir)
     private var openJob: Job? = null
+    private var imageCreationJob: Job? = null
+    private var selectedImageUris: List<Uri> = emptyList()
     private var documentGeneration = 0L
     private val pageCache = object : LruCache<PageCacheKey, Bitmap>(pageCacheBytes()) {
         override fun sizeOf(key: PageCacheKey, value: Bitmap): Int = value.allocationByteCount
     }
 
     var state: PdfOpenState by mutableStateOf(PdfOpenState.Idle)
+        private set
+
+    var imagesToPdfState: ImagesToPdfState by mutableStateOf(ImagesToPdfState.Idle)
         private set
 
     fun open(uri: Uri) {
@@ -83,6 +102,46 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
                 is PdfOpenResult.Failure -> PdfOpenState.Failed(result.reason)
             }
         }
+    }
+
+    fun selectImagesForPdf(imageUris: List<Uri>) {
+        selectedImageUris = imageUris
+    }
+
+    fun discardSelectedImages() {
+        selectedImageUris = emptyList()
+    }
+
+    fun createPdfFromSelectedImages(outputUri: Uri) {
+        val imageUris = selectedImageUris
+        selectedImageUris = emptyList()
+        if (imageUris.isEmpty()) return
+        imageCreationJob?.cancel()
+        imagesToPdfState = ImagesToPdfState.Creating(imageUris.size)
+        imageCreationJob = viewModelScope.launch {
+            when (val result = imagesToPdfEngine.create(imageUris, outputUri)) {
+                is ImagesToPdfResult.Success -> {
+                    imagesToPdfState = ImagesToPdfState.Idle
+                    open(outputUri)
+                }
+                is ImagesToPdfResult.InvalidImage -> {
+                    imagesToPdfState = ImagesToPdfState.Failed(ImagesToPdfFailure.InvalidImage)
+                }
+                ImagesToPdfResult.PermissionDenied -> {
+                    imagesToPdfState = ImagesToPdfState.Failed(ImagesToPdfFailure.PermissionDenied)
+                }
+                ImagesToPdfResult.InsufficientMemory -> {
+                    imagesToPdfState = ImagesToPdfState.Failed(ImagesToPdfFailure.InsufficientMemory)
+                }
+                ImagesToPdfResult.Failed -> {
+                    imagesToPdfState = ImagesToPdfState.Failed(ImagesToPdfFailure.UnableToSave)
+                }
+            }
+        }
+    }
+
+    fun clearImagesToPdfFailure() {
+        imagesToPdfState = ImagesToPdfState.Idle
     }
 
     fun rejectUnsupportedUri() {
@@ -154,6 +213,7 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
     private data class PageCacheKey(val uri: Uri, val pageIndex: Int, val width: Int)
 
     override fun onCleared() {
+        imageCreationJob?.cancel()
         searchEngine.close()
         super.onCleared()
     }

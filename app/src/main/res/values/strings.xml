@@ -71,4 +71,11 @@
     <string name="yes">Yes</string>
     <string name="no">No</string>
     <string name="unknown">Unknown</string>
+    <string name="images_to_pdf">Images to PDF</string>
+    <string name="images_to_pdf_creating">Creating a PDF from %1$d images…</string>
+    <string name="images_to_pdf_invalid_image">One of the selected images could not be read. Choose supported images and try again.</string>
+    <string name="images_to_pdf_permission_denied">QuietPDF lost access to an image or the save location. Choose the images again.</string>
+    <string name="images_to_pdf_memory_error">These images need more memory than is available. Close other apps or choose smaller images.</string>
+    <string name="images_to_pdf_save_error">The PDF could not be saved. Choose another location and try again.</string>
+    <string name="dismiss">Dismiss</string>
 </resources>

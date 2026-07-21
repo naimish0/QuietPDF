@@ -26,6 +26,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -44,6 +45,7 @@ import com.rameshta.quietpdf.pdf.PdfOpenViewModel
 import com.rameshta.quietpdf.pdf.PdfSearchResult
 import com.rameshta.quietpdf.pdf.PdfTableOfContentsResult
 import com.rameshta.quietpdf.pdf.PdfHealthResult
+import com.rameshta.quietpdf.pdf.ImagesToPdfState
 import com.rameshta.quietpdf.ui.reader.PdfReaderScreen
 import com.rameshta.quietpdf.ui.theme.QuietPDFTheme
 
@@ -66,6 +68,21 @@ class MainActivity : ComponentActivity() {
                         viewModel.open(uri)
                     }
                 }
+                val createImagesPdf = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.CreateDocument("application/pdf"),
+                ) { uri ->
+                    if (uri == null) viewModel.discardSelectedImages()
+                    else viewModel.createPdfFromSelectedImages(uri)
+                }
+                val imagePicker = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.OpenMultipleDocuments(),
+                ) { uris ->
+                    if (uris.isNotEmpty()) {
+                        uris.forEach(::retainReadPermission)
+                        viewModel.selectImagesForPdf(uris)
+                        createImagesPdf.launch("QuietPDF-images.pdf")
+                    }
+                }
 
                 QuietPdfApp(
                     state = viewModel.state,
@@ -76,6 +93,9 @@ class MainActivity : ComponentActivity() {
                     onToggleBookmark = viewModel::toggleBookmark,
                     loadTableOfContents = viewModel::loadTableOfContents,
                     inspectHealth = viewModel::inspectHealth,
+                    imagesToPdfState = viewModel.imagesToPdfState,
+                    onImagesToPdf = { imagePicker.launch(arrayOf("image/*")) },
+                    onDismissImagesToPdfFailure = viewModel::clearImagesToPdfFailure,
                 )
             }
         }
@@ -128,6 +148,9 @@ fun QuietPdfApp(
         PdfTableOfContentsResult.Failed
     },
     inspectHealth: suspend () -> PdfHealthResult = { PdfHealthResult.Failed },
+    imagesToPdfState: ImagesToPdfState = ImagesToPdfState.Idle,
+    onImagesToPdf: () -> Unit = {},
+    onDismissImagesToPdfFailure: () -> Unit = {},
 ) {
     if (state is PdfOpenState.Opened) {
         PdfReaderScreen(
@@ -163,6 +186,9 @@ fun QuietPdfApp(
                 OpenPdfContent(
                     state = state,
                     onOpenPdf = onOpenPdf,
+                    imagesToPdfState = imagesToPdfState,
+                    onImagesToPdf = onImagesToPdf,
+                    onDismissImagesToPdfFailure = onDismissImagesToPdfFailure,
                     contentPadding = PaddingValues(24.dp),
                 )
             }
@@ -174,14 +200,26 @@ fun QuietPdfApp(
 private fun OpenPdfContent(
     state: PdfOpenState,
     onOpenPdf: () -> Unit,
+    imagesToPdfState: ImagesToPdfState,
+    onImagesToPdf: () -> Unit,
+    onDismissImagesToPdfFailure: () -> Unit,
     contentPadding: PaddingValues,
 ) {
     Column(
         modifier = Modifier.padding(contentPadding),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
+        if (imagesToPdfState is ImagesToPdfState.Creating) {
+            ImagesToPdfCreatingContent(imagesToPdfState.imageCount)
+            return@Column
+        }
         when (state) {
-            PdfOpenState.Idle -> IdleContent(onOpenPdf)
+            PdfOpenState.Idle -> IdleContent(
+                onOpenPdf = onOpenPdf,
+                onImagesToPdf = onImagesToPdf,
+                imagesToPdfState = imagesToPdfState,
+                onDismissImagesToPdfFailure = onDismissImagesToPdfFailure,
+            )
             PdfOpenState.Opening -> OpeningContent()
             is PdfOpenState.Opened -> Unit
             is PdfOpenState.Failed -> FailedContent(state.failure, onOpenPdf)
@@ -190,7 +228,12 @@ private fun OpenPdfContent(
 }
 
 @Composable
-private fun IdleContent(onOpenPdf: () -> Unit) {
+private fun IdleContent(
+    onOpenPdf: () -> Unit,
+    onImagesToPdf: () -> Unit,
+    imagesToPdfState: ImagesToPdfState,
+    onDismissImagesToPdfFailure: () -> Unit,
+) {
     Text(
         text = stringResource(R.string.home_title),
         style = MaterialTheme.typography.headlineSmall,
@@ -206,6 +249,37 @@ private fun IdleContent(onOpenPdf: () -> Unit) {
     )
     Spacer(Modifier.height(24.dp))
     OpenButton(label = stringResource(R.string.open_pdf), onClick = onOpenPdf)
+    Spacer(Modifier.height(12.dp))
+    OpenButton(
+        label = stringResource(R.string.images_to_pdf),
+        onClick = onImagesToPdf,
+        testTag = "images_to_pdf_button",
+    )
+    if (imagesToPdfState is ImagesToPdfState.Failed) {
+        Spacer(Modifier.height(20.dp))
+        Text(
+            text = stringResource(imagesToPdfState.failure.messageResource),
+            color = MaterialTheme.colorScheme.error,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.testTag("images_to_pdf_error"),
+        )
+        TextButton(onClick = onDismissImagesToPdfFailure) {
+            Text(stringResource(R.string.dismiss))
+        }
+    }
+}
+
+@Composable
+private fun ImagesToPdfCreatingContent(imageCount: Int) {
+    CircularProgressIndicator(
+        modifier = Modifier.size(48.dp).testTag("images_to_pdf_progress"),
+    )
+    Spacer(Modifier.height(20.dp))
+    Text(
+        text = stringResource(R.string.images_to_pdf_creating, imageCount),
+        style = MaterialTheme.typography.titleMedium,
+        textAlign = TextAlign.Center,
+    )
 }
 
 @Composable
@@ -236,13 +310,17 @@ private fun FailedContent(failure: PdfOpenFailure, onOpenPdf: () -> Unit) {
 }
 
 @Composable
-private fun OpenButton(label: String, onClick: () -> Unit) {
+private fun OpenButton(
+    label: String,
+    onClick: () -> Unit,
+    testTag: String = "open_pdf_button",
+) {
     Button(
         onClick = onClick,
         modifier = Modifier
             .fillMaxWidth()
             .height(52.dp)
-            .testTag("open_pdf_button"),
+            .testTag(testTag),
     ) {
         Text(label)
     }
