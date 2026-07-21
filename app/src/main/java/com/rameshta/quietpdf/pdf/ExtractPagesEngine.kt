@@ -33,12 +33,13 @@ class ExtractPagesEngine(context: Context) {
         sourceUri: Uri,
         outputUri: Uri,
         selectedPageIndices: IntArray,
+        expectedSourcePageCount: Int? = null,
     ): ExtractPagesResult = withContext(Dispatchers.IO) {
         if (sourceUri == outputUri) return@withContext ExtractPagesResult.InvalidSelection
         val temporary = try {
             File.createTempFile("extract-pages-", ".pdf", appContext.cacheDir)
         } catch (_: Exception) {
-            cleanupOutput(outputUri)
+            cleanupNewPdfOutput(appContext, contentResolver, outputUri)
             return@withContext ExtractPagesResult.Failed
         }
         var sourceDescriptor: ParcelFileDescriptor? = null
@@ -61,6 +62,9 @@ class ExtractPagesEngine(context: Context) {
                 return@withContext ExtractPagesResult.InvalidDocument
             }
             val sourcePageCount = sourceDocument.getPageCount()
+            if (expectedSourcePageCount != null && sourcePageCount != expectedSourcePageCount) {
+                return@withContext ExtractPagesResult.InvalidDocument
+            }
             if (!isValidSelection(selectedPageIndices, sourcePageCount)) {
                 return@withContext ExtractPagesResult.InvalidSelection
             }
@@ -114,7 +118,7 @@ class ExtractPagesEngine(context: Context) {
             sourceDocument?.let { runCatching { it.close() } }
             sourceDescriptor?.let { runCatching { it.close() } }
             temporary.delete()
-            if (!outputCommitted) cleanupOutput(outputUri)
+            if (!outputCommitted) cleanupNewPdfOutput(appContext, contentResolver, outputUri)
         }
     }
 
@@ -128,17 +132,20 @@ class ExtractPagesEngine(context: Context) {
         return true
     }
 
-    private fun cleanupOutput(uri: Uri) {
-        runCatching {
-            when (uri.scheme) {
-                ContentResolver.SCHEME_FILE -> uri.path?.let(::File)?.delete()
-                ContentResolver.SCHEME_CONTENT -> if (DocumentsContract.isDocumentUri(appContext, uri)) {
-                    DocumentsContract.deleteDocument(contentResolver, uri)
-                }
-            }
-        }
-    }
 }
+
+internal fun cleanupNewPdfOutput(
+    context: Context,
+    contentResolver: ContentResolver,
+    uri: Uri,
+): Boolean = runCatching {
+    when (uri.scheme) {
+        ContentResolver.SCHEME_FILE -> uri.path?.let(::File)?.delete() == true
+        ContentResolver.SCHEME_CONTENT -> DocumentsContract.isDocumentUri(context, uri) &&
+            DocumentsContract.deleteDocument(contentResolver, uri)
+        else -> false
+    }
+}.getOrDefault(false)
 
 @Keep
 internal object NativePdfPageExtractor {

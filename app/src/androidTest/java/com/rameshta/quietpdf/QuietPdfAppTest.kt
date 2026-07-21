@@ -46,6 +46,8 @@ import com.rameshta.quietpdf.pdf.SplitPageRange
 import com.rameshta.quietpdf.pdf.SplitPdfState
 import com.rameshta.quietpdf.pdf.ExtractPagesFailure
 import com.rameshta.quietpdf.pdf.ExtractPagesState
+import com.rameshta.quietpdf.pdf.DeletePagesFailure
+import com.rameshta.quietpdf.pdf.DeletePagesState
 import com.rameshta.quietpdf.ui.theme.QuietPDFTheme
 import org.junit.Rule
 import org.junit.Assert.assertEquals
@@ -343,6 +345,84 @@ class QuietPdfAppTest {
             extractPagesState = ExtractPagesState.Failed(ExtractPagesFailure.InvalidDocument),
         )
         composeRule.onNodeWithTag("extract_pages_error").assertIsDisplayed()
+        composeRule.onNodeWithText("Dismiss").assertIsDisplayed()
+    }
+
+    @Test
+    fun deletePages_buttonStartsSingleDocumentSelection() {
+        val selections = AtomicInteger()
+        setContent(
+            state = PdfOpenState.Idle,
+            onDeletePages = { selections.incrementAndGet() },
+        )
+
+        composeRule.onNodeWithTag("delete_pages_button")
+            .assertTextEquals("Delete pages")
+            .performClick()
+        assertEquals(1, selections.get())
+    }
+
+    @Test
+    fun deletePages_dialogReturnsPagesToRemoveAndRemainingCount() {
+        val deleted = AtomicReference<IntArray>()
+        setContent(
+            state = PdfOpenState.Idle,
+            deletePagesState = DeletePagesState.Configuring(
+                sourceUri = Uri.parse("content://test/delete"),
+                displayName = "source.pdf",
+                pageCount = 5,
+            ),
+            onConfirmPageDeletion = deleted::set,
+        )
+
+        composeRule.onNodeWithTag("delete_pages_dialog").assertIsDisplayed()
+        composeRule.onNodeWithTag("delete_pages_input").performTextInput("2, 4")
+        composeRule.onNodeWithText("Selected for removal: 2. Pages remaining: 3.")
+            .assertIsDisplayed()
+        composeRule.onNodeWithTag("delete_pages_confirm").performClick()
+        assertArrayEquals(intArrayOf(1, 3), deleted.get())
+    }
+
+    @Test
+    fun deletePages_cannotRemoveEveryPage() {
+        setContent(
+            state = PdfOpenState.Idle,
+            deletePagesState = DeletePagesState.Configuring(
+                sourceUri = Uri.parse("content://test/delete-all"),
+                displayName = "source.pdf",
+                pageCount = 3,
+            ),
+        )
+
+        composeRule.onNodeWithTag("delete_pages_input").performTextInput("1-3")
+        composeRule.onNodeWithTag("delete_pages_selection_error").assertIsDisplayed()
+        composeRule.onNodeWithTag("delete_pages_confirm").assertIsNotEnabled()
+    }
+
+    @Test
+    fun deletePages_progressCanBeCancelled() {
+        val cancellations = AtomicInteger()
+        setContent(
+            state = PdfOpenState.Idle,
+            deletePagesState = DeletePagesState.Deleting(
+                deletedPageCount = 2,
+                remainingPageCount = 3,
+            ),
+            onCancelPageDeletion = { cancellations.incrementAndGet() },
+        )
+        composeRule.onNodeWithText("Removing selected pages (2); pages remaining: 3…")
+            .assertIsDisplayed()
+        composeRule.onNodeWithTag("operation_cancel").performClick()
+        assertEquals(1, cancellations.get())
+    }
+
+    @Test
+    fun deletePages_failureIsActionable() {
+        setContent(
+            state = PdfOpenState.Idle,
+            deletePagesState = DeletePagesState.Failed(DeletePagesFailure.InvalidDocument),
+        )
+        composeRule.onNodeWithTag("delete_pages_error").assertIsDisplayed()
         composeRule.onNodeWithText("Dismiss").assertIsDisplayed()
     }
 
@@ -714,6 +794,10 @@ class QuietPdfAppTest {
         onExtractPages: () -> Unit = {},
         onConfirmPageExtraction: (IntArray) -> Unit = {},
         onCancelPageExtraction: () -> Unit = {},
+        deletePagesState: DeletePagesState = DeletePagesState.Idle,
+        onDeletePages: () -> Unit = {},
+        onConfirmPageDeletion: (IntArray) -> Unit = {},
+        onCancelPageDeletion: () -> Unit = {},
     ) {
         composeRule.setContent {
             QuietPDFTheme(dynamicColor = false) {
@@ -742,6 +826,10 @@ class QuietPdfAppTest {
                     onExtractPages = onExtractPages,
                     onConfirmPageExtraction = onConfirmPageExtraction,
                     onCancelPageExtraction = onCancelPageExtraction,
+                    deletePagesState = deletePagesState,
+                    onDeletePages = onDeletePages,
+                    onConfirmPageDeletion = onConfirmPageDeletion,
+                    onCancelPageDeletion = onCancelPageDeletion,
                 )
             }
         }

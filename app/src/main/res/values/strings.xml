@@ -145,4 +145,19 @@
     <string name="extract_pages_permission_denied">QuietPDF lost access to the PDF or save location. Choose them again.</string>
     <string name="extract_pages_memory_error">These pages need more memory than is available. Close other apps or select fewer pages.</string>
     <string name="extract_pages_save_error">The extracted PDF could not be created safely. Keep the original and choose another save location.</string>
+    <string name="delete_pages">Delete pages</string>
+    <string name="delete_pages_title">Delete pages</string>
+    <string name="delete_pages_preparing">Reading the selected PDF…</string>
+    <string name="delete_pages_deleting">Removing selected pages (%1$d); pages remaining: %2$d…</string>
+    <string name="delete_pages_document_summary">%1$s contains %2$d pages. A new PDF will be created; the original will not change.</string>
+    <string name="delete_pages_selection_label">Pages to remove</string>
+    <string name="delete_pages_selection_help">Use page numbers and ranges from 1 to %1$d, for example: 2, 4-6</string>
+    <string name="delete_pages_selection_count">Selected for removal: %1$d. Pages remaining: %2$d.</string>
+    <string name="save_without_pages">Save new PDF</string>
+    <string name="delete_pages_need_two_pages">Choose a PDF with at least two pages. A PDF must retain at least one page.</string>
+    <string name="delete_pages_invalid_document">This file is not a readable PDF. Keep the original and choose another file.</string>
+    <string name="delete_pages_invalid_selection">Choose unique pages in order and leave at least one page in the new PDF.</string>
+    <string name="delete_pages_permission_denied">QuietPDF lost access to the PDF or save location. Choose them again.</string>
+    <string name="delete_pages_memory_error">This PDF needs more memory than is available. Close other apps or try a smaller PDF.</string>
+    <string name="delete_pages_save_error">The new PDF could not be created safely. The original was not changed; choose another save location.</string>
 </resources>
