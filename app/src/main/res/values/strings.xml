@@ -44,4 +44,12 @@
     <string name="search_no_matches">No matches</string>
     <string name="search_no_text">This PDF has no searchable text</string>
     <string name="search_failed">Couldn’t search this PDF</string>
+    <string name="bookmark_page">Bookmark page %1$d</string>
+    <string name="remove_bookmark">Remove bookmark from page %1$d</string>
+    <string name="bookmarks">Bookmarks</string>
+    <string name="bookmarks_count">Bookmarks (%1$d)</string>
+    <string name="no_bookmarks">No bookmarked pages yet</string>
+    <string name="remove">Remove</string>
+    <string name="close">Close</string>
+    <string name="page_label">Page %1$d</string>
 </resources>

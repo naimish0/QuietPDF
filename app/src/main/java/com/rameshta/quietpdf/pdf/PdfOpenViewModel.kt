@@ -25,6 +25,7 @@ sealed interface PdfOpenState {
         val displayName: String?,
         val pageCount: Int,
         val initialPageIndex: Int = 0,
+        val bookmarkedPages: Set<Int> = emptySet(),
     ) : PdfOpenState
     data class Failed(val failure: PdfOpenFailure) : PdfOpenState
 }
@@ -45,6 +46,7 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
     private val pageRenderer = PdfPageRenderer(application.contentResolver)
     private val readingPositionStore = ReadingPositionStore(application)
     private val searchEngine = PdfSearchEngine(application)
+    private val bookmarkStore = PdfBookmarkStore(application)
     private var openJob: Job? = null
     private var documentGeneration = 0L
     private val pageCache = object : LruCache<PageCacheKey, Bitmap>(pageCacheBytes()) {
@@ -71,6 +73,10 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
                         result.document.uri,
                         result.document.pageCount,
                     ),
+                    bookmarkedPages = bookmarkStore.restore(
+                        result.document.uri,
+                        result.document.pageCount,
+                    ),
                 )
                 is PdfOpenResult.Failure -> PdfOpenState.Failed(result.reason)
             }
@@ -93,6 +99,12 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
     suspend fun search(query: String): PdfSearchResult {
         val opened = state as? PdfOpenState.Opened ?: return PdfSearchResult.Failed
         return searchEngine.search(opened.uri, opened.pageCount, query)
+    }
+
+    fun toggleBookmark(pageIndex: Int) {
+        val opened = state as? PdfOpenState.Opened ?: return
+        val updated = bookmarkStore.toggle(opened.uri, pageIndex, opened.pageCount)
+        state = opened.copy(bookmarkedPages = updated)
     }
 
     suspend fun renderPage(pageIndex: Int, targetWidth: Int): PageRenderResult {

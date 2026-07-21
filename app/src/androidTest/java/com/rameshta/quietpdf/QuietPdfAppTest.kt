@@ -283,6 +283,32 @@ class QuietPdfAppTest {
         composeRule.onAllNodesWithTag("search_highlights_2").assertCountEquals(0)
     }
 
+    @Test
+    fun bookmarks_listNavigatesAndCurrentPageCanBeRemoved() {
+        val toggledPage = AtomicInteger(-1)
+        setContent(
+            state = PdfOpenState.Opened(
+                uri = Uri.parse("content://test/bookmarks"),
+                displayName = "bookmarks.pdf",
+                pageCount = 3,
+                bookmarkedPages = setOf(1),
+            ),
+            onToggleBookmark = toggledPage::set,
+        )
+
+        composeRule.onNodeWithTag("reader_mode_button").performClick()
+        composeRule.onNodeWithTag("bookmarks_button").performClick()
+        composeRule.onNodeWithTag("bookmarks_dialog").assertIsDisplayed()
+        composeRule.onNodeWithTag("bookmark_page_2").performClick()
+        composeRule.onNodeWithText("Page 2 of 3").assertIsDisplayed()
+
+        composeRule.onNodeWithTag("reader_mode_button").performClick()
+        composeRule.onNodeWithTag("toggle_bookmark_button")
+            .assertTextEquals("Remove bookmark from page 2")
+            .performClick()
+        assertEquals(1, toggledPage.get())
+    }
+
     private fun selectReaderMode(modeName: String) {
         composeRule.onNodeWithTag("reader_mode_button").performClick()
         composeRule.onNodeWithTag("reader_mode_$modeName").performClick()
@@ -297,6 +323,7 @@ class QuietPdfAppTest {
         },
         onPageChanged: (Int) -> Unit = {},
         searchDocument: suspend (String) -> PdfSearchResult = { PdfSearchResult.Failed },
+        onToggleBookmark: (Int) -> Unit = {},
     ) {
         composeRule.setContent {
             QuietPDFTheme(dynamicColor = false) {
@@ -306,6 +333,7 @@ class QuietPdfAppTest {
                     renderPage = renderPage,
                     onPageChanged = onPageChanged,
                     searchDocument = searchDocument,
+                    onToggleBookmark = onToggleBookmark,
                 )
             }
         }

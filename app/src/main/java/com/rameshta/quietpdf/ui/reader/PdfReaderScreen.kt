@@ -33,6 +33,7 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.Button
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -111,6 +112,7 @@ fun PdfReaderScreen(
     renderPage: suspend (pageIndex: Int, targetWidth: Int) -> PageRenderResult,
     onPageChanged: (pageIndex: Int) -> Unit,
     searchDocument: suspend (query: String) -> PdfSearchResult,
+    onToggleBookmark: (pageIndex: Int) -> Unit,
 ) {
     val initialPage = document.initialPageIndex.coerceIn(0, document.pageCount - 1)
     var readerMode by remember(document.uri) { mutableStateOf(ReaderMode.VerticalContinuous) }
@@ -131,6 +133,7 @@ fun PdfReaderScreen(
     var searchMessage by remember(document.uri) { mutableStateOf<Int?>(null) }
     var searchInProgress by remember(document.uri) { mutableStateOf(false) }
     var searchJob by remember(document.uri) { mutableStateOf<Job?>(null) }
+    var bookmarkDialogVisible by remember(document.uri) { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
     val inheritedColors = MaterialTheme.colorScheme
@@ -199,8 +202,10 @@ fun PdfReaderScreen(
         }
     }
 
-    BackHandler(enabled = isFullscreen || searchActive) {
-        if (searchActive) {
+    BackHandler(enabled = bookmarkDialogVisible || isFullscreen || searchActive) {
+        if (bookmarkDialogVisible) {
+            bookmarkDialogVisible = false
+        } else if (searchActive) {
             closeSearch()
         } else {
             isFullscreen = false
@@ -307,6 +312,10 @@ fun PdfReaderScreen(
                         nightAppearance = nightAppearance,
                         onNightAppearanceChange = { nightAppearance = it },
                         onSearchRequested = { searchActive = true },
+                        currentPage = currentPage,
+                        bookmarkedPages = document.bookmarkedPages,
+                        onToggleBookmark = onToggleBookmark,
+                        onShowBookmarks = { bookmarkDialogVisible = true },
                         modifier = Modifier.align(Alignment.TopCenter),
                     )
                 }
@@ -338,6 +347,10 @@ fun PdfReaderScreen(
                         nightAppearance = nightAppearance,
                         onNightAppearanceChange = { nightAppearance = it },
                         onSearchRequested = { searchActive = true },
+                        currentPage = currentPage,
+                        bookmarkedPages = document.bookmarkedPages,
+                        onToggleBookmark = onToggleBookmark,
+                        onShowBookmarks = { bookmarkDialogVisible = true },
                     )
                 },
             ) { innerPadding ->
@@ -356,6 +369,17 @@ fun PdfReaderScreen(
                 )
             }
         }
+        if (bookmarkDialogVisible) {
+            BookmarksDialog(
+                bookmarkedPages = document.bookmarkedPages,
+                onNavigate = { pageIndex ->
+                    bookmarkDialogVisible = false
+                    navigateToPage(pageIndex)
+                },
+                onRemove = onToggleBookmark,
+                onClose = { bookmarkDialogVisible = false },
+            )
+        }
     }
 }
 
@@ -371,6 +395,10 @@ private fun ReaderTopBar(
     nightAppearance: Boolean,
     onNightAppearanceChange: (Boolean) -> Unit,
     onSearchRequested: () -> Unit,
+    currentPage: Int,
+    bookmarkedPages: Set<Int>,
+    onToggleBookmark: (Int) -> Unit,
+    onShowBookmarks: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     TopAppBar(
@@ -388,6 +416,10 @@ private fun ReaderTopBar(
                 nightAppearance = nightAppearance,
                 onNightAppearanceChange = onNightAppearanceChange,
                 onSearchRequested = onSearchRequested,
+                currentPage = currentPage,
+                bookmarkedPages = bookmarkedPages,
+                onToggleBookmark = onToggleBookmark,
+                onShowBookmarks = onShowBookmarks,
             )
             TextButton(
                 onClick = { onFullscreenChange(!isFullscreen) },
@@ -404,6 +436,54 @@ private fun ReaderTopBar(
             }
         },
         modifier = modifier.testTag("reader_top_bar"),
+    )
+}
+
+@Composable
+private fun BookmarksDialog(
+    bookmarkedPages: Set<Int>,
+    onNavigate: (Int) -> Unit,
+    onRemove: (Int) -> Unit,
+    onClose: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onClose,
+        title = { Text(stringResource(R.string.bookmarks)) },
+        text = {
+            if (bookmarkedPages.isEmpty()) {
+                Text(stringResource(R.string.no_bookmarks))
+            } else {
+                LazyColumn(modifier = Modifier.heightIn(max = 400.dp)) {
+                    items(bookmarkedPages.sorted(), key = { it }) { pageIndex ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            TextButton(
+                                onClick = { onNavigate(pageIndex) },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .testTag("bookmark_page_${pageIndex + 1}"),
+                            ) {
+                                Text(stringResource(R.string.page_label, pageIndex + 1))
+                            }
+                            TextButton(
+                                onClick = { onRemove(pageIndex) },
+                                modifier = Modifier.testTag("remove_bookmark_${pageIndex + 1}"),
+                            ) {
+                                Text(stringResource(R.string.remove))
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onClose, modifier = Modifier.testTag("bookmarks_close")) {
+                Text(stringResource(R.string.close))
+            }
+        },
+        modifier = Modifier.testTag("bookmarks_dialog"),
     )
 }
 
@@ -603,6 +683,10 @@ private fun ReaderModeMenu(
     nightAppearance: Boolean,
     onNightAppearanceChange: (Boolean) -> Unit,
     onSearchRequested: () -> Unit,
+    currentPage: Int,
+    bookmarkedPages: Set<Int>,
+    onToggleBookmark: (Int) -> Unit,
+    onShowBookmarks: () -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
     val controlDescription = stringResource(R.string.reader_mode)
@@ -648,6 +732,33 @@ private fun ReaderModeMenu(
                     onSearchRequested()
                 },
                 modifier = Modifier.testTag("search_button"),
+            )
+            HorizontalDivider()
+            DropdownMenuItem(
+                text = {
+                    Text(
+                        stringResource(
+                            if (currentPage in bookmarkedPages) R.string.remove_bookmark
+                            else R.string.bookmark_page,
+                            currentPage + 1,
+                        ),
+                    )
+                },
+                onClick = {
+                    expanded = false
+                    onToggleBookmark(currentPage)
+                },
+                modifier = Modifier.testTag("toggle_bookmark_button"),
+            )
+            DropdownMenuItem(
+                text = {
+                    Text(stringResource(R.string.bookmarks_count, bookmarkedPages.size))
+                },
+                onClick = {
+                    expanded = false
+                    onShowBookmarks()
+                },
+                modifier = Modifier.testTag("bookmarks_button"),
             )
             HorizontalDivider()
             DropdownMenuItem(

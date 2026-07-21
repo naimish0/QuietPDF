@@ -71,6 +71,7 @@ class MainActivity : ComponentActivity() {
                     renderPage = viewModel::renderPage,
                     onPageChanged = viewModel::rememberPage,
                     searchDocument = viewModel::search,
+                    onToggleBookmark = viewModel::toggleBookmark,
                 )
             }
         }
@@ -118,6 +119,7 @@ fun QuietPdfApp(
     searchDocument: suspend (query: String) -> PdfSearchResult = {
         PdfSearchResult.Failed
     },
+    onToggleBookmark: (pageIndex: Int) -> Unit = {},
 ) {
     if (state is PdfOpenState.Opened) {
         PdfReaderScreen(
@@ -126,6 +128,7 @@ fun QuietPdfApp(
             renderPage = renderPage,
             onPageChanged = onPageChanged,
             searchDocument = searchDocument,
+            onToggleBookmark = onToggleBookmark,
         )
         return
     }
