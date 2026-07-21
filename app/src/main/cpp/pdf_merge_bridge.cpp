@@ -3,6 +3,7 @@
 #include <cerrno>
 #include <cstdint>
 #include <dlfcn.h>
+#include <string>
 #include <unistd.h>
 
 namespace {
@@ -51,6 +52,68 @@ Function loadSymbol(void* library, const char* name) {
 }
 
 }  // namespace
+
+extern "C" JNIEXPORT jint JNICALL
+Java_com_rameshta_quietpdf_pdf_NativePdfSplitter_splitPart(
+    JNIEnv*,
+    jobject,
+    jlong sourcePointer,
+    jint firstPageIndex,
+    jint pageCount,
+    jint outputFileDescriptor
+) {
+    if (sourcePointer == 0 || firstPageIndex < 0 || pageCount <= 0 || outputFileDescriptor < 0) {
+        return -1;
+    }
+    void* library = dlopen("libpdfium.so", RTLD_NOW | RTLD_LOCAL);
+    if (library == nullptr) return -2;
+
+    const auto createDocument = loadSymbol<CreateDocument>(library, "FPDF_CreateNewDocument");
+    const auto closeDocument = loadSymbol<CloseDocument>(library, "FPDF_CloseDocument");
+    const auto importPages = loadSymbol<ImportPages>(library, "FPDF_ImportPages");
+    const auto getPageCount = loadSymbol<GetPageCount>(library, "FPDF_GetPageCount");
+    const auto saveAsCopy = loadSymbol<SaveAsCopy>(library, "FPDF_SaveAsCopy");
+    if (createDocument == nullptr || closeDocument == nullptr || importPages == nullptr ||
+        getPageCount == nullptr || saveAsCopy == nullptr) {
+        dlclose(library);
+        return -3;
+    }
+
+    auto* wrappedSource = reinterpret_cast<PdfiumAndroidDocument*>(
+        static_cast<intptr_t>(sourcePointer)
+    );
+    const PdfDocument source = wrappedSource->document;
+    const int sourcePageCount = source == nullptr ? 0 : getPageCount(source);
+    if (firstPageIndex > sourcePageCount - pageCount) {
+        dlclose(library);
+        return -4;
+    }
+
+    PdfDocument destination = createDocument();
+    if (destination == nullptr) {
+        dlclose(library);
+        return -5;
+    }
+    const int firstPageNumber = firstPageIndex + 1;
+    const int lastPageNumber = firstPageIndex + pageCount;
+    const std::string pageRange = pageCount == 1
+        ? std::to_string(firstPageNumber)
+        : std::to_string(firstPageNumber) + "-" + std::to_string(lastPageNumber);
+    int result = importPages(destination, source, pageRange.c_str(), 0) == 0 ? -6 : 0;
+    if (result == 0) {
+        if (lseek(outputFileDescriptor, 0, SEEK_SET) < 0 ||
+            ftruncate(outputFileDescriptor, 0) < 0) {
+            result = -7;
+        } else {
+            OutputWriter writer{{1, writeBlock}, outputFileDescriptor};
+            if (saveAsCopy(destination, &writer.base, 0) == 0) result = -8;
+            else if (fsync(outputFileDescriptor) != 0) result = -9;
+        }
+    }
+    closeDocument(destination);
+    dlclose(library);
+    return result;
+}
 
 extern "C" JNIEXPORT jint JNICALL
 Java_com_rameshta_quietpdf_pdf_NativePdfMerger_merge(

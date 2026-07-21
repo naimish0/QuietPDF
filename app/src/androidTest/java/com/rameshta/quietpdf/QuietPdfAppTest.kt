@@ -8,6 +8,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.click
@@ -41,6 +42,8 @@ import com.rameshta.quietpdf.pdf.ImagePdfScaleMode
 import com.rameshta.quietpdf.pdf.MergePdfFailure
 import com.rameshta.quietpdf.pdf.MergePdfItem
 import com.rameshta.quietpdf.pdf.MergePdfState
+import com.rameshta.quietpdf.pdf.SplitPageRange
+import com.rameshta.quietpdf.pdf.SplitPdfState
 import com.rameshta.quietpdf.ui.theme.QuietPDFTheme
 import org.junit.Rule
 import org.junit.Assert.assertEquals
@@ -187,6 +190,84 @@ class QuietPdfAppTest {
 
         composeRule.onNodeWithTag("merge_pdf_error").assertIsDisplayed()
         composeRule.onNodeWithText("Dismiss").assertIsDisplayed()
+    }
+
+    @Test
+    fun splitPdf_buttonStartsSingleDocumentSelection() {
+        val selections = AtomicInteger()
+        setContent(
+            state = PdfOpenState.Idle,
+            onSplitPdf = { selections.incrementAndGet() },
+        )
+
+        composeRule.onNodeWithTag("split_pdf_button")
+            .assertTextEquals("Split PDF")
+            .performClick()
+        assertEquals(1, selections.get())
+    }
+
+    @Test
+    fun splitPdf_dialogBuildsCompleteCustomRangePlan() {
+        val selected = AtomicReference<List<SplitPageRange>>()
+        setContent(
+            state = PdfOpenState.Idle,
+            splitPdfState = SplitPdfState.Configuring(
+                sourceUri = Uri.parse("content://test/split"),
+                displayName = "source.pdf",
+                pageCount = 6,
+            ),
+            onConfirmSplit = selected::set,
+        )
+
+        composeRule.onNodeWithTag("split_pdf_dialog").assertIsDisplayed()
+        composeRule.onNodeWithText("6 PDFs will be created.").assertIsDisplayed()
+        composeRule.onNodeWithTag("split_mode_1").performClick()
+        composeRule.onNodeWithTag("split_ranges_input").performTextInput("1-2, 3-6")
+        composeRule.onNodeWithTag("split_confirm").performClick()
+
+        assertEquals(
+            listOf(SplitPageRange(0, 1), SplitPageRange(2, 5)),
+            selected.get(),
+        )
+    }
+
+    @Test
+    fun splitPdf_incompleteRangesCannotContinue() {
+        setContent(
+            state = PdfOpenState.Idle,
+            splitPdfState = SplitPdfState.Configuring(
+                sourceUri = Uri.parse("content://test/split-invalid"),
+                displayName = "source.pdf",
+                pageCount = 6,
+            ),
+        )
+
+        composeRule.onNodeWithTag("split_mode_1").performClick()
+        composeRule.onNodeWithTag("split_ranges_input").performTextInput("1-2, 4-6")
+        composeRule.onNodeWithTag("split_plan_error").assertIsDisplayed()
+        composeRule.onNodeWithTag("split_confirm").assertIsNotEnabled()
+    }
+
+    @Test
+    fun splitPdf_progressCanBeCancelled() {
+        val cancellations = AtomicInteger()
+        setContent(
+            state = PdfOpenState.Idle,
+            splitPdfState = SplitPdfState.Splitting(completedOutputs = 1, totalOutputs = 3),
+            onCancelSplit = { cancellations.incrementAndGet() },
+        )
+        composeRule.onNodeWithText("Creating output 1 of 3…").assertIsDisplayed()
+        composeRule.onNodeWithTag("operation_cancel").performClick()
+        assertEquals(1, cancellations.get())
+    }
+
+    @Test
+    fun splitPdf_completionIsExplicit() {
+        setContent(
+            state = PdfOpenState.Idle,
+            splitPdfState = SplitPdfState.Completed(outputCount = 3),
+        )
+        composeRule.onNodeWithTag("split_pdf_success").assertIsDisplayed()
     }
 
     @Test
@@ -549,6 +630,10 @@ class QuietPdfAppTest {
         onMoveMergeDocument: (Int, Int) -> Unit = { _, _ -> },
         onConfirmMerge: () -> Unit = {},
         onCancelMerge: () -> Unit = {},
+        splitPdfState: SplitPdfState = SplitPdfState.Idle,
+        onSplitPdf: () -> Unit = {},
+        onConfirmSplit: (List<SplitPageRange>) -> Unit = {},
+        onCancelSplit: () -> Unit = {},
     ) {
         composeRule.setContent {
             QuietPDFTheme(dynamicColor = false) {
@@ -569,6 +654,10 @@ class QuietPdfAppTest {
                     onMoveMergeDocument = onMoveMergeDocument,
                     onConfirmMerge = onConfirmMerge,
                     onCancelMerge = onCancelMerge,
+                    splitPdfState = splitPdfState,
+                    onSplitPdf = onSplitPdf,
+                    onConfirmSplit = onConfirmSplit,
+                    onCancelSplit = onCancelSplit,
                 )
             }
         }

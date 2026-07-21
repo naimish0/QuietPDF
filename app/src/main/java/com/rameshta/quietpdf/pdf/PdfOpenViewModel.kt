@@ -53,6 +53,28 @@ sealed interface MergePdfState {
     data class Failed(val failure: MergePdfFailure) : MergePdfState
 }
 
+sealed interface SplitPdfState {
+    data object Idle : SplitPdfState
+    data object Preparing : SplitPdfState
+    data class Configuring(
+        val sourceUri: Uri,
+        val displayName: String,
+        val pageCount: Int,
+    ) : SplitPdfState
+    data class Splitting(val completedOutputs: Int, val totalOutputs: Int) : SplitPdfState
+    data class Completed(val outputCount: Int) : SplitPdfState
+    data class Failed(val failure: SplitPdfFailure) : SplitPdfState
+}
+
+enum class SplitPdfFailure(@get:StringRes val messageResource: Int) {
+    NeedAtLeastTwoPages(R.string.split_pdf_need_two_pages),
+    InvalidDocument(R.string.split_pdf_invalid_document),
+    InvalidPlan(R.string.split_pdf_invalid_plan),
+    PermissionDenied(R.string.split_pdf_permission_denied),
+    InsufficientMemory(R.string.split_pdf_memory_error),
+    UnableToSave(R.string.split_pdf_save_error),
+}
+
 enum class MergePdfFailure(@get:StringRes val messageResource: Int) {
     NeedAtLeastTwo(R.string.merge_pdf_need_two),
     InvalidDocument(R.string.merge_pdf_invalid_document),
@@ -84,11 +106,14 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
     private val healthEngine = PdfHealthEngine(application)
     private val imagesToPdfEngine = ImagesToPdfEngine(application.contentResolver, application.cacheDir)
     private val mergePdfEngine = MergePdfEngine(application)
+    private val splitPdfEngine = SplitPdfEngine(application)
     private var openJob: Job? = null
     private var imageCreationJob: Job? = null
     private var mergeJob: Job? = null
+    private var splitJob: Job? = null
     private var selectedImageUris: List<Uri> = emptyList()
     private var selectedImageLayout = ImagePdfLayout()
+    private var selectedSplitRanges: List<SplitPageRange> = emptyList()
     private var documentGeneration = 0L
     private val pageCache = object : LruCache<PageCacheKey, Bitmap>(pageCacheBytes()) {
         override fun sizeOf(key: PageCacheKey, value: Bitmap): Int = value.allocationByteCount
@@ -101,6 +126,9 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
         private set
 
     var mergePdfState: MergePdfState by mutableStateOf(MergePdfState.Idle)
+        private set
+
+    var splitPdfState: SplitPdfState by mutableStateOf(SplitPdfState.Idle)
         private set
 
     fun open(uri: Uri) {
@@ -251,6 +279,93 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
         mergePdfState = MergePdfState.Idle
     }
 
+    fun selectPdfForSplit(uri: Uri) {
+        splitJob?.cancel()
+        selectedSplitRanges = emptyList()
+        splitPdfState = SplitPdfState.Preparing
+        splitJob = viewModelScope.launch {
+            splitPdfState = when (val result = withContext(Dispatchers.IO) { opener.open(uri) }) {
+                is PdfOpenResult.Success -> {
+                    if (result.document.pageCount < 2) {
+                        SplitPdfState.Failed(SplitPdfFailure.NeedAtLeastTwoPages)
+                    } else {
+                        SplitPdfState.Configuring(
+                            sourceUri = uri,
+                            displayName = result.document.displayName ?: "PDF",
+                            pageCount = result.document.pageCount,
+                        )
+                    }
+                }
+                is PdfOpenResult.Failure -> when (result.reason) {
+                    PdfOpenFailure.PermissionDenied -> {
+                        SplitPdfState.Failed(SplitPdfFailure.PermissionDenied)
+                    }
+                    PdfOpenFailure.Empty -> {
+                        SplitPdfState.Failed(SplitPdfFailure.NeedAtLeastTwoPages)
+                    }
+                    else -> SplitPdfState.Failed(SplitPdfFailure.InvalidDocument)
+                }
+            }
+        }
+    }
+
+    fun configureSplitPdf(ranges: List<SplitPageRange>) {
+        val configuring = splitPdfState as? SplitPdfState.Configuring ?: return
+        selectedSplitRanges = ranges
+        splitPdfState = configuring
+    }
+
+    fun splitSelectedPdf(outputDirectoryUri: Uri) {
+        val configuring = splitPdfState as? SplitPdfState.Configuring ?: return
+        val ranges = selectedSplitRanges
+        if (ranges.isEmpty()) {
+            splitPdfState = SplitPdfState.Failed(SplitPdfFailure.InvalidPlan)
+            return
+        }
+        splitJob?.cancel()
+        splitPdfState = SplitPdfState.Splitting(0, ranges.size)
+        splitJob = viewModelScope.launch {
+            splitPdfState = when (
+                val result = splitPdfEngine.split(
+                    sourceUri = configuring.sourceUri,
+                    outputDirectoryUri = outputDirectoryUri,
+                    sourceDisplayName = configuring.displayName,
+                    ranges = ranges,
+                    onProgress = { completed, total ->
+                        withContext(Dispatchers.Main.immediate) {
+                            splitPdfState = SplitPdfState.Splitting(completed, total)
+                        }
+                    },
+                )
+            ) {
+                is SplitPdfResult.Success -> SplitPdfState.Completed(result.outputCount)
+                SplitPdfResult.InvalidDocument -> {
+                    SplitPdfState.Failed(SplitPdfFailure.InvalidDocument)
+                }
+                SplitPdfResult.InvalidPlan -> SplitPdfState.Failed(SplitPdfFailure.InvalidPlan)
+                SplitPdfResult.PermissionDenied -> {
+                    SplitPdfState.Failed(SplitPdfFailure.PermissionDenied)
+                }
+                SplitPdfResult.InsufficientMemory -> {
+                    SplitPdfState.Failed(SplitPdfFailure.InsufficientMemory)
+                }
+                SplitPdfResult.Failed -> SplitPdfState.Failed(SplitPdfFailure.UnableToSave)
+            }
+            selectedSplitRanges = emptyList()
+        }
+    }
+
+    fun cancelSplitPdf() {
+        splitJob?.cancel()
+        selectedSplitRanges = emptyList()
+        splitPdfState = SplitPdfState.Idle
+    }
+
+    fun clearSplitPdfResult() {
+        selectedSplitRanges = emptyList()
+        splitPdfState = SplitPdfState.Idle
+    }
+
     fun rejectUnsupportedUri() {
         openJob?.cancel()
         searchEngine.close()
@@ -322,6 +437,7 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
     override fun onCleared() {
         imageCreationJob?.cancel()
         mergeJob?.cancel()
+        splitJob?.cancel()
         searchEngine.close()
         super.onCleared()
     }

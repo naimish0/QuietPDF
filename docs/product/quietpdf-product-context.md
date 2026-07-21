@@ -796,14 +796,17 @@ Rules:
 
 ### Feature Execution
 
-The user owns the complete execution workflow outside implementation:
+The user owns the Git and pull-request workflow. Codex owns implementation and post-implementation
+verification:
 
 1. The user creates the exact feature branch from an updated, clean `main`.
 2. The user confirms that the branch matches the first pending queue item.
-3. Codex implements only the assigned feature and writes focused tests. Codex then stops and reports
-   the changed files and any known constraints.
-4. The user reviews the diff and runs all relevant verification, tests, builds, lint, and device
-   checks.
+3. Codex implements only the assigned feature and writes focused tests.
+4. After the implementation is complete, Codex runs all relevant scoped verification, including
+   focused tests and the smallest relevant build, lint, and available device checks. Codex fixes
+   feature-scoped failures and repeats verification until it passes or a genuine blocker is found.
+   Codex then reports the changed files, exact verification commands and results, and any known
+   constraints.
 5. The user configures and verifies the required repository-local Git identity.
 6. The user stages the intended files, creates the feature commit, and pushes without force-pushing.
 7. The user opens, reviews, and merges the pull request after required checks pass.
@@ -813,9 +816,10 @@ The user owns the complete execution workflow outside implementation:
    `main` again.
 10. The user creates the next feature branch when ready.
 
-Codex must not run verification commands or perform branch creation, staging, commits, pushes, pull
-requests, merges, branch switching, pulls, or queue-status changes. Read-only repository inspection
-is allowed when needed to implement the feature safely.
+Codex must run relevant verification after completing each feature implementation. Codex must not
+perform branch creation, staging, commits, pushes, pull requests, merges, branch switching, pulls, or
+queue-status changes. Read-only repository inspection is allowed when needed to implement or verify
+the feature safely.
 
 ### Never
 
@@ -823,7 +827,7 @@ is allowed when needed to implement the feature safely.
     - Name: `Naimish Gupta`
     - Email: `naimishgupta983842377@gmail.com`
 - Configure Git identity globally.
-- Ask Codex to perform verification or Git/PR workflow steps assigned to the user above.
+- Ask Codex to perform Git or pull-request workflow steps assigned to the user above.
 - Mix multiple queued features in one branch.
 - Begin the next feature before the current feature is merged.
 - Force-push.
@@ -860,6 +864,7 @@ A feature is complete only when:
 - No unrelated files were changed
 - Limitations are documented honestly
 - The feature branch contains only that feature
+- Codex has run and reported the relevant post-implementation verification
 
 Quality is more important than marking the feature complete quickly.
 
