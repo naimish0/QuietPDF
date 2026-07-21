@@ -17,6 +17,14 @@ class AdMobConfigurationTest {
             "ca-app-pub-3940256099942544/9214589741",
             BuildConfig.ADMOB_HOME_BANNER_ID,
         )
+        assertEquals(
+            "ca-app-pub-3940256099942544/1033173712",
+            BuildConfig.ADMOB_INTERSTITIAL_ID,
+        )
+        assertEquals(
+            "ca-app-pub-3940256099942544/9257395921",
+            BuildConfig.ADMOB_APP_OPEN_ID,
+        )
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         @Suppress("DEPRECATION")
         val applicationInfo = context.packageManager.getApplicationInfo(

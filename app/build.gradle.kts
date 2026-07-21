@@ -26,21 +26,47 @@ android {
                 "ADMOB_HOME_BANNER_ID",
                 "\"ca-app-pub-3940256099942544/9214589741\"",
             )
+            buildConfigField(
+                "String",
+                "ADMOB_INTERSTITIAL_ID",
+                "\"ca-app-pub-3940256099942544/1033173712\"",
+            )
+            buildConfigField(
+                "String",
+                "ADMOB_APP_OPEN_ID",
+                "\"ca-app-pub-3940256099942544/9257395921\"",
+            )
         }
         release {
             val applicationId = providers.gradleProperty("ADMOB_APP_ID").orNull
             val homeBannerId = providers.gradleProperty("ADMOB_HOME_BANNER_ID").orNull
-            val configured = applicationId?.matches(Regex("^ca-app-pub-\\d{16}~\\d{10}$")) == true &&
-                homeBannerId?.matches(Regex("^ca-app-pub-\\d{16}/\\d{10}$")) == true
+            val interstitialId = providers.gradleProperty("ADMOB_INTERSTITIAL_ID").orNull
+            val appOpenId = providers.gradleProperty("ADMOB_APP_OPEN_ID").orNull
+            val applicationConfigured = applicationId?.matches(
+                Regex("^ca-app-pub-\\d{16}~\\d{10}$"),
+            ) == true
+            val validAdUnit = Regex("^ca-app-pub-\\d{16}/\\d{10}$")
             // Keep unconfigured local release builds crash-safe without inventing a production ID.
-            // Ads stay disabled until both production values are supplied by the release environment.
-            manifestPlaceholders["admobApplicationId"] = applicationId.takeIf { configured }
+            // Each placement stays disabled until its own production ID is supplied.
+            manifestPlaceholders["admobApplicationId"] = applicationId.takeIf {
+                applicationConfigured
+            }
                 ?: "ca-app-pub-3940256099942544~3347511713"
-            buildConfigField("boolean", "ADMOB_ENABLED", configured.toString())
+            buildConfigField("boolean", "ADMOB_ENABLED", applicationConfigured.toString())
             buildConfigField(
                 "String",
                 "ADMOB_HOME_BANNER_ID",
-                "\"${homeBannerId.takeIf { configured }.orEmpty()}\"",
+                "\"${homeBannerId?.takeIf { applicationConfigured && validAdUnit.matches(it) }.orEmpty()}\"",
+            )
+            buildConfigField(
+                "String",
+                "ADMOB_INTERSTITIAL_ID",
+                "\"${interstitialId?.takeIf { applicationConfigured && validAdUnit.matches(it) }.orEmpty()}\"",
+            )
+            buildConfigField(
+                "String",
+                "ADMOB_APP_OPEN_ID",
+                "\"${appOpenId?.takeIf { applicationConfigured && validAdUnit.matches(it) }.orEmpty()}\"",
             )
             isMinifyEnabled = true
             isShrinkResources = true
@@ -71,6 +97,7 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.viewmodel.ktx)
     implementation(libs.androidx.lifecycle.runtime.compose)
+    implementation(libs.androidx.lifecycle.process)
     implementation(libs.androidx.activity.compose)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)

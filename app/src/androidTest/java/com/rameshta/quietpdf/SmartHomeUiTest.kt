@@ -28,7 +28,7 @@ class SmartHomeUiTest {
     val composeRule = createComposeRule()
 
     @Test
-    fun newUserHomeShowsTrustPrimaryActionsAndAllFunctionalTools() {
+    fun newUserHomePreservesHeroAndLinksToGroupedFunctionalTools() {
         val opens = AtomicInteger()
         val scans = AtomicInteger()
         setSmartHome(onOpenPdf = { opens.incrementAndGet() }, onScanDocument = { scans.incrementAndGet() })
@@ -42,6 +42,8 @@ class SmartHomeUiTest {
             .performClick()
         assertEquals(0, opens.get())
         assertEquals(1, scans.get())
+        composeRule.onNodeWithTag("quick_tools_title").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("view_all_tools").performScrollTo().performClick()
         composeRule.onNodeWithTag("protect_pdf_button").performScrollTo().assertIsDisplayed()
     }
 
@@ -60,14 +62,22 @@ class SmartHomeUiTest {
     }
 
     @Test
-    fun favoriteToolsUsePersistedOrderAndTopSearchOpensFiles() {
+    fun favoriteToolsUsePersistedOrderAndSearchBannerOpensDedicatedSearch() {
         setSmartHome(favoriteTools = listOf(SmartTool.ProtectPdf, SmartTool.MergePdf))
 
         composeRule.onNodeWithTag("favorite_protect_pdf_button").assertIsDisplayed()
         composeRule.onNodeWithTag("favorite_merge_pdf_button").assertIsDisplayed()
         composeRule.onNodeWithTag("smart_home_search_action").performClick()
-        composeRule.onNodeWithTag("smart_files_title").assertIsDisplayed()
-        composeRule.onNodeWithTag("smart_files_empty").assertIsDisplayed()
+        composeRule.onNodeWithTag("smart_search_title").assertIsDisplayed()
+        composeRule.onNodeWithTag("file_search_field").assertIsDisplayed()
+    }
+
+    @Test
+    fun historyIsAMeaningfulBottomNavigationDestination() {
+        setSmartHome()
+        composeRule.onNodeWithTag("smart_home_nav_History").performClick()
+        composeRule.onNodeWithTag("smart_history_title").assertIsDisplayed()
+        composeRule.onNodeWithTag("smart_history_empty").assertIsDisplayed()
     }
 
     private fun setSmartHome(

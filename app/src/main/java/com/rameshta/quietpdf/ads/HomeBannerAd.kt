@@ -39,7 +39,7 @@ fun HomeBannerAd(adUnitId: String, modifier: Modifier = Modifier) {
     BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
         val widthDp = maxWidth.value.toInt().coerceAtLeast(1)
         val adSize = remember(context, widthDp) {
-            AdSize.getLargeAnchoredAdaptiveBannerAdSize(context, widthDp)
+            AdSize.getInlineAdaptiveBannerAdSize(widthDp, 60)
         }
         val adView = remember(context, adUnitId, widthDp) {
             AdView(context).apply {

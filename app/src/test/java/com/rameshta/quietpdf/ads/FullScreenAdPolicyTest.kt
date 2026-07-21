@@ -1,0 +1,147 @@
+package com.rameshta.quietpdf.ads
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class FullScreenAdPolicyTest {
+    private val store = FakeStore()
+    private val clock = FakeClock()
+    private val policy = FullScreenAdPolicy(store, clock)
+
+    @Test
+    fun interstitialRequiresTwoUniqueSuccessfulWorkflows() {
+        policy.recordSuccessfulWorkflow("compress:one")
+        policy.recordSuccessfulWorkflow("compress:one")
+        assertFalse(policy.tryInterstitial())
+        policy.recordSuccessfulWorkflow("merge:two")
+        assertTrue(policy.tryInterstitial())
+        policy.onAdShown(FullScreenAdFormat.Interstitial)
+        policy.release(FullScreenAdFormat.Interstitial)
+        assertEquals(0, store.successfulWorkflowCount)
+    }
+
+    @Test
+    fun failedCancelledAndNoOutputWorkflowsDoNotCountUnlessCallerRecordsSuccess() {
+        assertEquals(0, store.successfulWorkflowCount)
+        policy.recordSuccessfulWorkflow("")
+        assertEquals(0, store.successfulWorkflowCount)
+    }
+
+    @Test
+    fun unavailableInterstitialNeverBlocksOrResetsEligibility() {
+        policy.recordSuccessfulWorkflow("one")
+        policy.recordSuccessfulWorkflow("two")
+        assertFalse(policy.tryInterstitial(adAvailable = false))
+        assertEquals(2, store.successfulWorkflowCount)
+        assertTrue(policy.tryInterstitial())
+        policy.release(FullScreenAdFormat.Interstitial)
+        assertEquals(2, store.successfulWorkflowCount)
+    }
+
+    @Test
+    fun sharedCooldownAndThreeInterstitialSessionLimitAreEnforced() {
+        repeat(3) { index ->
+            policy.recordSuccessfulWorkflow("$index-a")
+            policy.recordSuccessfulWorkflow("$index-b")
+            if (index > 0) {
+                clock.elapsed += FullScreenAdPolicy.SHARED_COOLDOWN_MILLIS
+                clock.wall += FullScreenAdPolicy.SHARED_COOLDOWN_MILLIS
+            }
+            assertTrue(policy.tryInterstitial())
+            policy.onAdShown(FullScreenAdFormat.Interstitial)
+            policy.release(FullScreenAdFormat.Interstitial)
+        }
+        clock.elapsed += FullScreenAdPolicy.SHARED_COOLDOWN_MILLIS
+        clock.wall += FullScreenAdPolicy.SHARED_COOLDOWN_MILLIS
+        policy.recordSuccessfulWorkflow("four-a")
+        policy.recordSuccessfulWorkflow("four-b")
+        assertFalse(policy.tryInterstitial())
+    }
+
+    @Test
+    fun appOpenStartsOnlyAfterTwoCompletedSessions() {
+        policy.beginSession()
+        assertFalse(policy.tryAppOpen())
+        policy.completeSession()
+        policy.beginSession()
+        assertFalse(policy.tryAppOpen())
+        policy.completeSession()
+        policy.beginSession()
+        assertTrue(policy.tryAppOpen())
+    }
+
+    @Test
+    fun consentOrUnavailableAppOpenNeverStartsFullScreenState() {
+        store.completedSessionCount = 2
+        assertFalse(
+            policy.tryBeginAppOpen(false, true, true, false, true, null),
+        )
+        assertFalse(
+            policy.tryBeginAppOpen(true, false, true, false, true, null),
+        )
+        assertFalse(policy.isFullScreenAdActive)
+    }
+
+    @Test
+    fun appOpenHonorsHomeReadinessResumeThresholdIntervalAndDailyLimit() {
+        store.completedSessionCount = 2
+        assertFalse(policy.tryAppOpen(homeInteractive = true))
+        assertFalse(policy.tryAppOpen(isCold = false, background = 60_000L))
+        assertTrue(policy.tryAppOpen())
+        policy.onAdShown(FullScreenAdFormat.AppOpen)
+        policy.release(FullScreenAdFormat.AppOpen)
+
+        clock.elapsed += FullScreenAdPolicy.SHARED_COOLDOWN_MILLIS
+        clock.wall += FullScreenAdPolicy.SHARED_COOLDOWN_MILLIS
+        assertFalse(policy.tryAppOpen())
+        clock.wall += FullScreenAdPolicy.APP_OPEN_INTERVAL_MILLIS
+        assertTrue(policy.tryAppOpen())
+        policy.onAdShown(FullScreenAdFormat.AppOpen)
+        policy.release(FullScreenAdFormat.AppOpen)
+
+        clock.elapsed += FullScreenAdPolicy.SHARED_COOLDOWN_MILLIS
+        clock.wall += FullScreenAdPolicy.APP_OPEN_INTERVAL_MILLIS
+        assertFalse(policy.tryAppOpen())
+    }
+
+    @Test
+    fun fullScreenFormatsCannotCollideAndProtectedWorkflowsSuppressInterstitials() {
+        store.completedSessionCount = 2
+        assertTrue(policy.tryAppOpen())
+        policy.recordSuccessfulWorkflow("one")
+        policy.recordSuccessfulWorkflow("two")
+        assertFalse(policy.tryInterstitial())
+        policy.release(FullScreenAdFormat.AppOpen)
+        assertFalse(policy.tryInterstitial(protected = true))
+    }
+
+    private fun FullScreenAdPolicy.tryInterstitial(
+        adAvailable: Boolean = true,
+        protected: Boolean = false,
+    ) = tryBeginInterstitial(true, adAvailable, protected)
+
+    private fun FullScreenAdPolicy.tryAppOpen(
+        homeInteractive: Boolean = false,
+        isCold: Boolean = true,
+        background: Long? = null,
+    ) = tryBeginAppOpen(true, true, true, homeInteractive, isCold, background)
+
+    private class FakeClock(
+        var elapsed: Long = 1_000_000L,
+        var wall: Long = 1_800_000_000_000L,
+    ) : AdClock {
+        override fun elapsedRealtime() = elapsed
+        override fun currentTimeMillis() = wall
+    }
+
+    private class FakeStore : FullScreenAdPersistence {
+        override var successfulWorkflowCount = 0
+        override var completedSessionCount = 0
+        override var lastAppOpenWallMillis = Long.MIN_VALUE
+        override var appOpenDayKey = Int.MIN_VALUE
+        override var appOpenDayCount = 0
+        override var lastFullScreenWallMillis = Long.MIN_VALUE
+    }
+}
