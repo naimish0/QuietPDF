@@ -112,6 +112,26 @@ enum class RearrangePagesFailure(@get:StringRes val messageResource: Int) {
     UnableToSave(R.string.rearrange_pages_save_error),
 }
 
+sealed interface RotatePagesState {
+    data object Idle : RotatePagesState
+    data object Preparing : RotatePagesState
+    data class Configuring(
+        val sourceUri: Uri,
+        val displayName: String,
+        val pageCount: Int,
+    ) : RotatePagesState
+    data class Rotating(val selectedPageCount: Int) : RotatePagesState
+    data class Failed(val failure: RotatePagesFailure) : RotatePagesState
+}
+
+enum class RotatePagesFailure(@get:StringRes val messageResource: Int) {
+    InvalidDocument(R.string.rotate_pages_invalid_document),
+    InvalidSelection(R.string.rotate_pages_invalid_selection),
+    PermissionDenied(R.string.rotate_pages_permission_denied),
+    InsufficientMemory(R.string.rotate_pages_memory_error),
+    UnableToSave(R.string.rotate_pages_save_error),
+}
+
 enum class DeletePagesFailure(@get:StringRes val messageResource: Int) {
     NeedAtLeastTwoPages(R.string.delete_pages_need_two_pages),
     InvalidDocument(R.string.delete_pages_invalid_document),
@@ -173,6 +193,7 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
     private val extractPagesEngine = ExtractPagesEngine(application)
     private val deletePagesEngine = DeletePagesEngine(application)
     private val rearrangePagesEngine = RearrangePagesEngine(application)
+    private val rotatePagesEngine = RotatePagesEngine(application)
     private var openJob: Job? = null
     private var imageCreationJob: Job? = null
     private var mergeJob: Job? = null
@@ -180,11 +201,14 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
     private var extractPagesJob: Job? = null
     private var deletePagesJob: Job? = null
     private var rearrangePagesJob: Job? = null
+    private var rotatePagesJob: Job? = null
     private var selectedImageUris: List<Uri> = emptyList()
     private var selectedImageLayout = ImagePdfLayout()
     private var selectedSplitRanges: List<SplitPageRange> = emptyList()
     private var selectedExtractPageIndices = IntArray(0)
     private var selectedDeletedPageIndices = IntArray(0)
+    private var selectedRotatedPageIndices = IntArray(0)
+    private var selectedPageRotation = PageRotation.Clockwise90
     private var documentGeneration = 0L
     private val pageCache = object : LruCache<PageCacheKey, Bitmap>(pageCacheBytes()) {
         override fun sizeOf(key: PageCacheKey, value: Bitmap): Int = value.allocationByteCount
@@ -209,6 +233,9 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
         private set
 
     var rearrangePagesState: RearrangePagesState by mutableStateOf(RearrangePagesState.Idle)
+        private set
+
+    var rotatePagesState: RotatePagesState by mutableStateOf(RotatePagesState.Idle)
         private set
 
     fun open(uri: Uri) {
@@ -708,6 +735,89 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
 
     fun clearRearrangePagesFailure() {
         rearrangePagesState = RearrangePagesState.Idle
+    }
+
+    fun selectPdfForPageRotation(uri: Uri) {
+        rotatePagesJob?.cancel()
+        selectedRotatedPageIndices = IntArray(0)
+        selectedPageRotation = PageRotation.Clockwise90
+        rotatePagesState = RotatePagesState.Preparing
+        rotatePagesJob = viewModelScope.launch {
+            rotatePagesState = when (val result = withContext(Dispatchers.IO) { opener.open(uri) }) {
+                is PdfOpenResult.Success -> RotatePagesState.Configuring(
+                    sourceUri = uri,
+                    displayName = result.document.displayName ?: "PDF",
+                    pageCount = result.document.pageCount,
+                )
+                is PdfOpenResult.Failure -> when (result.reason) {
+                    PdfOpenFailure.PermissionDenied -> {
+                        RotatePagesState.Failed(RotatePagesFailure.PermissionDenied)
+                    }
+                    else -> RotatePagesState.Failed(RotatePagesFailure.InvalidDocument)
+                }
+            }
+        }
+    }
+
+    fun configurePageRotation(selectedPageIndices: IntArray, rotation: PageRotation) {
+        if (rotatePagesState !is RotatePagesState.Configuring) return
+        selectedRotatedPageIndices = selectedPageIndices.copyOf()
+        selectedPageRotation = rotation
+    }
+
+    fun rotateSelectedPages(outputUri: Uri) {
+        val configuring = rotatePagesState as? RotatePagesState.Configuring ?: return
+        val selectedPages = selectedRotatedPageIndices.copyOf()
+        if (!RotatePageSelection.isValid(selectedPages, configuring.pageCount)) {
+            rotatePagesState = RotatePagesState.Failed(RotatePagesFailure.InvalidSelection)
+            return
+        }
+        val rotation = selectedPageRotation
+        rotatePagesJob?.cancel()
+        rotatePagesState = RotatePagesState.Rotating(selectedPages.size)
+        rotatePagesJob = viewModelScope.launch {
+            rotatePagesState = when (
+                val result = rotatePagesEngine.rotate(
+                    sourceUri = configuring.sourceUri,
+                    outputUri = outputUri,
+                    selectedPageIndices = selectedPages,
+                    rotation = rotation,
+                    expectedSourcePageCount = configuring.pageCount,
+                )
+            ) {
+                is RotatePagesResult.Success -> {
+                    open(outputUri)
+                    RotatePagesState.Idle
+                }
+                RotatePagesResult.InvalidDocument -> {
+                    RotatePagesState.Failed(RotatePagesFailure.InvalidDocument)
+                }
+                RotatePagesResult.InvalidSelection -> {
+                    RotatePagesState.Failed(RotatePagesFailure.InvalidSelection)
+                }
+                RotatePagesResult.PermissionDenied -> {
+                    RotatePagesState.Failed(RotatePagesFailure.PermissionDenied)
+                }
+                RotatePagesResult.InsufficientMemory -> {
+                    RotatePagesState.Failed(RotatePagesFailure.InsufficientMemory)
+                }
+                RotatePagesResult.Failed -> {
+                    RotatePagesState.Failed(RotatePagesFailure.UnableToSave)
+                }
+            }
+            selectedRotatedPageIndices = IntArray(0)
+        }
+    }
+
+    fun cancelRotatePages() {
+        rotatePagesJob?.cancel()
+        selectedRotatedPageIndices = IntArray(0)
+        rotatePagesState = RotatePagesState.Idle
+    }
+
+    fun clearRotatePagesFailure() {
+        selectedRotatedPageIndices = IntArray(0)
+        rotatePagesState = RotatePagesState.Idle
     }
 
     fun rejectUnsupportedUri() {

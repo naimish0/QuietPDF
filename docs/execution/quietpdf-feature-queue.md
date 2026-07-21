@@ -21,7 +21,7 @@ COMPLETED T14-Split-PDF
 COMPLETED T15-Extract-Pages
 COMPLETED T16-Delete-Pages
 COMPLETED T17-Rearrange-Pages
-T18-Rotate-Pages
+COMPLETED T18-Rotate-Pages
 T19-Duplicate-Pages
 T20-Compress-PDF
 T21-Target-File-Size
