@@ -78,4 +78,22 @@
     <string name="images_to_pdf_memory_error">These images need more memory than is available. Close other apps or choose smaller images.</string>
     <string name="images_to_pdf_save_error">The PDF could not be saved. Choose another location and try again.</string>
     <string name="dismiss">Dismiss</string>
+    <string name="images_pdf_layout">PDF layout</string>
+    <string name="images_pdf_layout_count">Choose how %1$d images will be placed.</string>
+    <string name="page_size">Page size</string>
+    <string name="a4">A4</string>
+    <string name="letter">Letter</string>
+    <string name="orientation">Orientation</string>
+    <string name="automatic">Automatic</string>
+    <string name="portrait">Portrait</string>
+    <string name="landscape">Landscape</string>
+    <string name="image_scaling">Image scaling</string>
+    <string name="fit">Fit</string>
+    <string name="fill">Fill</string>
+    <string name="margins">Margins</string>
+    <string name="none">None</string>
+    <string name="standard">Standard</string>
+    <string name="wide">Wide</string>
+    <string name="continue_action">Continue</string>
+    <string name="cancel">Cancel</string>
 </resources>

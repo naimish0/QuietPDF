@@ -22,11 +22,37 @@ sealed interface ImagesToPdfResult {
     data object Failed : ImagesToPdfResult
 }
 
+enum class ImagePdfPageSize(val shortSide: Int, val longSide: Int) {
+    A4(595, 842),
+    Letter(612, 792),
+}
+
+enum class ImagePdfOrientation { Auto, Portrait, Landscape }
+
+enum class ImagePdfScaleMode { Fit, Fill }
+
+enum class ImagePdfMargin(val points: Float) {
+    None(0f),
+    Standard(24f),
+    Wide(48f),
+}
+
+data class ImagePdfLayout(
+    val pageSize: ImagePdfPageSize = ImagePdfPageSize.A4,
+    val orientation: ImagePdfOrientation = ImagePdfOrientation.Auto,
+    val scaleMode: ImagePdfScaleMode = ImagePdfScaleMode.Fit,
+    val margin: ImagePdfMargin = ImagePdfMargin.Standard,
+)
+
 class ImagesToPdfEngine(
     private val contentResolver: ContentResolver,
     private val cacheDir: File,
 ) {
-    suspend fun create(imageUris: List<Uri>, outputUri: Uri): ImagesToPdfResult =
+    suspend fun create(
+        imageUris: List<Uri>,
+        outputUri: Uri,
+        layout: ImagePdfLayout = ImagePdfLayout(),
+    ): ImagesToPdfResult =
         withContext(Dispatchers.IO) {
             if (imageUris.isEmpty()) return@withContext ImagesToPdfResult.Failed
             val temporary = try {
@@ -50,7 +76,7 @@ class ImagesToPdfEngine(
                             return@withContext ImagesToPdfResult.InvalidImage(index)
                         }
                         try {
-                            appendPage(document, bitmap, index + 1)
+                            appendPage(document, bitmap, index + 1, layout)
                         } finally {
                             bitmap.recycle()
                         }
@@ -89,26 +115,52 @@ class ImagesToPdfEngine(
         }
     }
 
-    private fun appendPage(document: PdfDocument, bitmap: Bitmap, pageNumber: Int) {
-        val landscape = bitmap.width > bitmap.height
-        val width = if (landscape) A4LongSide else A4ShortSide
-        val height = if (landscape) A4ShortSide else A4LongSide
+    private fun appendPage(
+        document: PdfDocument,
+        bitmap: Bitmap,
+        pageNumber: Int,
+        layout: ImagePdfLayout,
+    ) {
+        val landscape = when (layout.orientation) {
+            ImagePdfOrientation.Auto -> bitmap.width > bitmap.height
+            ImagePdfOrientation.Portrait -> false
+            ImagePdfOrientation.Landscape -> true
+        }
+        val width = if (landscape) layout.pageSize.longSide else layout.pageSize.shortSide
+        val height = if (landscape) layout.pageSize.shortSide else layout.pageSize.longSide
         val page = document.startPage(PdfDocument.PageInfo.Builder(width, height, pageNumber).create())
         try {
             page.canvas.drawColor(Color.WHITE)
-            val availableWidth = width - 2f * PageMargin
-            val availableHeight = height - 2f * PageMargin
-            val scale = min(availableWidth / bitmap.width, availableHeight / bitmap.height)
+            val availableWidth = width - 2f * layout.margin.points
+            val availableHeight = height - 2f * layout.margin.points
+            val widthScale = availableWidth / bitmap.width
+            val heightScale = availableHeight / bitmap.height
+            val scale = when (layout.scaleMode) {
+                ImagePdfScaleMode.Fit -> min(widthScale, heightScale)
+                ImagePdfScaleMode.Fill -> maxOf(widthScale, heightScale)
+            }
             val imageWidth = bitmap.width * scale
             val imageHeight = bitmap.height * scale
             val left = (width - imageWidth) / 2f
             val top = (height - imageHeight) / 2f
-            page.canvas.drawBitmap(
-                bitmap,
-                null,
-                RectF(left, top, left + imageWidth, top + imageHeight),
-                null,
-            )
+            val canvas = page.canvas
+            val checkpoint = canvas.save()
+            try {
+                canvas.clipRect(
+                    layout.margin.points,
+                    layout.margin.points,
+                    width - layout.margin.points,
+                    height - layout.margin.points,
+                )
+                canvas.drawBitmap(
+                    bitmap,
+                    null,
+                    RectF(left, top, left + imageWidth, top + imageHeight),
+                    null,
+                )
+            } finally {
+                canvas.restoreToCount(checkpoint)
+            }
         } finally {
             document.finishPage(page)
         }
@@ -116,8 +168,5 @@ class ImagesToPdfEngine(
 
     private companion object {
         const val MaxImageDimension = 2400
-        const val A4ShortSide = 595
-        const val A4LongSide = 842
-        const val PageMargin = 24f
     }
 }

@@ -9,6 +9,11 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.rameshta.quietpdf.pdf.ImagesToPdfEngine
 import com.rameshta.quietpdf.pdf.ImagesToPdfResult
+import com.rameshta.quietpdf.pdf.ImagePdfLayout
+import com.rameshta.quietpdf.pdf.ImagePdfMargin
+import com.rameshta.quietpdf.pdf.ImagePdfOrientation
+import com.rameshta.quietpdf.pdf.ImagePdfPageSize
+import com.rameshta.quietpdf.pdf.ImagePdfScaleMode
 import java.io.File
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -52,6 +57,52 @@ class ImagesToPdfEngineTest {
         } finally {
             portrait.delete()
             landscape.delete()
+            output.delete()
+        }
+    }
+
+    @Test
+    fun create_appliesPageOrientationFillAndMarginLayout() {
+        val source = File(context.cacheDir, "layout-source.png")
+        val output = File(context.cacheDir, "layout-output.pdf")
+        try {
+            writeImage(source, width = 100, height = 200, color = Color.GREEN)
+            val result = runBlocking {
+                ImagesToPdfEngine(context.contentResolver, context.cacheDir).create(
+                    imageUris = listOf(Uri.fromFile(source)),
+                    outputUri = Uri.fromFile(output),
+                    layout = ImagePdfLayout(
+                        pageSize = ImagePdfPageSize.Letter,
+                        orientation = ImagePdfOrientation.Landscape,
+                        scaleMode = ImagePdfScaleMode.Fill,
+                        margin = ImagePdfMargin.Wide,
+                    ),
+                )
+            }
+
+            assertEquals(ImagesToPdfResult.Success(1), result)
+            val descriptor = ParcelFileDescriptor.open(output, ParcelFileDescriptor.MODE_READ_ONLY)
+            PdfRenderer(descriptor).use { renderer ->
+                renderer.openPage(0).use { page ->
+                    assertEquals(792, page.width)
+                    assertEquals(612, page.height)
+                    val rendered = Bitmap.createBitmap(page.width, page.height, Bitmap.Config.ARGB_8888)
+                    try {
+                        page.render(rendered, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                        val corner = rendered.getPixel(5, 5)
+                        assertTrue(Color.red(corner) > 245)
+                        assertTrue(Color.green(corner) > 245)
+                        assertTrue(Color.blue(corner) > 245)
+                        val content = rendered.getPixel(55, 55)
+                        assertTrue(Color.green(content) > 245)
+                        assertTrue(Color.red(content) < 10)
+                    } finally {
+                        rendered.recycle()
+                    }
+                }
+            }
+        } finally {
+            source.delete()
             output.delete()
         }
     }

@@ -37,6 +37,7 @@ sealed interface PageRenderResult {
 
 sealed interface ImagesToPdfState {
     data object Idle : ImagesToPdfState
+    data class Configuring(val imageCount: Int) : ImagesToPdfState
     data class Creating(val imageCount: Int) : ImagesToPdfState
     data class Failed(val failure: ImagesToPdfFailure) : ImagesToPdfState
 }
@@ -66,6 +67,7 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
     private var openJob: Job? = null
     private var imageCreationJob: Job? = null
     private var selectedImageUris: List<Uri> = emptyList()
+    private var selectedImageLayout = ImagePdfLayout()
     private var documentGeneration = 0L
     private val pageCache = object : LruCache<PageCacheKey, Bitmap>(pageCacheBytes()) {
         override fun sizeOf(key: PageCacheKey, value: Bitmap): Int = value.allocationByteCount
@@ -106,20 +108,29 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
 
     fun selectImagesForPdf(imageUris: List<Uri>) {
         selectedImageUris = imageUris
+        selectedImageLayout = ImagePdfLayout()
+        imagesToPdfState = if (imageUris.isEmpty()) ImagesToPdfState.Idle
+        else ImagesToPdfState.Configuring(imageUris.size)
+    }
+
+    fun configureImagesPdfLayout(layout: ImagePdfLayout) {
+        if (selectedImageUris.isNotEmpty()) selectedImageLayout = layout
     }
 
     fun discardSelectedImages() {
         selectedImageUris = emptyList()
+        imagesToPdfState = ImagesToPdfState.Idle
     }
 
     fun createPdfFromSelectedImages(outputUri: Uri) {
         val imageUris = selectedImageUris
+        val layout = selectedImageLayout
         selectedImageUris = emptyList()
         if (imageUris.isEmpty()) return
         imageCreationJob?.cancel()
         imagesToPdfState = ImagesToPdfState.Creating(imageUris.size)
         imageCreationJob = viewModelScope.launch {
-            when (val result = imagesToPdfEngine.create(imageUris, outputUri)) {
+            when (val result = imagesToPdfEngine.create(imageUris, outputUri, layout)) {
                 is ImagesToPdfResult.Success -> {
                     imagesToPdfState = ImagesToPdfState.Idle
                     open(outputUri)

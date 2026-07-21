@@ -33,6 +33,11 @@ import com.rameshta.quietpdf.pdf.PdfHealthReport
 import com.rameshta.quietpdf.pdf.PdfHealthResult
 import com.rameshta.quietpdf.pdf.ImagesToPdfFailure
 import com.rameshta.quietpdf.pdf.ImagesToPdfState
+import com.rameshta.quietpdf.pdf.ImagePdfLayout
+import com.rameshta.quietpdf.pdf.ImagePdfMargin
+import com.rameshta.quietpdf.pdf.ImagePdfOrientation
+import com.rameshta.quietpdf.pdf.ImagePdfPageSize
+import com.rameshta.quietpdf.pdf.ImagePdfScaleMode
 import com.rameshta.quietpdf.ui.theme.QuietPDFTheme
 import org.junit.Rule
 import org.junit.Assert.assertEquals
@@ -40,6 +45,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 import java.util.concurrent.CopyOnWriteArrayList
 
 @RunWith(AndroidJUnit4::class)
@@ -86,6 +92,33 @@ class QuietPdfAppTest {
 
         composeRule.onNodeWithTag("images_to_pdf_error").assertIsDisplayed()
         composeRule.onNodeWithText("Dismiss").assertIsDisplayed()
+    }
+
+    @Test
+    fun imagesPdfLayout_returnsExplicitSelections() {
+        val selected = AtomicReference<ImagePdfLayout>()
+        setContent(
+            state = PdfOpenState.Idle,
+            imagesToPdfState = ImagesToPdfState.Configuring(imageCount = 4),
+            onConfirmImagesPdfLayout = selected::set,
+        )
+
+        composeRule.onNodeWithTag("images_pdf_layout_dialog").assertIsDisplayed()
+        composeRule.onNodeWithTag("layout_page_size_1").performClick()
+        composeRule.onNodeWithTag("layout_orientation_2").performClick()
+        composeRule.onNodeWithTag("layout_scale_1").performClick()
+        composeRule.onNodeWithTag("layout_margin_2").performClick()
+        composeRule.onNodeWithTag("layout_confirm").performClick()
+
+        assertEquals(
+            ImagePdfLayout(
+                pageSize = ImagePdfPageSize.Letter,
+                orientation = ImagePdfOrientation.Landscape,
+                scaleMode = ImagePdfScaleMode.Fill,
+                margin = ImagePdfMargin.Wide,
+            ),
+            selected.get(),
+        )
     }
 
     @Test
@@ -442,6 +475,7 @@ class QuietPdfAppTest {
         inspectHealth: suspend () -> PdfHealthResult = { PdfHealthResult.Failed },
         imagesToPdfState: ImagesToPdfState = ImagesToPdfState.Idle,
         onImagesToPdf: () -> Unit = {},
+        onConfirmImagesPdfLayout: (ImagePdfLayout) -> Unit = {},
     ) {
         composeRule.setContent {
             QuietPDFTheme(dynamicColor = false) {
@@ -456,6 +490,7 @@ class QuietPdfAppTest {
                     inspectHealth = inspectHealth,
                     imagesToPdfState = imagesToPdfState,
                     onImagesToPdf = onImagesToPdf,
+                    onConfirmImagesPdfLayout = onConfirmImagesPdfLayout,
                 )
             }
         }
