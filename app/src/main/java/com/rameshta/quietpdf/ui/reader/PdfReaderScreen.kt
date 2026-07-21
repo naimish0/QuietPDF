@@ -97,6 +97,8 @@ import com.rameshta.quietpdf.pdf.PageRenderResult
 import com.rameshta.quietpdf.pdf.PdfOpenState
 import com.rameshta.quietpdf.pdf.PdfSearchResult
 import com.rameshta.quietpdf.pdf.PdfSearchMatch
+import com.rameshta.quietpdf.pdf.PdfOutlineEntry
+import com.rameshta.quietpdf.pdf.PdfTableOfContentsResult
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -113,6 +115,7 @@ fun PdfReaderScreen(
     onPageChanged: (pageIndex: Int) -> Unit,
     searchDocument: suspend (query: String) -> PdfSearchResult,
     onToggleBookmark: (pageIndex: Int) -> Unit,
+    loadTableOfContents: suspend () -> PdfTableOfContentsResult,
 ) {
     val initialPage = document.initialPageIndex.coerceIn(0, document.pageCount - 1)
     var readerMode by remember(document.uri) { mutableStateOf(ReaderMode.VerticalContinuous) }
@@ -134,6 +137,11 @@ fun PdfReaderScreen(
     var searchInProgress by remember(document.uri) { mutableStateOf(false) }
     var searchJob by remember(document.uri) { mutableStateOf<Job?>(null) }
     var bookmarkDialogVisible by remember(document.uri) { mutableStateOf(false) }
+    var tableOfContentsDialogVisible by remember(document.uri) { mutableStateOf(false) }
+    var tableOfContentsResult by remember(document.uri) {
+        mutableStateOf<PdfTableOfContentsResult?>(null)
+    }
+    var tableOfContentsJob by remember(document.uri) { mutableStateOf<Job?>(null) }
     val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
     val inheritedColors = MaterialTheme.colorScheme
@@ -202,8 +210,13 @@ fun PdfReaderScreen(
         }
     }
 
-    BackHandler(enabled = bookmarkDialogVisible || isFullscreen || searchActive) {
-        if (bookmarkDialogVisible) {
+    BackHandler(
+        enabled = tableOfContentsDialogVisible || bookmarkDialogVisible || isFullscreen || searchActive,
+    ) {
+        if (tableOfContentsDialogVisible) {
+            tableOfContentsJob?.cancel()
+            tableOfContentsDialogVisible = false
+        } else if (bookmarkDialogVisible) {
             bookmarkDialogVisible = false
         } else if (searchActive) {
             closeSearch()
@@ -225,6 +238,14 @@ fun PdfReaderScreen(
                 ReaderMode.HorizontalContinuous -> horizontalState.animateScrollToItem(page)
                 ReaderMode.SinglePage -> pagerState.animateScrollToPage(page)
             }
+        }
+    }
+    val showTableOfContents: () -> Unit = {
+        tableOfContentsJob?.cancel()
+        tableOfContentsResult = null
+        tableOfContentsDialogVisible = true
+        tableOfContentsJob = coroutineScope.launch {
+            tableOfContentsResult = loadTableOfContents()
         }
     }
     val selectSearchMatch: (Int) -> Unit = { requestedIndex ->
@@ -316,6 +337,7 @@ fun PdfReaderScreen(
                         bookmarkedPages = document.bookmarkedPages,
                         onToggleBookmark = onToggleBookmark,
                         onShowBookmarks = { bookmarkDialogVisible = true },
+                        onShowTableOfContents = showTableOfContents,
                         modifier = Modifier.align(Alignment.TopCenter),
                     )
                 }
@@ -351,6 +373,7 @@ fun PdfReaderScreen(
                         bookmarkedPages = document.bookmarkedPages,
                         onToggleBookmark = onToggleBookmark,
                         onShowBookmarks = { bookmarkDialogVisible = true },
+                        onShowTableOfContents = showTableOfContents,
                     )
                 },
             ) { innerPadding ->
@@ -380,6 +403,19 @@ fun PdfReaderScreen(
                 onClose = { bookmarkDialogVisible = false },
             )
         }
+        if (tableOfContentsDialogVisible) {
+            TableOfContentsDialog(
+                result = tableOfContentsResult,
+                onNavigate = { pageIndex ->
+                    tableOfContentsDialogVisible = false
+                    navigateToPage(pageIndex)
+                },
+                onClose = {
+                    tableOfContentsJob?.cancel()
+                    tableOfContentsDialogVisible = false
+                },
+            )
+        }
     }
 }
 
@@ -399,6 +435,7 @@ private fun ReaderTopBar(
     bookmarkedPages: Set<Int>,
     onToggleBookmark: (Int) -> Unit,
     onShowBookmarks: () -> Unit,
+    onShowTableOfContents: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     TopAppBar(
@@ -420,6 +457,7 @@ private fun ReaderTopBar(
                 bookmarkedPages = bookmarkedPages,
                 onToggleBookmark = onToggleBookmark,
                 onShowBookmarks = onShowBookmarks,
+                onShowTableOfContents = onShowTableOfContents,
             )
             TextButton(
                 onClick = { onFullscreenChange(!isFullscreen) },
@@ -437,6 +475,72 @@ private fun ReaderTopBar(
         },
         modifier = modifier.testTag("reader_top_bar"),
     )
+}
+
+@Composable
+private fun TableOfContentsDialog(
+    result: PdfTableOfContentsResult?,
+    onNavigate: (Int) -> Unit,
+    onClose: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onClose,
+        title = { Text(stringResource(R.string.table_of_contents)) },
+        text = {
+            when (result) {
+                null -> Row(verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(
+                        modifier = Modifier
+                            .size(24.dp)
+                            .testTag("table_of_contents_progress"),
+                    )
+                    Text(
+                        text = stringResource(R.string.table_of_contents_loading),
+                        modifier = Modifier.padding(start = 16.dp),
+                    )
+                }
+                PdfTableOfContentsResult.Empty -> Text(
+                    stringResource(R.string.table_of_contents_empty),
+                )
+                PdfTableOfContentsResult.Failed -> Text(
+                    stringResource(R.string.table_of_contents_failed),
+                    color = MaterialTheme.colorScheme.error,
+                )
+                is PdfTableOfContentsResult.Entries -> LazyColumn(
+                    modifier = Modifier.heightIn(max = 440.dp),
+                ) {
+                    items(result.entries) { entry ->
+                        TableOfContentsEntry(entry, onNavigate)
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onClose, modifier = Modifier.testTag("table_of_contents_close")) {
+                Text(stringResource(R.string.close))
+            }
+        },
+        modifier = Modifier.testTag("table_of_contents_dialog"),
+    )
+}
+
+@Composable
+private fun TableOfContentsEntry(entry: PdfOutlineEntry, onNavigate: (Int) -> Unit) {
+    TextButton(
+        onClick = { onNavigate(entry.pageIndex) },
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = (entry.depth.coerceAtMost(6) * 20).dp)
+            .testTag("table_of_contents_page_${entry.pageIndex + 1}"),
+    ) {
+        Text(
+            text = entry.title,
+            modifier = Modifier.weight(1f),
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(stringResource(R.string.page_label, entry.pageIndex + 1))
+    }
 }
 
 @Composable
@@ -687,6 +791,7 @@ private fun ReaderModeMenu(
     bookmarkedPages: Set<Int>,
     onToggleBookmark: (Int) -> Unit,
     onShowBookmarks: () -> Unit,
+    onShowTableOfContents: () -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
     val controlDescription = stringResource(R.string.reader_mode)
@@ -724,6 +829,15 @@ private fun ReaderModeMenu(
                         .testTag("reader_mode_${mode.name}"),
                 )
             }
+            HorizontalDivider()
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.table_of_contents)) },
+                onClick = {
+                    expanded = false
+                    onShowTableOfContents()
+                },
+                modifier = Modifier.testTag("table_of_contents_button"),
+            )
             HorizontalDivider()
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.search_document)) },

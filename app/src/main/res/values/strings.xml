@@ -52,4 +52,8 @@
     <string name="remove">Remove</string>
     <string name="close">Close</string>
     <string name="page_label">Page %1$d</string>
+    <string name="table_of_contents">Table of contents</string>
+    <string name="table_of_contents_loading">Loading table of contents…</string>
+    <string name="table_of_contents_empty">This PDF does not contain a table of contents.</string>
+    <string name="table_of_contents_failed">Couldn’t read this PDF’s table of contents.</string>
 </resources>

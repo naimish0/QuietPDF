@@ -27,6 +27,8 @@ import com.rameshta.quietpdf.pdf.PdfOpenFailure
 import com.rameshta.quietpdf.pdf.PdfOpenState
 import com.rameshta.quietpdf.pdf.PdfSearchMatch
 import com.rameshta.quietpdf.pdf.PdfSearchResult
+import com.rameshta.quietpdf.pdf.PdfOutlineEntry
+import com.rameshta.quietpdf.pdf.PdfTableOfContentsResult
 import com.rameshta.quietpdf.ui.theme.QuietPDFTheme
 import org.junit.Rule
 import org.junit.Assert.assertEquals
@@ -309,6 +311,49 @@ class QuietPdfAppTest {
         assertEquals(1, toggledPage.get())
     }
 
+    @Test
+    fun tableOfContents_preservesHierarchyAndNavigatesToPage() {
+        setContent(
+            state = PdfOpenState.Opened(
+                uri = Uri.parse("content://test/table-of-contents"),
+                displayName = "outline.pdf",
+                pageCount = 3,
+            ),
+            loadTableOfContents = {
+                PdfTableOfContentsResult.Entries(
+                    listOf(
+                        PdfOutlineEntry("Chapter One", pageIndex = 0, depth = 0),
+                        PdfOutlineEntry("Section A", pageIndex = 2, depth = 1),
+                    ),
+                )
+            },
+        )
+
+        composeRule.onNodeWithTag("reader_mode_button").performClick()
+        composeRule.onNodeWithTag("table_of_contents_button").performClick()
+        composeRule.onNodeWithTag("table_of_contents_dialog").assertIsDisplayed()
+        composeRule.onNodeWithText("Section A").assertIsDisplayed()
+        composeRule.onNodeWithTag("table_of_contents_page_3").performClick()
+        composeRule.onNodeWithText("Page 3 of 3").assertIsDisplayed()
+    }
+
+    @Test
+    fun tableOfContents_explainsWhenDocumentHasNoOutline() {
+        setContent(
+            state = PdfOpenState.Opened(
+                uri = Uri.parse("content://test/no-table-of-contents"),
+                displayName = "plain.pdf",
+                pageCount = 1,
+            ),
+            loadTableOfContents = { PdfTableOfContentsResult.Empty },
+        )
+
+        composeRule.onNodeWithTag("reader_mode_button").performClick()
+        composeRule.onNodeWithTag("table_of_contents_button").performClick()
+        composeRule.onNodeWithText("This PDF does not contain a table of contents.")
+            .assertIsDisplayed()
+    }
+
     private fun selectReaderMode(modeName: String) {
         composeRule.onNodeWithTag("reader_mode_button").performClick()
         composeRule.onNodeWithTag("reader_mode_$modeName").performClick()
@@ -324,6 +369,9 @@ class QuietPdfAppTest {
         onPageChanged: (Int) -> Unit = {},
         searchDocument: suspend (String) -> PdfSearchResult = { PdfSearchResult.Failed },
         onToggleBookmark: (Int) -> Unit = {},
+        loadTableOfContents: suspend () -> PdfTableOfContentsResult = {
+            PdfTableOfContentsResult.Failed
+        },
     ) {
         composeRule.setContent {
             QuietPDFTheme(dynamicColor = false) {
@@ -334,6 +382,7 @@ class QuietPdfAppTest {
                     onPageChanged = onPageChanged,
                     searchDocument = searchDocument,
                     onToggleBookmark = onToggleBookmark,
+                    loadTableOfContents = loadTableOfContents,
                 )
             }
         }

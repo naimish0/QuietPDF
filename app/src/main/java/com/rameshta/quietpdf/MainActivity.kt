@@ -42,6 +42,7 @@ import com.rameshta.quietpdf.pdf.PageRenderResult
 import com.rameshta.quietpdf.pdf.PdfOpenState
 import com.rameshta.quietpdf.pdf.PdfOpenViewModel
 import com.rameshta.quietpdf.pdf.PdfSearchResult
+import com.rameshta.quietpdf.pdf.PdfTableOfContentsResult
 import com.rameshta.quietpdf.ui.reader.PdfReaderScreen
 import com.rameshta.quietpdf.ui.theme.QuietPDFTheme
 
@@ -72,6 +73,7 @@ class MainActivity : ComponentActivity() {
                     onPageChanged = viewModel::rememberPage,
                     searchDocument = viewModel::search,
                     onToggleBookmark = viewModel::toggleBookmark,
+                    loadTableOfContents = viewModel::loadTableOfContents,
                 )
             }
         }
@@ -120,6 +122,9 @@ fun QuietPdfApp(
         PdfSearchResult.Failed
     },
     onToggleBookmark: (pageIndex: Int) -> Unit = {},
+    loadTableOfContents: suspend () -> PdfTableOfContentsResult = {
+        PdfTableOfContentsResult.Failed
+    },
 ) {
     if (state is PdfOpenState.Opened) {
         PdfReaderScreen(
@@ -129,6 +134,7 @@ fun QuietPdfApp(
             onPageChanged = onPageChanged,
             searchDocument = searchDocument,
             onToggleBookmark = onToggleBookmark,
+            loadTableOfContents = loadTableOfContents,
         )
         return
     }
