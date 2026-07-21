@@ -240,7 +240,7 @@
     <string name="scanner_preparing_preview">Preparing captured photo…</string>
     <string name="scanner_captured_preview">Captured document photo</string>
     <string name="scanner_capture_dimensions">Captured resolution: %1$d × %2$d</string>
-    <string name="scanner_capture_scope_note">Perspective correction is applied when saving. Image enhancement and multi-page scanning are not applied yet.</string>
+    <string name="scanner_capture_scope_note">Perspective correction and the selected appearance are applied when saving. Multi-page scanning is not applied yet.</string>
     <string name="scanner_crop_detected">Document edges were detected automatically. Drag any corner to correct them before saving.</string>
     <string name="scanner_crop_manual">Document edges were not clear. Position all four corners manually before saving.</string>
     <string name="scanner_crop_reset">Reset corners</string>
@@ -252,6 +252,17 @@
     <string name="scanner_crop_move_right">Move right</string>
     <string name="scanner_crop_move_up">Move up</string>
     <string name="scanner_crop_move_down">Move down</string>
+    <string name="scanner_enhancement_title">Appearance</string>
+    <string name="scanner_mode_color">Color</string>
+    <string name="scanner_mode_grayscale">Grayscale</string>
+    <string name="scanner_mode_black_white">Black &amp; white</string>
+    <string name="scanner_brightness">Brightness: %1$d%%</string>
+    <string name="scanner_contrast">Contrast: %1$d%%</string>
+    <string name="scanner_shadow_reduction">Reduce shadows</string>
+    <string name="scanner_shadow_reduction_description">Even out uneven lighting across the page.</string>
+    <string name="scanner_updating_preview">Updating preview…</string>
+    <string name="scanner_result_preview">Corrected result preview</string>
+    <string name="scanner_result_preview_description">Perspective-corrected document with the selected appearance</string>
     <string name="scanner_retake">Retake</string>
     <string name="scanner_save_pdf">Save as PDF</string>
     <string name="scanner_creating_pdf">Creating and validating the scanned PDF…</string>
@@ -261,6 +272,7 @@
     <string name="scanner_capture_failed">The photo could not be captured. Keep the document steady and try again.</string>
     <string name="scanner_invalid_capture">The camera returned an unreadable or empty photo. Retake the document.</string>
     <string name="scanner_invalid_crop">The crop corners do not form a usable document. Move the corners apart and try saving again.</string>
+    <string name="scanner_enhancement_failed">The appearance preview could not be updated. Try a different mode or save with the current settings.</string>
     <string name="scanner_memory_error">The captured photo needs more memory than is available. Close other apps and retake it.</string>
     <string name="scanner_save_error">The scanned PDF could not be created and validated. The captured photo is still available to retry.</string>
     <string name="scanner_save_permission_denied">QuietPDF lost access to the save location. Choose another location; the captured photo is still available.</string>
