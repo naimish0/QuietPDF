@@ -120,6 +120,7 @@ fun PdfReaderScreen(
     onToggleBookmark: (pageIndex: Int) -> Unit,
     loadTableOfContents: suspend () -> PdfTableOfContentsResult,
     inspectHealth: suspend () -> PdfHealthResult,
+    onToggleFavorite: () -> Unit = {},
 ) {
     val initialPage = document.initialPageIndex.coerceIn(0, document.pageCount - 1)
     var readerMode by remember(document.uri) { mutableStateOf(ReaderMode.VerticalContinuous) }
@@ -356,6 +357,8 @@ fun PdfReaderScreen(
                         onShowBookmarks = { bookmarkDialogVisible = true },
                         onShowTableOfContents = showTableOfContents,
                         onShowHealth = showHealth,
+                        isFavorite = document.isFavorite,
+                        onToggleFavorite = onToggleFavorite,
                         modifier = Modifier.align(Alignment.TopCenter),
                     )
                 }
@@ -393,6 +396,8 @@ fun PdfReaderScreen(
                         onShowBookmarks = { bookmarkDialogVisible = true },
                         onShowTableOfContents = showTableOfContents,
                         onShowHealth = showHealth,
+                        isFavorite = document.isFavorite,
+                        onToggleFavorite = onToggleFavorite,
                     )
                 },
             ) { innerPadding ->
@@ -465,6 +470,8 @@ private fun ReaderTopBar(
     onShowBookmarks: () -> Unit,
     onShowTableOfContents: () -> Unit,
     onShowHealth: () -> Unit,
+    isFavorite: Boolean,
+    onToggleFavorite: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     TopAppBar(
@@ -488,6 +495,8 @@ private fun ReaderTopBar(
                 onShowBookmarks = onShowBookmarks,
                 onShowTableOfContents = onShowTableOfContents,
                 onShowHealth = onShowHealth,
+                isFavorite = isFavorite,
+                onToggleFavorite = onToggleFavorite,
             )
             TextButton(
                 onClick = { onFullscreenChange(!isFullscreen) },
@@ -900,6 +909,8 @@ private fun ReaderModeMenu(
     onShowBookmarks: () -> Unit,
     onShowTableOfContents: () -> Unit,
     onShowHealth: () -> Unit,
+    isFavorite: Boolean,
+    onToggleFavorite: () -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
     val controlDescription = stringResource(R.string.reader_mode)
@@ -937,6 +948,22 @@ private fun ReaderModeMenu(
                         .testTag("reader_mode_${mode.name}"),
                 )
             }
+            HorizontalDivider()
+            DropdownMenuItem(
+                text = {
+                    Text(
+                        stringResource(
+                            if (isFavorite) R.string.remove_from_favorites
+                            else R.string.add_to_favorites,
+                        ),
+                    )
+                },
+                onClick = {
+                    expanded = false
+                    onToggleFavorite()
+                },
+                modifier = Modifier.testTag("toggle_favorite_file"),
+            )
             HorizontalDivider()
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.pdf_health)) },
