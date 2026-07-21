@@ -81,6 +81,7 @@ import com.rameshta.quietpdf.pdf.DeletePagesState
 import com.rameshta.quietpdf.pdf.RearrangePagesState
 import com.rameshta.quietpdf.pdf.PageRotation
 import com.rameshta.quietpdf.pdf.RotatePagesState
+import com.rameshta.quietpdf.pdf.DuplicatePagesState
 import com.rameshta.quietpdf.ui.reader.PdfReaderScreen
 import com.rameshta.quietpdf.ui.theme.QuietPDFTheme
 
@@ -204,6 +205,20 @@ class MainActivity : ComponentActivity() {
                         viewModel.selectPdfForPageRotation(uri)
                     }
                 }
+                val createDuplicatedPagesPdf = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.CreateDocument("application/pdf"),
+                ) { uri ->
+                    if (uri == null) viewModel.cancelDuplicatePages()
+                    else viewModel.duplicateSelectedPages(uri)
+                }
+                val duplicatePagesPicker = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.OpenDocument(),
+                ) { uri ->
+                    if (uri != null) {
+                        retainReadPermission(uri)
+                        viewModel.selectPdfForPageDuplication(uri)
+                    }
+                }
 
                 QuietPdfApp(
                     state = viewModel.state,
@@ -274,6 +289,14 @@ class MainActivity : ComponentActivity() {
                     },
                     onCancelPageRotation = viewModel::cancelRotatePages,
                     onDismissPageRotationFailure = viewModel::clearRotatePagesFailure,
+                    duplicatePagesState = viewModel.duplicatePagesState,
+                    onDuplicatePages = { duplicatePagesPicker.launch(arrayOf("application/pdf")) },
+                    onConfirmPageDuplication = { selectedPages ->
+                        viewModel.configurePageDuplication(selectedPages)
+                        createDuplicatedPagesPdf.launch("QuietPDF-duplicated-pages.pdf")
+                    },
+                    onCancelPageDuplication = viewModel::cancelDuplicatePages,
+                    onDismissPageDuplicationFailure = viewModel::clearDuplicatePagesFailure,
                 )
             }
         }
@@ -376,6 +399,11 @@ fun QuietPdfApp(
     onConfirmPageRotation: (IntArray, PageRotation) -> Unit = { _, _ -> },
     onCancelPageRotation: () -> Unit = {},
     onDismissPageRotationFailure: () -> Unit = {},
+    duplicatePagesState: DuplicatePagesState = DuplicatePagesState.Idle,
+    onDuplicatePages: () -> Unit = {},
+    onConfirmPageDuplication: (IntArray) -> Unit = {},
+    onCancelPageDuplication: () -> Unit = {},
+    onDismissPageDuplicationFailure: () -> Unit = {},
 ) {
     if (state is PdfOpenState.Opened) {
         PdfReaderScreen(
@@ -438,6 +466,10 @@ fun QuietPdfApp(
                     onRotatePages = onRotatePages,
                     onCancelPageRotation = onCancelPageRotation,
                     onDismissPageRotationFailure = onDismissPageRotationFailure,
+                    duplicatePagesState = duplicatePagesState,
+                    onDuplicatePages = onDuplicatePages,
+                    onCancelPageDuplication = onCancelPageDuplication,
+                    onDismissPageDuplicationFailure = onDismissPageDuplicationFailure,
                     contentPadding = PaddingValues(24.dp),
                 )
             }
@@ -501,6 +533,71 @@ fun QuietPdfApp(
             onCancel = onCancelPageRotation,
         )
     }
+    if (duplicatePagesState is DuplicatePagesState.Configuring) {
+        DuplicatePagesDialog(
+            documentName = duplicatePagesState.displayName,
+            pageCount = duplicatePagesState.pageCount,
+            onConfirm = onConfirmPageDuplication,
+            onCancel = onCancelPageDuplication,
+        )
+    }
+}
+
+@Composable
+private fun DuplicatePagesDialog(
+    documentName: String,
+    pageCount: Int,
+    onConfirm: (IntArray) -> Unit,
+    onCancel: () -> Unit,
+) {
+    var pageSelection by remember(documentName, pageCount) { mutableStateOf("") }
+    val selectedPages = ExtractPageSelectionParser.parse(pageSelection, pageCount)
+    AlertDialog(
+        onDismissRequest = onCancel,
+        title = { Text(stringResource(R.string.duplicate_pages_title)) },
+        text = {
+            Column {
+                Text(stringResource(R.string.duplicate_pages_document_summary, documentName, pageCount))
+                OutlinedTextField(
+                    value = pageSelection,
+                    onValueChange = { pageSelection = it },
+                    label = { Text(stringResource(R.string.duplicate_pages_selection_label)) },
+                    supportingText = {
+                        Text(stringResource(R.string.duplicate_pages_selection_help, pageCount))
+                    },
+                    singleLine = true,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 12.dp)
+                        .testTag("duplicate_pages_input"),
+                )
+                if (selectedPages != null) {
+                    Text(
+                        text = stringResource(
+                            R.string.duplicate_pages_selection_count,
+                            selectedPages.size,
+                            pageCount + selectedPages.size,
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { selectedPages?.let(onConfirm) },
+                enabled = selectedPages != null,
+                modifier = Modifier.testTag("duplicate_pages_confirm"),
+            ) { Text(stringResource(R.string.save_duplicated_pdf)) }
+        },
+        dismissButton = {
+            TextButton(onClick = onCancel, modifier = Modifier.testTag("duplicate_pages_cancel")) {
+                Text(stringResource(R.string.cancel))
+            }
+        },
+        modifier = Modifier.testTag("duplicate_pages_dialog"),
+    )
 }
 
 @Composable
@@ -1071,6 +1168,10 @@ private fun OpenPdfContent(
     onRotatePages: () -> Unit,
     onCancelPageRotation: () -> Unit,
     onDismissPageRotationFailure: () -> Unit,
+    duplicatePagesState: DuplicatePagesState,
+    onDuplicatePages: () -> Unit,
+    onCancelPageDuplication: () -> Unit,
+    onDismissPageDuplicationFailure: () -> Unit,
     contentPadding: PaddingValues,
 ) {
     Column(
@@ -1175,6 +1276,22 @@ private fun OpenPdfContent(
             }
             else -> Unit
         }
+        when (duplicatePagesState) {
+            DuplicatePagesState.Preparing -> {
+                OperationProgressContent(R.string.duplicate_pages_preparing)
+                return@Column
+            }
+            is DuplicatePagesState.Duplicating -> {
+                OperationProgressContent(
+                    messageResource = R.string.duplicate_pages_duplicating,
+                    firstArgument = duplicatePagesState.selectedPageCount,
+                    secondArgument = duplicatePagesState.outputPageCount,
+                    onCancel = onCancelPageDuplication,
+                )
+                return@Column
+            }
+            else -> Unit
+        }
         when (state) {
             PdfOpenState.Idle -> IdleContent(
                 onOpenPdf = onOpenPdf,
@@ -1199,6 +1316,9 @@ private fun OpenPdfContent(
                 rotatePagesState = rotatePagesState,
                 onRotatePages = onRotatePages,
                 onDismissPageRotationFailure = onDismissPageRotationFailure,
+                duplicatePagesState = duplicatePagesState,
+                onDuplicatePages = onDuplicatePages,
+                onDismissPageDuplicationFailure = onDismissPageDuplicationFailure,
             )
             PdfOpenState.Opening -> OpeningContent()
             is PdfOpenState.Opened -> Unit
@@ -1231,6 +1351,9 @@ private fun IdleContent(
     rotatePagesState: RotatePagesState,
     onRotatePages: () -> Unit,
     onDismissPageRotationFailure: () -> Unit,
+    duplicatePagesState: DuplicatePagesState,
+    onDuplicatePages: () -> Unit,
+    onDismissPageDuplicationFailure: () -> Unit,
 ) {
     Text(
         text = stringResource(R.string.home_title),
@@ -1247,47 +1370,53 @@ private fun IdleContent(
     )
     Spacer(Modifier.height(24.dp))
     OpenButton(label = stringResource(R.string.open_pdf), onClick = onOpenPdf)
-    Spacer(Modifier.height(12.dp))
+    Spacer(Modifier.height(4.dp))
     OpenButton(
         label = stringResource(R.string.images_to_pdf),
         onClick = onImagesToPdf,
         testTag = "images_to_pdf_button",
     )
-    Spacer(Modifier.height(12.dp))
+    Spacer(Modifier.height(4.dp))
     OpenButton(
         label = stringResource(R.string.merge_pdf),
         onClick = onMergePdfs,
         testTag = "merge_pdf_button",
     )
-    Spacer(Modifier.height(12.dp))
+    Spacer(Modifier.height(4.dp))
     OpenButton(
         label = stringResource(R.string.split_pdf),
         onClick = onSplitPdf,
         testTag = "split_pdf_button",
     )
-    Spacer(Modifier.height(12.dp))
+    Spacer(Modifier.height(4.dp))
     OpenButton(
         label = stringResource(R.string.extract_pages),
         onClick = onExtractPages,
         testTag = "extract_pages_button",
     )
-    Spacer(Modifier.height(12.dp))
+    Spacer(Modifier.height(4.dp))
     OpenButton(
         label = stringResource(R.string.delete_pages),
         onClick = onDeletePages,
         testTag = "delete_pages_button",
     )
-    Spacer(Modifier.height(12.dp))
+    Spacer(Modifier.height(4.dp))
     OpenButton(
         label = stringResource(R.string.rearrange_pages),
         onClick = onRearrangePages,
         testTag = "rearrange_pages_button",
     )
-    Spacer(Modifier.height(12.dp))
+    Spacer(Modifier.height(4.dp))
     OpenButton(
         label = stringResource(R.string.rotate_pages),
         onClick = onRotatePages,
         testTag = "rotate_pages_button",
+    )
+    Spacer(Modifier.height(4.dp))
+    OpenButton(
+        label = stringResource(R.string.duplicate_pages),
+        onClick = onDuplicatePages,
+        testTag = "duplicate_pages_button",
     )
     if (imagesToPdfState is ImagesToPdfState.Failed) {
         Spacer(Modifier.height(20.dp))
@@ -1385,6 +1514,18 @@ private fun IdleContent(
             modifier = Modifier.testTag("rotate_pages_error"),
         )
         TextButton(onClick = onDismissPageRotationFailure) {
+            Text(stringResource(R.string.dismiss))
+        }
+    }
+    if (duplicatePagesState is DuplicatePagesState.Failed) {
+        Spacer(Modifier.height(20.dp))
+        Text(
+            text = stringResource(duplicatePagesState.failure.messageResource),
+            color = MaterialTheme.colorScheme.error,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.testTag("duplicate_pages_error"),
+        )
+        TextButton(onClick = onDismissPageDuplicationFailure) {
             Text(stringResource(R.string.dismiss))
         }
     }
