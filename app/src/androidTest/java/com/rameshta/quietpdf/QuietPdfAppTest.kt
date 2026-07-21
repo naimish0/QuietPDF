@@ -38,6 +38,9 @@ import com.rameshta.quietpdf.pdf.ImagePdfMargin
 import com.rameshta.quietpdf.pdf.ImagePdfOrientation
 import com.rameshta.quietpdf.pdf.ImagePdfPageSize
 import com.rameshta.quietpdf.pdf.ImagePdfScaleMode
+import com.rameshta.quietpdf.pdf.MergePdfFailure
+import com.rameshta.quietpdf.pdf.MergePdfItem
+import com.rameshta.quietpdf.pdf.MergePdfState
 import com.rameshta.quietpdf.ui.theme.QuietPDFTheme
 import org.junit.Rule
 import org.junit.Assert.assertEquals
@@ -119,6 +122,71 @@ class QuietPdfAppTest {
             ),
             selected.get(),
         )
+    }
+
+    @Test
+    fun mergePdf_buttonStartsSelection() {
+        val selections = AtomicInteger()
+        setContent(
+            state = PdfOpenState.Idle,
+            onMergePdfs = { selections.incrementAndGet() },
+        )
+
+        composeRule.onNodeWithTag("merge_pdf_button")
+            .assertTextEquals("Merge PDFs")
+            .performClick()
+        assertEquals(1, selections.get())
+    }
+
+    @Test
+    fun mergePdf_orderDialogExposesReorderAndConfirmActions() {
+        val move = AtomicReference<Pair<Int, Int>>()
+        val confirms = AtomicInteger()
+        setContent(
+            state = PdfOpenState.Idle,
+            mergePdfState = MergePdfState.Configuring(
+                listOf(
+                    MergePdfItem(Uri.parse("content://test/first"), "first.pdf"),
+                    MergePdfItem(Uri.parse("content://test/second"), "second.pdf"),
+                ),
+            ),
+            onMoveMergeDocument = { from, to -> move.set(from to to) },
+            onConfirmMerge = { confirms.incrementAndGet() },
+        )
+
+        composeRule.onNodeWithTag("merge_order_dialog").assertIsDisplayed()
+        composeRule.onNodeWithText("1. first.pdf").assertIsDisplayed()
+        composeRule.onNodeWithText("2. second.pdf").assertIsDisplayed()
+        composeRule.onNodeWithTag("merge_move_up_1").performClick()
+        assertEquals(1 to 0, move.get())
+        composeRule.onNodeWithTag("merge_confirm").performClick()
+        assertEquals(1, confirms.get())
+    }
+
+    @Test
+    fun mergePdf_progressAndFailureAreSpecific() {
+        val cancellations = AtomicInteger()
+        setContent(
+            state = PdfOpenState.Idle,
+            mergePdfState = MergePdfState.Merging(documentCount = 3),
+            onCancelMerge = { cancellations.incrementAndGet() },
+        )
+
+        composeRule.onNodeWithTag("operation_progress").assertIsDisplayed()
+        composeRule.onNodeWithText("Merging 3 PDFs…").assertIsDisplayed()
+        composeRule.onNodeWithTag("operation_cancel").performClick()
+        assertEquals(1, cancellations.get())
+    }
+
+    @Test
+    fun mergePdf_invalidDocumentFailureIsActionable() {
+        setContent(
+            state = PdfOpenState.Idle,
+            mergePdfState = MergePdfState.Failed(MergePdfFailure.InvalidDocument),
+        )
+
+        composeRule.onNodeWithTag("merge_pdf_error").assertIsDisplayed()
+        composeRule.onNodeWithText("Dismiss").assertIsDisplayed()
     }
 
     @Test
@@ -476,6 +544,11 @@ class QuietPdfAppTest {
         imagesToPdfState: ImagesToPdfState = ImagesToPdfState.Idle,
         onImagesToPdf: () -> Unit = {},
         onConfirmImagesPdfLayout: (ImagePdfLayout) -> Unit = {},
+        mergePdfState: MergePdfState = MergePdfState.Idle,
+        onMergePdfs: () -> Unit = {},
+        onMoveMergeDocument: (Int, Int) -> Unit = { _, _ -> },
+        onConfirmMerge: () -> Unit = {},
+        onCancelMerge: () -> Unit = {},
     ) {
         composeRule.setContent {
             QuietPDFTheme(dynamicColor = false) {
@@ -491,6 +564,11 @@ class QuietPdfAppTest {
                     imagesToPdfState = imagesToPdfState,
                     onImagesToPdf = onImagesToPdf,
                     onConfirmImagesPdfLayout = onConfirmImagesPdfLayout,
+                    mergePdfState = mergePdfState,
+                    onMergePdfs = onMergePdfs,
+                    onMoveMergeDocument = onMoveMergeDocument,
+                    onConfirmMerge = onConfirmMerge,
+                    onCancelMerge = onCancelMerge,
                 )
             }
         }
