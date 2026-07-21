@@ -60,6 +60,8 @@ import com.rameshta.quietpdf.pdf.CompressPdfFailure
 import com.rameshta.quietpdf.pdf.CompressPdfState
 import com.rameshta.quietpdf.pdf.ProtectPdfFailure
 import com.rameshta.quietpdf.pdf.ProtectPdfState
+import com.rameshta.quietpdf.pdf.RemovePasswordFailure
+import com.rameshta.quietpdf.pdf.RemovePasswordState
 import com.rameshta.quietpdf.pdf.CompressibleImage
 import com.rameshta.quietpdf.pdf.PdfCompressionMode
 import com.rameshta.quietpdf.pdf.PdfCompressionRequest
@@ -783,6 +785,66 @@ class QuietPdfAppTest {
     }
 
     @Test
+    fun removePassword_buttonStartsSelection() {
+        val selections = AtomicInteger()
+        setContent(state = PdfOpenState.Idle, onRemovePassword = { selections.incrementAndGet() })
+        composeRule.onNodeWithTag("remove_password_button").performScrollTo().performClick()
+        assertEquals(1, selections.get())
+    }
+
+    @Test
+    fun removePassword_dialogReturnsCurrentPasswordAndExplainsNewCopy() {
+        val selected = AtomicReference<CharArray>()
+        setContent(
+            state = PdfOpenState.Idle,
+            removePasswordState = RemovePasswordState.Configuring(
+                Uri.parse("content://test/protected"), "locked.pdf",
+            ),
+            onConfirmPasswordRemoval = selected::set,
+        )
+        composeRule.onNodeWithText("protected original", substring = true).assertIsDisplayed()
+        composeRule.onNodeWithTag("remove_password_input").performTextInput("secret!")
+        composeRule.onNodeWithTag("remove_password_confirm").performClick()
+        assertArrayEquals("secret!".toCharArray(), selected.get())
+    }
+
+    @Test
+    fun removePassword_incorrectPasswordSupportsRetry() {
+        setContent(
+            state = PdfOpenState.Idle,
+            removePasswordState = RemovePasswordState.Configuring(
+                Uri.parse("content://test/protected"), "locked.pdf", passwordError = true,
+            ),
+        )
+        composeRule.onNodeWithText("incorrect", substring = true).assertIsDisplayed()
+        composeRule.onNodeWithTag("remove_password_input").assertIsDisplayed()
+    }
+
+    @Test
+    fun removePassword_resultCanBeOpened() {
+        val opens = AtomicInteger()
+        setContent(
+            state = PdfOpenState.Idle,
+            removePasswordState = RemovePasswordState.Completed(
+                Uri.parse("content://test/unlocked"), 4,
+            ),
+            onOpenPasswordRemovedPdf = { opens.incrementAndGet() },
+        )
+        composeRule.onNodeWithTag("remove_password_success").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("open_password_removed_pdf").performClick()
+        assertEquals(1, opens.get())
+    }
+
+    @Test
+    fun removePassword_unprotectedFailureIsActionable() {
+        setContent(
+            state = PdfOpenState.Idle,
+            removePasswordState = RemovePasswordState.Failed(RemovePasswordFailure.NotProtected),
+        )
+        composeRule.onNodeWithTag("remove_password_error").performScrollTo().assertIsDisplayed()
+    }
+
+    @Test
     fun openedState_showsNameAndPageCount() {
         setContent(
             PdfOpenState.Opened(
@@ -1274,6 +1336,10 @@ class QuietPdfAppTest {
         protectPdfState: ProtectPdfState = ProtectPdfState.Idle,
         onProtectPdf: () -> Unit = {},
         onConfirmPdfProtection: (CharArray) -> Unit = {},
+        removePasswordState: RemovePasswordState = RemovePasswordState.Idle,
+        onRemovePassword: () -> Unit = {},
+        onConfirmPasswordRemoval: (CharArray) -> Unit = {},
+        onOpenPasswordRemovedPdf: () -> Unit = {},
         scannerCaptureState: ScannerCaptureState = ScannerCaptureState.Idle,
         onScanDocument: () -> Unit = {},
         onRetakeScannerCapture: () -> Unit = {},
@@ -1334,6 +1400,10 @@ class QuietPdfAppTest {
                     protectPdfState = protectPdfState,
                     onProtectPdf = onProtectPdf,
                     onConfirmPdfProtection = onConfirmPdfProtection,
+                    removePasswordState = removePasswordState,
+                    onRemovePassword = onRemovePassword,
+                    onConfirmPasswordRemoval = onConfirmPasswordRemoval,
+                    onOpenPasswordRemovedPdf = onOpenPasswordRemovedPdf,
                     scannerCaptureState = scannerCaptureState,
                     onScanDocument = onScanDocument,
                     onRetakeScannerCapture = onRetakeScannerCapture,

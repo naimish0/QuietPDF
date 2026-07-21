@@ -29,8 +29,8 @@ COMPLETED T22-Scanner-Capture
 COMPLETED T23-Scanner-Crop-Correction
 COMPLETED T24-Scanner-Enhancement
 COMPLETED T25-Scanner-Multi-Page
-T26-Protect-PDF
-T27-Remove-Password
+COMPLETED T26-Protect-PDF
+COMPLETED T27-Remove-Password
 T28-Change-Password
 T29-Text-Watermark
 T30-Image-Watermark

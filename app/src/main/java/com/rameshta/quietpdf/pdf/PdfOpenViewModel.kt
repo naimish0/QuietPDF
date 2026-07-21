@@ -217,6 +217,27 @@ sealed interface ProtectPdfState {
     data class Failed(val failure: ProtectPdfFailure) : ProtectPdfState
 }
 
+sealed interface RemovePasswordState {
+    data object Idle : RemovePasswordState
+    data object Preparing : RemovePasswordState
+    data class Configuring(
+        val sourceUri: Uri,
+        val displayName: String,
+        val passwordError: Boolean = false,
+    ) : RemovePasswordState
+    data object Removing : RemovePasswordState
+    data class Completed(val outputUri: Uri, val pageCount: Int) : RemovePasswordState
+    data class Failed(val failure: RemovePasswordFailure) : RemovePasswordState
+}
+
+enum class RemovePasswordFailure(@get:StringRes val messageResource: Int) {
+    NotProtected(R.string.remove_password_not_protected),
+    InvalidDocument(R.string.remove_password_invalid_document),
+    PermissionDenied(R.string.remove_password_permission_denied),
+    InsufficientMemory(R.string.remove_password_memory_error),
+    UnableToSave(R.string.remove_password_save_error),
+}
+
 enum class ProtectPdfFailure(@get:StringRes val messageResource: Int) {
     AlreadyProtected(R.string.protect_pdf_already_protected),
     InvalidDocument(R.string.protect_pdf_invalid_document),
@@ -313,6 +334,7 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
     private val duplicatePagesEngine = DuplicatePagesEngine(application)
     private val compressPdfEngine = CompressPdfEngine(application)
     private val protectPdfEngine = ProtectPdfEngine(application)
+    private val removePasswordEngine = RemovePasswordEngine(application)
     private val scannerCaptureEngine = ScannerCaptureEngine(application)
     private val scannerCropCorrectionEngine = ScannerCropCorrectionEngine(application.cacheDir)
     private val scannerEnhancementEngine = ScannerEnhancementEngine(application.cacheDir)
@@ -327,6 +349,7 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
     private var duplicatePagesJob: Job? = null
     private var compressPdfJob: Job? = null
     private var protectPdfJob: Job? = null
+    private var removePasswordJob: Job? = null
     private var scannerJob: Job? = null
     private var scannerEnhancementJob: Job? = null
     private var scannerCaptureFile: File? = null
@@ -380,6 +403,9 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
         private set
 
     var protectPdfState: ProtectPdfState by mutableStateOf(ProtectPdfState.Idle)
+        private set
+
+    var removePasswordState: RemovePasswordState by mutableStateOf(RemovePasswordState.Idle)
         private set
 
     var scannerCaptureState: ScannerCaptureState by mutableStateOf(ScannerCaptureState.Idle)
@@ -1449,6 +1475,91 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
 
     fun clearProtectPdfResult() {
         protectPdfState = ProtectPdfState.Idle
+    }
+
+    fun selectPdfForPasswordRemoval(uri: Uri) {
+        removePasswordJob?.cancel()
+        removePasswordState = RemovePasswordState.Preparing
+        removePasswordJob = viewModelScope.launch {
+            removePasswordState = when (removePasswordEngine.analyze(uri)) {
+                RemovePasswordAnalysisResult.Protected -> RemovePasswordState.Configuring(
+                    sourceUri = uri,
+                    displayName = withContext(Dispatchers.IO) { queryDisplayName(uri) } ?: "PDF",
+                )
+                RemovePasswordAnalysisResult.NotProtected -> {
+                    RemovePasswordState.Failed(RemovePasswordFailure.NotProtected)
+                }
+                RemovePasswordAnalysisResult.InvalidDocument -> {
+                    RemovePasswordState.Failed(RemovePasswordFailure.InvalidDocument)
+                }
+                RemovePasswordAnalysisResult.PermissionDenied -> {
+                    RemovePasswordState.Failed(RemovePasswordFailure.PermissionDenied)
+                }
+                RemovePasswordAnalysisResult.InsufficientMemory -> {
+                    RemovePasswordState.Failed(RemovePasswordFailure.InsufficientMemory)
+                }
+            }
+        }
+    }
+
+    fun removeSelectedPdfPassword(outputUri: Uri, suppliedPassword: CharArray) {
+        val configuring = removePasswordState as? RemovePasswordState.Configuring
+        if (configuring == null) {
+            suppliedPassword.fill('\u0000')
+            return
+        }
+        val password = suppliedPassword.copyOf()
+        suppliedPassword.fill('\u0000')
+        removePasswordJob?.cancel()
+        removePasswordState = RemovePasswordState.Removing
+        removePasswordJob = viewModelScope.launch {
+            try {
+                removePasswordState = when (
+                    val result = removePasswordEngine.remove(
+                        sourceUri = configuring.sourceUri,
+                        outputUri = outputUri,
+                        password = password,
+                    )
+                ) {
+                    is RemovePasswordResult.Success -> {
+                        RemovePasswordState.Completed(outputUri, result.pageCount)
+                    }
+                    RemovePasswordResult.IncorrectPassword -> configuring.copy(passwordError = true)
+                    RemovePasswordResult.NotProtected -> {
+                        RemovePasswordState.Failed(RemovePasswordFailure.NotProtected)
+                    }
+                    RemovePasswordResult.InvalidDocument -> {
+                        RemovePasswordState.Failed(RemovePasswordFailure.InvalidDocument)
+                    }
+                    RemovePasswordResult.PermissionDenied -> {
+                        RemovePasswordState.Failed(RemovePasswordFailure.PermissionDenied)
+                    }
+                    RemovePasswordResult.InsufficientMemory -> {
+                        RemovePasswordState.Failed(RemovePasswordFailure.InsufficientMemory)
+                    }
+                    RemovePasswordResult.Failed -> {
+                        RemovePasswordState.Failed(RemovePasswordFailure.UnableToSave)
+                    }
+                }
+            } finally {
+                password.fill('\u0000')
+            }
+        }
+    }
+
+    fun openPasswordRemovedPdf() {
+        val completed = removePasswordState as? RemovePasswordState.Completed ?: return
+        removePasswordState = RemovePasswordState.Idle
+        open(completed.outputUri)
+    }
+
+    fun cancelRemovePassword() {
+        removePasswordJob?.cancel()
+        removePasswordState = RemovePasswordState.Idle
+    }
+
+    fun clearRemovePasswordResult() {
+        removePasswordState = RemovePasswordState.Idle
     }
 
     fun rejectUnsupportedUri() {
