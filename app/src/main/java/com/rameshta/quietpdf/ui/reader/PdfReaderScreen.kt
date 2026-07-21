@@ -6,6 +6,7 @@ import android.content.ContextWrapper
 import android.graphics.Bitmap
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -15,6 +16,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -38,6 +40,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -51,6 +54,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -68,6 +72,8 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
@@ -77,6 +83,9 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.IntSize
 import androidx.core.view.WindowCompat
@@ -85,9 +94,14 @@ import androidx.core.view.WindowInsetsControllerCompat
 import com.rameshta.quietpdf.R
 import com.rameshta.quietpdf.pdf.PageRenderResult
 import com.rameshta.quietpdf.pdf.PdfOpenState
+import com.rameshta.quietpdf.pdf.PdfSearchResult
+import com.rameshta.quietpdf.pdf.PdfSearchMatch
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlin.math.roundToInt
+import kotlin.math.min
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -96,6 +110,7 @@ fun PdfReaderScreen(
     onOpenAnother: () -> Unit,
     renderPage: suspend (pageIndex: Int, targetWidth: Int) -> PageRenderResult,
     onPageChanged: (pageIndex: Int) -> Unit,
+    searchDocument: suspend (query: String) -> PdfSearchResult,
 ) {
     val initialPage = document.initialPageIndex.coerceIn(0, document.pageCount - 1)
     var readerMode by remember(document.uri) { mutableStateOf(ReaderMode.VerticalContinuous) }
@@ -109,6 +124,14 @@ fun PdfReaderScreen(
     var isFullscreen by remember(document.uri) { mutableStateOf(false) }
     var chromeVisible by remember(document.uri) { mutableStateOf(true) }
     var nightAppearance by remember(document.uri) { mutableStateOf(false) }
+    var searchActive by remember(document.uri) { mutableStateOf(false) }
+    var searchQuery by remember(document.uri) { mutableStateOf("") }
+    var searchMatches by remember(document.uri) { mutableStateOf(emptyList<PdfSearchMatch>()) }
+    var selectedSearchIndex by remember(document.uri) { mutableIntStateOf(-1) }
+    var searchMessage by remember(document.uri) { mutableStateOf<Int?>(null) }
+    var searchInProgress by remember(document.uri) { mutableStateOf(false) }
+    var searchJob by remember(document.uri) { mutableStateOf<Job?>(null) }
+    val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
     val inheritedColors = MaterialTheme.colorScheme
     val readerColors = if (nightAppearance) {
@@ -122,6 +145,14 @@ fun PdfReaderScreen(
         )
     } else {
         inheritedColors
+    }
+    val closeSearch = {
+        searchJob?.cancel()
+        searchActive = false
+        searchMatches = emptyList()
+        selectedSearchIndex = -1
+        searchMessage = null
+        searchInProgress = false
     }
 
     LaunchedEffect(readerMode, document.uri) {
@@ -161,21 +192,75 @@ fun PdfReaderScreen(
         }
     }
 
-    LaunchedEffect(isFullscreen, chromeVisible) {
-        if (isFullscreen && chromeVisible) {
+    LaunchedEffect(isFullscreen, chromeVisible, searchActive) {
+        if (isFullscreen && chromeVisible && !searchActive) {
             delay(ChromeAutoHideMillis)
             chromeVisible = false
         }
     }
 
-    BackHandler(enabled = isFullscreen) {
-        isFullscreen = false
-        chromeVisible = true
+    BackHandler(enabled = isFullscreen || searchActive) {
+        if (searchActive) {
+            closeSearch()
+        } else {
+            isFullscreen = false
+            chromeVisible = true
+        }
     }
 
     val onPageTap = {
-        if (isFullscreen) chromeVisible = !chromeVisible
+        if (isFullscreen && !searchActive) chromeVisible = !chromeVisible
     }
+    val navigateToPage: (Int) -> Unit = { requestedPage ->
+        val page = requestedPage.coerceIn(0, document.pageCount - 1)
+        currentPage = page
+        coroutineScope.launch {
+            when (readerMode) {
+                ReaderMode.VerticalContinuous -> verticalState.animateScrollToItem(page)
+                ReaderMode.HorizontalContinuous -> horizontalState.animateScrollToItem(page)
+                ReaderMode.SinglePage -> pagerState.animateScrollToPage(page)
+            }
+        }
+    }
+    val selectSearchMatch: (Int) -> Unit = { requestedIndex ->
+        if (searchMatches.isNotEmpty()) {
+            val index = requestedIndex.mod(searchMatches.size)
+            selectedSearchIndex = index
+            navigateToPage(searchMatches[index].pageIndex)
+        }
+    }
+    val submitSearch: () -> Unit = {
+        val query = searchQuery.trim()
+        searchJob?.cancel()
+        searchMatches = emptyList()
+        selectedSearchIndex = -1
+        searchMessage = null
+        if (query.isNotEmpty()) {
+            searchInProgress = true
+            searchJob = coroutineScope.launch {
+                when (val result = searchDocument(query)) {
+                    is PdfSearchResult.Matches -> {
+                        searchMatches = result.matches
+                        if (result.matches.isEmpty()) {
+                            searchMessage = R.string.search_no_matches
+                        } else {
+                            selectedSearchIndex = 0
+                            navigateToPage(result.matches.first().pageIndex)
+                        }
+                    }
+                    PdfSearchResult.NoSearchableText -> {
+                        searchMessage = R.string.search_no_text
+                    }
+                    PdfSearchResult.Failed -> {
+                        searchMessage = R.string.search_failed
+                    }
+                }
+                searchInProgress = false
+            }
+        }
+    }
+    val matchesByPage = remember(searchMatches) { searchMatches.groupBy(PdfSearchMatch::pageIndex) }
+    val selectedSearchMatch = searchMatches.getOrNull(selectedSearchIndex)
 
     MaterialTheme(colorScheme = readerColors) {
         if (isFullscreen) {
@@ -193,9 +278,23 @@ fun PdfReaderScreen(
                     renderPage = renderPage,
                     onPageTap = onPageTap,
                     nightAppearance = nightAppearance,
+                    searchMatchesByPage = matchesByPage,
+                    selectedSearchMatch = selectedSearchMatch,
                 )
                 if (chromeVisible) {
-                    ReaderTopBar(
+                    if (searchActive) SearchTopBar(
+                        query = searchQuery,
+                        onQueryChange = { searchQuery = it },
+                        inProgress = searchInProgress,
+                        resultCount = searchMatches.size,
+                        selectedIndex = selectedSearchIndex,
+                        messageResource = searchMessage,
+                        onSubmit = submitSearch,
+                        onPrevious = { selectSearchMatch(selectedSearchIndex - 1) },
+                        onNext = { selectSearchMatch(selectedSearchIndex + 1) },
+                        onClose = closeSearch,
+                        modifier = Modifier.align(Alignment.TopCenter),
+                    ) else ReaderTopBar(
                         document = document,
                         readerMode = readerMode,
                         onModeSelected = { readerMode = it },
@@ -207,6 +306,7 @@ fun PdfReaderScreen(
                         },
                         nightAppearance = nightAppearance,
                         onNightAppearanceChange = { nightAppearance = it },
+                        onSearchRequested = { searchActive = true },
                         modifier = Modifier.align(Alignment.TopCenter),
                     )
                 }
@@ -214,7 +314,18 @@ fun PdfReaderScreen(
         } else {
             Scaffold(
                 topBar = {
-                    ReaderTopBar(
+                    if (searchActive) SearchTopBar(
+                        query = searchQuery,
+                        onQueryChange = { searchQuery = it },
+                        inProgress = searchInProgress,
+                        resultCount = searchMatches.size,
+                        selectedIndex = selectedSearchIndex,
+                        messageResource = searchMessage,
+                        onSubmit = submitSearch,
+                        onPrevious = { selectSearchMatch(selectedSearchIndex - 1) },
+                        onNext = { selectSearchMatch(selectedSearchIndex + 1) },
+                        onClose = closeSearch,
+                    ) else ReaderTopBar(
                         document = document,
                         readerMode = readerMode,
                         onModeSelected = { readerMode = it },
@@ -226,6 +337,7 @@ fun PdfReaderScreen(
                         },
                         nightAppearance = nightAppearance,
                         onNightAppearanceChange = { nightAppearance = it },
+                        onSearchRequested = { searchActive = true },
                     )
                 },
             ) { innerPadding ->
@@ -238,6 +350,8 @@ fun PdfReaderScreen(
                     renderPage = renderPage,
                     onPageTap = onPageTap,
                     nightAppearance = nightAppearance,
+                    searchMatchesByPage = matchesByPage,
+                    selectedSearchMatch = selectedSearchMatch,
                     modifier = Modifier.padding(innerPadding),
                 )
             }
@@ -256,6 +370,7 @@ private fun ReaderTopBar(
     onFullscreenChange: (Boolean) -> Unit,
     nightAppearance: Boolean,
     onNightAppearanceChange: (Boolean) -> Unit,
+    onSearchRequested: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     TopAppBar(
@@ -272,6 +387,7 @@ private fun ReaderTopBar(
                 onModeSelected = onModeSelected,
                 nightAppearance = nightAppearance,
                 onNightAppearanceChange = onNightAppearanceChange,
+                onSearchRequested = onSearchRequested,
             )
             TextButton(
                 onClick = { onFullscreenChange(!isFullscreen) },
@@ -292,6 +408,101 @@ private fun ReaderTopBar(
 }
 
 @Composable
+private fun SearchTopBar(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    inProgress: Boolean,
+    resultCount: Int,
+    selectedIndex: Int,
+    messageResource: Int?,
+    onSubmit: () -> Unit,
+    onPrevious: () -> Unit,
+    onNext: () -> Unit,
+    onClose: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val focusRequester = remember { FocusRequester() }
+    val previousDescription = stringResource(R.string.search_previous)
+    val nextDescription = stringResource(R.string.search_next)
+    val closeDescription = stringResource(R.string.search_close)
+    LaunchedEffect(Unit) { focusRequester.requestFocus() }
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .testTag("search_top_bar"),
+        tonalElevation = 3.dp,
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = onQueryChange,
+                    modifier = Modifier
+                        .weight(1f)
+                        .focusRequester(focusRequester)
+                        .testTag("search_query"),
+                    singleLine = true,
+                    label = { Text(stringResource(R.string.search_query)) },
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    keyboardActions = KeyboardActions(onSearch = { onSubmit() }),
+                )
+                TextButton(
+                    onClick = onSubmit,
+                    enabled = query.isNotBlank() && !inProgress,
+                    modifier = Modifier.testTag("search_submit"),
+                ) { Text(stringResource(R.string.search_submit)) }
+                TextButton(
+                    onClick = onClose,
+                    modifier = Modifier
+                        .semantics { contentDescription = closeDescription }
+                        .testTag("search_close"),
+                ) { Text("×") }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                when {
+                    inProgress -> CircularProgressIndicator(
+                        modifier = Modifier
+                            .size(24.dp)
+                            .testTag("search_progress"),
+                    )
+                    messageResource != null -> Text(
+                        text = stringResource(messageResource),
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    resultCount > 0 -> Text(
+                        text = stringResource(
+                            R.string.search_result_count,
+                            selectedIndex + 1,
+                            resultCount,
+                        ),
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+                if (resultCount > 0) {
+                    TextButton(
+                        onClick = onPrevious,
+                        modifier = Modifier
+                            .semantics { contentDescription = previousDescription }
+                            .testTag("search_previous"),
+                    ) { Text(previousDescription) }
+                    TextButton(
+                        onClick = onNext,
+                        modifier = Modifier
+                            .semantics { contentDescription = nextDescription }
+                            .testTag("search_next"),
+                    ) { Text(nextDescription) }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun ReaderPages(
     document: PdfOpenState.Opened,
     readerMode: ReaderMode,
@@ -301,6 +512,8 @@ private fun ReaderPages(
     renderPage: suspend (pageIndex: Int, targetWidth: Int) -> PageRenderResult,
     onPageTap: () -> Unit,
     nightAppearance: Boolean,
+    searchMatchesByPage: Map<Int, List<PdfSearchMatch>>,
+    selectedSearchMatch: PdfSearchMatch?,
     modifier: Modifier = Modifier,
 ) {
     BoxWithConstraints(
@@ -325,6 +538,8 @@ private fun ReaderPages(
                         renderPage = renderPage,
                         onPageTap = onPageTap,
                         nightAppearance = nightAppearance,
+                        searchMatches = searchMatchesByPage[pageIndex].orEmpty(),
+                        selectedSearchMatch = selectedSearchMatch,
                     )
                 }
             }
@@ -349,6 +564,8 @@ private fun ReaderPages(
                         fitToViewport = true,
                         onPageTap = onPageTap,
                         nightAppearance = nightAppearance,
+                        searchMatches = searchMatchesByPage[pageIndex].orEmpty(),
+                        selectedSearchMatch = selectedSearchMatch,
                     )
                 }
             }
@@ -371,6 +588,8 @@ private fun ReaderPages(
                     fitToViewport = true,
                     onPageTap = onPageTap,
                     nightAppearance = nightAppearance,
+                    searchMatches = searchMatchesByPage[pageIndex].orEmpty(),
+                    selectedSearchMatch = selectedSearchMatch,
                 )
             }
         }
@@ -383,6 +602,7 @@ private fun ReaderModeMenu(
     onModeSelected: (ReaderMode) -> Unit,
     nightAppearance: Boolean,
     onNightAppearanceChange: (Boolean) -> Unit,
+    onSearchRequested: () -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
     val controlDescription = stringResource(R.string.reader_mode)
@@ -422,6 +642,15 @@ private fun ReaderModeMenu(
             }
             HorizontalDivider()
             DropdownMenuItem(
+                text = { Text(stringResource(R.string.search_document)) },
+                onClick = {
+                    expanded = false
+                    onSearchRequested()
+                },
+                modifier = Modifier.testTag("search_button"),
+            )
+            HorizontalDivider()
+            DropdownMenuItem(
                 text = {
                     Text(
                         stringResource(
@@ -455,6 +684,8 @@ private fun PdfPageItem(
     fitToViewport: Boolean = false,
     onPageTap: () -> Unit = {},
     nightAppearance: Boolean = false,
+    searchMatches: List<PdfSearchMatch> = emptyList(),
+    selectedSearchMatch: PdfSearchMatch? = null,
 ) {
     val pageNumber = pageIndex + 1
     var zoomState by remember(documentIdentity, pageIndex) { mutableStateOf(PageZoomState()) }
@@ -513,6 +744,8 @@ private fun PdfPageItem(
                         fitToViewport = fitToViewport,
                         onPageTap = onPageTap,
                         nightAppearance = nightAppearance,
+                        searchMatches = searchMatches,
+                        selectedSearchMatch = selectedSearchMatch,
                     )
                 }
             }
@@ -578,6 +811,8 @@ private fun RenderedPage(
     fitToViewport: Boolean,
     onPageTap: () -> Unit,
     nightAppearance: Boolean,
+    searchMatches: List<PdfSearchMatch>,
+    selectedSearchMatch: PdfSearchMatch?,
 ) {
     val description = stringResource(R.string.page_content_description, pageNumber, pageCount)
     val zoomDescription = stringResource(R.string.zoom_state, (zoomState.scale * 100).roundToInt())
@@ -602,11 +837,7 @@ private fun RenderedPage(
             .onSizeChanged { viewport = it },
         contentAlignment = Alignment.Center,
     ) {
-        Image(
-            bitmap = bitmap.asImageBitmap(),
-            contentDescription = null,
-            contentScale = if (fitToViewport) ContentScale.Fit else ContentScale.FillWidth,
-            colorFilter = if (nightAppearance) NightPageColorFilter else null,
+        Box(
             modifier = (if (fitToViewport) Modifier.fillMaxSize() else Modifier.fillMaxWidth())
                 .graphicsLayer {
                     scaleX = zoomState.scale
@@ -650,7 +881,51 @@ private fun RenderedPage(
                     )
                 }
                 .testTag("pdf_page_$pageNumber"),
-        )
+        ) {
+            Image(
+                bitmap = bitmap.asImageBitmap(),
+                contentDescription = null,
+                contentScale = if (fitToViewport) ContentScale.Fit else ContentScale.FillWidth,
+                colorFilter = if (nightAppearance) NightPageColorFilter else null,
+                modifier = if (fitToViewport) Modifier.fillMaxSize() else Modifier.fillMaxWidth(),
+            )
+            if (searchMatches.isNotEmpty()) {
+                Canvas(
+                    modifier = Modifier
+                        .matchParentSize()
+                        .testTag("search_highlights_$pageNumber"),
+                ) {
+                    val contentScale = min(
+                        size.width / bitmap.width.toFloat(),
+                        size.height / bitmap.height.toFloat(),
+                    )
+                    val contentWidth = bitmap.width * contentScale
+                    val contentHeight = bitmap.height * contentScale
+                    val contentLeft = (size.width - contentWidth) / 2f
+                    val contentTop = (size.height - contentHeight) / 2f
+                    searchMatches.forEach { match ->
+                        val highlightColor = if (match == selectedSearchMatch) {
+                            SelectedSearchHighlight
+                        } else {
+                            SearchHighlight
+                        }
+                        match.bounds.forEach { bounds ->
+                            drawRect(
+                                color = highlightColor,
+                                topLeft = Offset(
+                                    contentLeft + bounds.left * contentWidth,
+                                    contentTop + bounds.top * contentHeight,
+                                ),
+                                size = Size(
+                                    (bounds.right - bounds.left) * contentWidth,
+                                    (bounds.bottom - bounds.top) * contentHeight,
+                                ),
+                            )
+                        }
+                    }
+                }
+            }
+        }
 
         if (zoomState.isZoomed) {
             TextButton(
@@ -675,6 +950,8 @@ private tailrec fun Context.findActivity(): Activity? = when (this) {
 private const val ChromeAutoHideMillis = 3_000L
 private val ReaderNightBackground = Color(0xFF0E0E0E)
 private val ReaderNightSurface = Color(0xFF121212)
+private val SearchHighlight = Color(0xFFFFEB3B).copy(alpha = 0.38f)
+private val SelectedSearchHighlight = Color(0xFFFF9800).copy(alpha = 0.58f)
 private val NightPageColorFilter = ColorFilter.colorMatrix(
     ColorMatrix(
         floatArrayOf(

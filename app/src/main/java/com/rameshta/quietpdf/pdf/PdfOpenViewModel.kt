@@ -44,6 +44,7 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
     private val opener = PdfDocumentOpener(application.contentResolver)
     private val pageRenderer = PdfPageRenderer(application.contentResolver)
     private val readingPositionStore = ReadingPositionStore(application)
+    private val searchEngine = PdfSearchEngine(application)
     private var openJob: Job? = null
     private var documentGeneration = 0L
     private val pageCache = object : LruCache<PageCacheKey, Bitmap>(pageCacheBytes()) {
@@ -55,6 +56,7 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
 
     fun open(uri: Uri) {
         openJob?.cancel()
+        searchEngine.close()
         documentGeneration++
         pageCache.evictAll()
         state = PdfOpenState.Opening
@@ -77,6 +79,7 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
 
     fun rejectUnsupportedUri() {
         openJob?.cancel()
+        searchEngine.close()
         documentGeneration++
         pageCache.evictAll()
         state = PdfOpenState.Failed(PdfOpenFailure.Unsupported)
@@ -85,6 +88,11 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
     fun rememberPage(pageIndex: Int) {
         val opened = state as? PdfOpenState.Opened ?: return
         readingPositionStore.remember(opened.uri, pageIndex, opened.pageCount)
+    }
+
+    suspend fun search(query: String): PdfSearchResult {
+        val opened = state as? PdfOpenState.Opened ?: return PdfSearchResult.Failed
+        return searchEngine.search(opened.uri, opened.pageCount, query)
     }
 
     suspend fun renderPage(pageIndex: Int, targetWidth: Int): PageRenderResult {
@@ -120,6 +128,11 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
     }
 
     private data class PageCacheKey(val uri: Uri, val pageIndex: Int, val width: Int)
+
+    override fun onCleared() {
+        searchEngine.close()
+        super.onCleared()
+    }
 
     private companion object {
         val PageRenderDispatcher = Dispatchers.IO.limitedParallelism(2)

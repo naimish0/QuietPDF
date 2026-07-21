@@ -1,6 +1,7 @@
 package com.rameshta.quietpdf
 
 import android.graphics.Bitmap
+import android.graphics.RectF
 import android.graphics.Color as AndroidColor
 import android.net.Uri
 import androidx.compose.ui.geometry.Offset
@@ -18,11 +19,14 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.swipeLeft
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.rameshta.quietpdf.pdf.PageRenderResult
 import com.rameshta.quietpdf.pdf.PdfOpenFailure
 import com.rameshta.quietpdf.pdf.PdfOpenState
+import com.rameshta.quietpdf.pdf.PdfSearchMatch
+import com.rameshta.quietpdf.pdf.PdfSearchResult
 import com.rameshta.quietpdf.ui.theme.QuietPDFTheme
 import org.junit.Rule
 import org.junit.Assert.assertEquals
@@ -247,6 +251,38 @@ class QuietPdfAppTest {
         composeRule.onNodeWithText("Page 4 of 5").assertIsDisplayed()
     }
 
+    @Test
+    fun search_navigatesToAndHighlightsMatches() {
+        setContent(
+            state = PdfOpenState.Opened(
+                uri = Uri.parse("content://test/search"),
+                displayName = "search.pdf",
+                pageCount = 3,
+            ),
+            searchDocument = {
+                PdfSearchResult.Matches(
+                    listOf(
+                        PdfSearchMatch(
+                            pageIndex = 1,
+                            bounds = listOf(RectF(0.1f, 0.2f, 0.4f, 0.3f)),
+                        ),
+                    ),
+                )
+            },
+        )
+
+        composeRule.onNodeWithTag("reader_mode_button").performClick()
+        composeRule.onNodeWithTag("search_button").performClick()
+        composeRule.onNodeWithTag("search_query").performTextInput("needle")
+        composeRule.onNodeWithTag("search_submit").performClick()
+
+        composeRule.onNodeWithText("1 of 1").assertIsDisplayed()
+        composeRule.onNodeWithText("Page 2 of 3").assertIsDisplayed()
+        composeRule.onNodeWithTag("search_highlights_2").assertIsDisplayed()
+        composeRule.onNodeWithTag("search_close").performClick()
+        composeRule.onAllNodesWithTag("search_highlights_2").assertCountEquals(0)
+    }
+
     private fun selectReaderMode(modeName: String) {
         composeRule.onNodeWithTag("reader_mode_button").performClick()
         composeRule.onNodeWithTag("reader_mode_$modeName").performClick()
@@ -260,6 +296,7 @@ class QuietPdfAppTest {
             )
         },
         onPageChanged: (Int) -> Unit = {},
+        searchDocument: suspend (String) -> PdfSearchResult = { PdfSearchResult.Failed },
     ) {
         composeRule.setContent {
             QuietPDFTheme(dynamicColor = false) {
@@ -268,6 +305,7 @@ class QuietPdfAppTest {
                     onOpenPdf = {},
                     renderPage = renderPage,
                     onPageChanged = onPageChanged,
+                    searchDocument = searchDocument,
                 )
             }
         }

@@ -41,6 +41,7 @@ import com.rameshta.quietpdf.pdf.PageRenderFailure
 import com.rameshta.quietpdf.pdf.PageRenderResult
 import com.rameshta.quietpdf.pdf.PdfOpenState
 import com.rameshta.quietpdf.pdf.PdfOpenViewModel
+import com.rameshta.quietpdf.pdf.PdfSearchResult
 import com.rameshta.quietpdf.ui.reader.PdfReaderScreen
 import com.rameshta.quietpdf.ui.theme.QuietPDFTheme
 
@@ -69,6 +70,7 @@ class MainActivity : ComponentActivity() {
                     onOpenPdf = { picker.launch(arrayOf("application/pdf")) },
                     renderPage = viewModel::renderPage,
                     onPageChanged = viewModel::rememberPage,
+                    searchDocument = viewModel::search,
                 )
             }
         }
@@ -113,6 +115,9 @@ fun QuietPdfApp(
     onOpenPdf: () -> Unit,
     renderPage: suspend (pageIndex: Int, targetWidth: Int) -> PageRenderResult,
     onPageChanged: (pageIndex: Int) -> Unit = {},
+    searchDocument: suspend (query: String) -> PdfSearchResult = {
+        PdfSearchResult.Failed
+    },
 ) {
     if (state is PdfOpenState.Opened) {
         PdfReaderScreen(
@@ -120,6 +125,7 @@ fun QuietPdfApp(
             onOpenAnother = onOpenPdf,
             renderPage = renderPage,
             onPageChanged = onPageChanged,
+            searchDocument = searchDocument,
         )
         return
     }
