@@ -240,7 +240,14 @@
     <string name="scanner_preparing_preview">Preparing captured photo…</string>
     <string name="scanner_captured_preview">Captured document photo</string>
     <string name="scanner_capture_dimensions">Captured resolution: %1$d × %2$d</string>
-    <string name="scanner_capture_scope_note">Perspective correction and the selected appearance are applied when saving. Multi-page scanning is not applied yet.</string>
+    <string name="scanner_capture_scope_note">Crop and appearance settings are stored separately for every captured page.</string>
+    <string name="scanner_page_position">Page %1$d of %2$d</string>
+    <string name="scanner_add_page">Add page</string>
+    <string name="previous_page">Previous</string>
+    <string name="next_page">Next</string>
+    <string name="move_left">Move left</string>
+    <string name="move_right">Move right</string>
+    <string name="delete_page">Delete</string>
     <string name="scanner_crop_detected">Document edges were detected automatically. Drag any corner to correct them before saving.</string>
     <string name="scanner_crop_manual">Document edges were not clear. Position all four corners manually before saving.</string>
     <string name="scanner_crop_reset">Reset corners</string>
@@ -265,8 +272,8 @@
     <string name="scanner_result_preview_description">Perspective-corrected document with the selected appearance</string>
     <string name="scanner_retake">Retake</string>
     <string name="scanner_save_pdf">Save as PDF</string>
-    <string name="scanner_creating_pdf">Creating and validating the scanned PDF…</string>
-    <string name="scanner_pdf_saved">The captured photo was saved as a validated one-page PDF.</string>
+    <string name="scanner_creating_pdf">Processing every page and validating the scanned PDF…</string>
+    <string name="scanner_pdf_saved">All captured pages were saved in order as a validated PDF.</string>
     <string name="scanner_permission_denied">Camera access is required to scan. Allow Camera permission in Android settings, then try again.</string>
     <string name="scanner_camera_unavailable">No usable back camera is available. Close other camera apps and try again.</string>
     <string name="scanner_capture_failed">The photo could not be captured. Keep the document steady and try again.</string>

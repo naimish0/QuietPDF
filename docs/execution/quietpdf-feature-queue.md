@@ -27,8 +27,8 @@ COMPLETED T20-Compress-PDF
 COMPLETED T21-Target-File-Size
 COMPLETED T22-Scanner-Capture
 COMPLETED T23-Scanner-Crop-Correction
-T24-Scanner-Enhancement
-T25-Scanner-Multi-Page
+COMPLETED T24-Scanner-Enhancement
+COMPLETED T25-Scanner-Multi-Page
 T26-Protect-PDF
 T27-Remove-Password
 T28-Change-Password

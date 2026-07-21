@@ -58,6 +58,8 @@ sealed interface ScannerCaptureState {
         val enhancementInProgress: Boolean = false,
         val enhancementFailure: ScannerCaptureFailure? = null,
         val saveFailure: ScannerCaptureFailure? = null,
+        val pageIndex: Int = 0,
+        val pageCount: Int = 1,
     ) : ScannerCaptureState
     data object CreatingPdf : ScannerCaptureState
     data class Completed(val outputUri: Uri) : ScannerCaptureState
@@ -267,6 +269,11 @@ enum class PageRenderFailure(@get:StringRes val messageResource: Int) {
 }
 
 class PdfOpenViewModel(application: Application) : AndroidViewModel(application) {
+    private data class ScannerStoredPage(
+        val file: File,
+        var crop: ScannerCropSelection,
+        var enhancement: ScannerEnhancementSettings,
+    )
     private val opener = PdfDocumentOpener(application.contentResolver)
     private val pageRenderer = PdfPageRenderer(application.contentResolver)
     private val readingPositionStore = ReadingPositionStore(application)
@@ -301,6 +308,8 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
     private var scannerCaptureFile: File? = null
     private var scannerPreview: ScannerCapturePreview? = null
     private var scannerEnhancedPreview: Bitmap? = null
+    private val scannerPages = mutableListOf<ScannerStoredPage>()
+    private var scannerSelectedPageIndex = 0
     private var selectedImageUris: List<Uri> = emptyList()
     private var selectedImageLayout = ImagePdfLayout()
     private var selectedSplitRanges: List<SplitPageRange> = emptyList()
@@ -361,8 +370,11 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
 
     fun scannerCameraUnavailable() {
         if (scannerCaptureState !is ScannerCaptureState.Camera) return
-        clearScannerCapture()
-        scannerCaptureState = ScannerCaptureState.Failed(ScannerCaptureFailure.CameraUnavailable)
+        if (scannerPages.isNotEmpty()) loadScannerPage(scannerPages.lastIndex)
+        else {
+            clearScannerCapture()
+            scannerCaptureState = ScannerCaptureState.Failed(ScannerCaptureFailure.CameraUnavailable)
+        }
     }
 
     fun beginScannerCapture(): File? {
@@ -373,7 +385,8 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
                 scannerCaptureState = ScannerCaptureState.Capturing
             }
         } catch (_: Exception) {
-            scannerCaptureState = ScannerCaptureState.Failed(ScannerCaptureFailure.CaptureFailed)
+            if (scannerPages.isNotEmpty()) loadScannerPage(scannerPages.lastIndex)
+            else scannerCaptureState = ScannerCaptureState.Failed(ScannerCaptureFailure.CaptureFailed)
             null
         }
     }
@@ -389,16 +402,27 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
             when (val result = scannerCaptureEngine.preparePreview(captureFile)) {
                 is ScannerPreviewResult.Ready -> {
                     scannerPreview = result.preview
-                    scannerCaptureState = ScannerCaptureState.Review(result.preview)
+                    scannerPages += ScannerStoredPage(
+                        file = captureFile,
+                        crop = result.preview.suggestedCrop,
+                        enhancement = ScannerEnhancementSettings(),
+                    )
+                    scannerCaptureFile = null
+                    scannerSelectedPageIndex = scannerPages.lastIndex
+                    scannerCaptureState = ScannerCaptureState.Review(
+                        preview = result.preview,
+                        pageIndex = scannerSelectedPageIndex,
+                        pageCount = scannerPages.size,
+                    )
                     refreshScannerEnhancementPreview(debounce = false)
                 }
-                ScannerPreviewResult.InvalidImage -> failScannerCapture(
+                ScannerPreviewResult.InvalidImage -> failPendingScannerCapture(
                     ScannerCaptureFailure.InvalidCapture,
                 )
-                ScannerPreviewResult.InsufficientMemory -> failScannerCapture(
+                ScannerPreviewResult.InsufficientMemory -> failPendingScannerCapture(
                     ScannerCaptureFailure.InsufficientMemory,
                 )
-                ScannerPreviewResult.Failed -> failScannerCapture(
+                ScannerPreviewResult.Failed -> failPendingScannerCapture(
                     ScannerCaptureFailure.CaptureFailed,
                 )
             }
@@ -410,20 +434,59 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
             scannerCaptureEngine.discard(captureFile)
             return
         }
-        failScannerCapture(ScannerCaptureFailure.CaptureFailed)
+        failPendingScannerCapture(ScannerCaptureFailure.CaptureFailed)
     }
 
     fun retakeScannerCapture() {
         if (scannerCaptureState !is ScannerCaptureState.Review) return
         scannerEnhancementJob?.cancel()
         scannerEnhancementJob = null
-        releaseScannerCapture()
+        val removed = scannerPages.removeAt(scannerSelectedPageIndex)
+        scannerCaptureEngine.discard(removed.file)
+        releaseScannerPreview()
         scannerCaptureState = ScannerCaptureState.Camera
+    }
+
+    fun addScannerPage() {
+        if (scannerCaptureState !is ScannerCaptureState.Review) return
+        scannerEnhancementJob?.cancel()
+        releaseScannerPreview()
+        scannerCaptureState = ScannerCaptureState.Camera
+    }
+
+    fun selectScannerPage(index: Int) {
+        if (scannerCaptureState !is ScannerCaptureState.Review || index !in scannerPages.indices ||
+            index == scannerSelectedPageIndex
+        ) return
+        loadScannerPage(index)
+    }
+
+    fun moveScannerPage(fromIndex: Int, toIndex: Int) {
+        val review = scannerCaptureState as? ScannerCaptureState.Review ?: return
+        if (fromIndex !in scannerPages.indices || toIndex !in scannerPages.indices) return
+        val page = scannerPages.removeAt(fromIndex)
+        scannerPages.add(toIndex, page)
+        scannerSelectedPageIndex = toIndex
+        scannerCaptureState = review.copy(pageIndex = toIndex, pageCount = scannerPages.size)
+    }
+
+    fun deleteScannerPage() {
+        if (scannerCaptureState !is ScannerCaptureState.Review) return
+        val removed = scannerPages.removeAt(scannerSelectedPageIndex)
+        scannerCaptureEngine.discard(removed.file)
+        releaseScannerPreview()
+        if (scannerPages.isEmpty()) {
+            scannerSelectedPageIndex = 0
+            scannerCaptureState = ScannerCaptureState.Camera
+        } else {
+            loadScannerPage(scannerSelectedPageIndex.coerceAtMost(scannerPages.lastIndex))
+        }
     }
 
     fun updateScannerCrop(crop: ScannerCropSelection) {
         val review = scannerCaptureState as? ScannerCaptureState.Review ?: return
         if (!ScannerCropGeometry.isValid(crop)) return
+        scannerPages.getOrNull(scannerSelectedPageIndex)?.crop = crop
         scannerCaptureState = review.copy(crop = crop, saveFailure = null)
         refreshScannerEnhancementPreview(debounce = true)
     }
@@ -434,12 +497,14 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
             crop = review.preview.suggestedCrop,
             saveFailure = null,
         )
+        scannerPages.getOrNull(scannerSelectedPageIndex)?.crop = review.preview.suggestedCrop
     }
 
     fun updateScannerEnhancement(settings: ScannerEnhancementSettings) {
         val review = scannerCaptureState as? ScannerCaptureState.Review ?: return
         val normalized = settings.normalized()
         if (normalized == review.enhancement) return
+        scannerPages.getOrNull(scannerSelectedPageIndex)?.enhancement = normalized
         scannerCaptureState = review.copy(
             enhancement = normalized,
             enhancementInProgress = true,
@@ -451,27 +516,29 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
 
     fun createScannerPdf(outputUri: Uri) {
         val review = scannerCaptureState as? ScannerCaptureState.Review ?: return
-        val captureFile = scannerCaptureFile ?: return
+        if (scannerPages.isEmpty()) return
         scannerEnhancementJob?.cancel()
         scannerEnhancementJob = null
         scannerCaptureState = ScannerCaptureState.CreatingPdf
         scannerJob?.cancel()
         scannerJob = viewModelScope.launch {
             when (
-                scannerCaptureEngine.createSinglePagePdf(
-                    captureFile,
+                scannerCaptureEngine.createMultiPagePdf(
+                    scannerPages.map { page ->
+                        ScannerPdfPage(page.file, page.crop, page.enhancement)
+                    },
                     outputUri,
-                    review.crop,
-                    review.enhancement,
                 )
             ) {
                 ScannerPdfResult.Success -> {
                     releaseScannerCapture()
                     scannerCaptureState = ScannerCaptureState.Completed(outputUri)
                 }
-                ScannerPdfResult.InvalidImage -> failScannerCapture(
-                    ScannerCaptureFailure.InvalidCapture,
-                )
+                ScannerPdfResult.InvalidImage -> {
+                    scannerCaptureState = review.copy(
+                        saveFailure = ScannerCaptureFailure.InvalidCapture,
+                    )
+                }
                 ScannerPdfResult.InvalidCrop -> {
                     scannerCaptureState = review.copy(
                         saveFailure = ScannerCaptureFailure.InvalidCrop,
@@ -1370,6 +1437,16 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
         scannerCaptureState = ScannerCaptureState.Failed(failure)
     }
 
+    private fun failPendingScannerCapture(failure: ScannerCaptureFailure) {
+        scannerCaptureEngine.discard(scannerCaptureFile)
+        scannerCaptureFile = null
+        if (scannerPages.isEmpty()) {
+            failScannerCapture(failure)
+        } else {
+            loadScannerPage(scannerPages.lastIndex)
+        }
+    }
+
     private fun clearScannerCapture() {
         scannerJob?.cancel()
         scannerJob = null
@@ -1379,12 +1456,52 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
     }
 
     private fun releaseScannerCapture() {
+        releaseScannerPreview()
+        scannerPages.forEach { scannerCaptureEngine.discard(it.file) }
+        scannerPages.clear()
+        scannerSelectedPageIndex = 0
+        scannerCaptureEngine.discard(scannerCaptureFile)
+        scannerCaptureFile = null
+    }
+
+    private fun releaseScannerPreview() {
         scannerEnhancedPreview?.takeUnless(Bitmap::isRecycled)?.recycle()
         scannerEnhancedPreview = null
         scannerPreview?.bitmap?.takeUnless(Bitmap::isRecycled)?.recycle()
         scannerPreview = null
-        scannerCaptureEngine.discard(scannerCaptureFile)
-        scannerCaptureFile = null
+    }
+
+    private fun loadScannerPage(index: Int) {
+        val page = scannerPages.getOrNull(index) ?: return
+        scannerEnhancementJob?.cancel()
+        scannerJob?.cancel()
+        releaseScannerPreview()
+        scannerCaptureState = ScannerCaptureState.PreparingPreview
+        scannerJob = viewModelScope.launch {
+            when (val result = scannerCaptureEngine.preparePreview(page.file)) {
+                is ScannerPreviewResult.Ready -> {
+                    scannerPreview = result.preview
+                    scannerSelectedPageIndex = index
+                    scannerCaptureState = ScannerCaptureState.Review(
+                        preview = result.preview,
+                        crop = page.crop,
+                        enhancement = page.enhancement,
+                        pageIndex = index,
+                        pageCount = scannerPages.size,
+                    )
+                    refreshScannerEnhancementPreview(debounce = false)
+                }
+                ScannerPreviewResult.InvalidImage -> failScannerCapture(
+                    ScannerCaptureFailure.InvalidCapture,
+                )
+                ScannerPreviewResult.InsufficientMemory -> failScannerCapture(
+                    ScannerCaptureFailure.InsufficientMemory,
+                )
+                ScannerPreviewResult.Failed -> failScannerCapture(
+                    ScannerCaptureFailure.CaptureFailed,
+                )
+            }
+        }
     }
 
     private fun refreshScannerEnhancementPreview(debounce: Boolean) {

@@ -1143,6 +1143,40 @@ class QuietPdfAppTest {
         composeRule.onNodeWithText("Android settings", substring = true).assertIsDisplayed()
     }
 
+    @Test
+    fun scannerMultiPage_reviewNavigatesReordersDeletesAndAdds() {
+        val selected = AtomicInteger(-1)
+        val moved = AtomicReference<Pair<Int, Int>>()
+        val deleted = AtomicInteger()
+        val added = AtomicInteger()
+        val bitmap = Bitmap.createBitmap(300, 400, Bitmap.Config.ARGB_8888)
+        try {
+            setContent(
+                state = PdfOpenState.Idle,
+                scannerCaptureState = ScannerCaptureState.Review(
+                    preview = ScannerCapturePreview(bitmap, 2400, 3200),
+                    pageIndex = 1,
+                    pageCount = 3,
+                ),
+                onSelectScannerPage = selected::set,
+                onMoveScannerPage = { from, to -> moved.set(from to to) },
+                onDeleteScannerPage = deleted::incrementAndGet,
+                onAddScannerPage = added::incrementAndGet,
+            )
+            composeRule.onNodeWithText("Page 2 of 3").assertIsDisplayed()
+            composeRule.onNodeWithTag("scanner_previous_page").performClick()
+            composeRule.onNodeWithTag("scanner_move_page_right").performScrollTo().performClick()
+            composeRule.onNodeWithTag("scanner_delete_page").performScrollTo().performClick()
+            composeRule.onNodeWithTag("scanner_add_page").performScrollTo().performClick()
+            assertEquals(0, selected.get())
+            assertEquals(1 to 2, moved.get())
+            assertEquals(1, deleted.get())
+            assertEquals(1, added.get())
+        } finally {
+            bitmap.recycle()
+        }
+    }
+
     private fun selectReaderMode(modeName: String) {
         composeRule.onNodeWithTag("reader_mode_button").performClick()
         composeRule.onNodeWithTag("reader_mode_$modeName").performClick()
@@ -1202,6 +1236,10 @@ class QuietPdfAppTest {
         onRetakeScannerCapture: () -> Unit = {},
         onResetScannerCrop: () -> Unit = {},
         onUpdateScannerEnhancement: (ScannerEnhancementSettings) -> Unit = {},
+        onAddScannerPage: () -> Unit = {},
+        onSelectScannerPage: (Int) -> Unit = {},
+        onMoveScannerPage: (Int, Int) -> Unit = { _, _ -> },
+        onDeleteScannerPage: () -> Unit = {},
         onSaveScannerPdf: () -> Unit = {},
     ) {
         composeRule.setContent {
@@ -1255,6 +1293,10 @@ class QuietPdfAppTest {
                     onRetakeScannerCapture = onRetakeScannerCapture,
                     onResetScannerCrop = onResetScannerCrop,
                     onUpdateScannerEnhancement = onUpdateScannerEnhancement,
+                    onAddScannerPage = onAddScannerPage,
+                    onSelectScannerPage = onSelectScannerPage,
+                    onMoveScannerPage = onMoveScannerPage,
+                    onDeleteScannerPage = onDeleteScannerPage,
                     onSaveScannerPdf = onSaveScannerPdf,
                 )
             }

@@ -36,6 +36,12 @@ sealed interface ScannerPdfResult {
     data object Failed : ScannerPdfResult
 }
 
+data class ScannerPdfPage(
+    val captureFile: File,
+    val crop: ScannerCropSelection,
+    val enhancement: ScannerEnhancementSettings,
+)
+
 object ScannerPreviewSampling {
     fun sampleSize(width: Int, height: Int, maxDimension: Int): Int {
         if (width <= 0 || height <= 0 || maxDimension <= 0) return 1
@@ -103,34 +109,40 @@ class ScannerCaptureEngine(context: Context) {
         outputUri: Uri,
         crop: ScannerCropSelection = ScannerCropSelection.fullImage(),
         enhancement: ScannerEnhancementSettings = ScannerEnhancementSettings(),
+    ): ScannerPdfResult = createMultiPagePdf(
+        listOf(ScannerPdfPage(captureFile, crop, enhancement)),
+        outputUri,
+    )
+
+    suspend fun createMultiPagePdf(
+        pages: List<ScannerPdfPage>,
+        outputUri: Uri,
     ): ScannerPdfResult {
-        if (!captureFile.isFile || captureFile.length() <= 0L) return ScannerPdfResult.InvalidImage
-        var correctedFile: File? = null
-        var enhancedFile: File? = null
+        if (pages.isEmpty()) return ScannerPdfResult.InvalidImage
+        val temporaryFiles = mutableListOf<File>()
         return try {
-            when (val correction = cropCorrectionEngine.correct(captureFile, crop)) {
-                is ScannerCropResult.Ready -> correctedFile = correction.file
-                ScannerCropResult.InvalidCrop -> return ScannerPdfResult.InvalidCrop
-                ScannerCropResult.InvalidImage -> return ScannerPdfResult.InvalidImage
-                ScannerCropResult.InsufficientMemory -> return ScannerPdfResult.InsufficientMemory
-                ScannerCropResult.Failed -> return ScannerPdfResult.Failed
-            }
-            when (
-                val enhanced = enhancementEngine.enhanceFile(
-                    requireNotNull(correctedFile),
-                    enhancement,
-                )
-            ) {
-                is ScannerEnhancementFileResult.Ready -> enhancedFile = enhanced.file
-                ScannerEnhancementFileResult.InvalidImage -> return ScannerPdfResult.InvalidImage
-                ScannerEnhancementFileResult.InsufficientMemory -> {
-                    return ScannerPdfResult.InsufficientMemory
+            val enhancedPages = pages.map { page ->
+                val corrected = when (
+                    val correction = cropCorrectionEngine.correct(page.captureFile, page.crop)
+                ) {
+                    is ScannerCropResult.Ready -> correction.file.also(temporaryFiles::add)
+                    ScannerCropResult.InvalidCrop -> return ScannerPdfResult.InvalidCrop
+                    ScannerCropResult.InvalidImage -> return ScannerPdfResult.InvalidImage
+                    ScannerCropResult.InsufficientMemory -> return ScannerPdfResult.InsufficientMemory
+                    ScannerCropResult.Failed -> return ScannerPdfResult.Failed
                 }
-                ScannerEnhancementFileResult.Failed -> return ScannerPdfResult.Failed
+                when (val enhanced = enhancementEngine.enhanceFile(corrected, page.enhancement)) {
+                    is ScannerEnhancementFileResult.Ready -> enhanced.file.also(temporaryFiles::add)
+                    ScannerEnhancementFileResult.InvalidImage -> return ScannerPdfResult.InvalidImage
+                    ScannerEnhancementFileResult.InsufficientMemory -> {
+                        return ScannerPdfResult.InsufficientMemory
+                    }
+                    ScannerEnhancementFileResult.Failed -> return ScannerPdfResult.Failed
+                }
             }
             when (
                 val result = imagesToPdfEngine.create(
-                    imageUris = listOf(Uri.fromFile(requireNotNull(enhancedFile))),
+                    imageUris = enhancedPages.map(Uri::fromFile),
                     outputUri = outputUri,
                     layout = ImagePdfLayout(
                         orientation = ImagePdfOrientation.Auto,
@@ -139,7 +151,7 @@ class ScannerCaptureEngine(context: Context) {
                     ),
                 )
             ) {
-                is ImagesToPdfResult.Success -> validatePublishedPdf(outputUri)
+                is ImagesToPdfResult.Success -> validatePublishedPdf(outputUri, pages.size)
                 is ImagesToPdfResult.InvalidImage -> cleanupFailedOutput(
                     outputUri,
                     ScannerPdfResult.InvalidImage,
@@ -158,8 +170,7 @@ class ScannerCaptureEngine(context: Context) {
             cleanupNewPdfOutput(appContext, contentResolver, outputUri)
             throw cancelled
         } finally {
-            enhancedFile?.delete()
-            correctedFile?.delete()
+            temporaryFiles.forEach(File::delete)
         }
     }
 
@@ -167,12 +178,17 @@ class ScannerCaptureEngine(context: Context) {
         captureFile?.takeIf(File::exists)?.delete()
     }
 
-    private suspend fun validatePublishedPdf(outputUri: Uri): ScannerPdfResult =
+    private suspend fun validatePublishedPdf(
+        outputUri: Uri,
+        expectedPageCount: Int,
+    ): ScannerPdfResult =
         withContext(Dispatchers.IO) {
             try {
                 val descriptor = contentResolver.openFileDescriptor(outputUri, "r")
                     ?: return@withContext cleanupFailedOutput(outputUri, ScannerPdfResult.Failed)
-                val valid = descriptor.use { PdfRenderer(it).use { renderer -> renderer.pageCount == 1 } }
+                val valid = descriptor.use {
+                    PdfRenderer(it).use { renderer -> renderer.pageCount == expectedPageCount }
+                }
                 if (valid) ScannerPdfResult.Success
                 else cleanupFailedOutput(outputUri, ScannerPdfResult.Failed)
             } catch (cancelled: CancellationException) {
