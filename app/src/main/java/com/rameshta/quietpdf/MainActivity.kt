@@ -141,6 +141,9 @@ import com.rameshta.quietpdf.pdf.FormFieldDescriptor
 import com.rameshta.quietpdf.pdf.FormFieldKind
 import com.rameshta.quietpdf.pdf.FormFieldUpdate
 import com.rameshta.quietpdf.pdf.FillFormsEngine
+import com.rameshta.quietpdf.pdf.SignPdfPreviewResult
+import com.rameshta.quietpdf.pdf.SignPdfState
+import com.rameshta.quietpdf.pdf.VisibleSignatureSettings
 import com.rameshta.quietpdf.pdf.PdfCompressionMode
 import com.rameshta.quietpdf.pdf.PdfCompressionRequest
 import com.rameshta.quietpdf.pdf.TargetFileSize
@@ -181,6 +184,15 @@ class MainActivity : ComponentActivity() {
                 var pendingImageWatermark by remember { mutableStateOf<ImageWatermarkSettings?>(null) }
                 var pendingExtractedImages by remember { mutableStateOf<Set<Int>?>(null) }
                 var pendingFormUpdates by remember { mutableStateOf<List<FormFieldUpdate>?>(null) }
+                var pendingVisibleSignature by remember {
+                    mutableStateOf<Pair<Bitmap, VisibleSignatureSettings>?>(null)
+                }
+                DisposableEffect(Unit) {
+                    onDispose {
+                        pendingVisibleSignature?.first?.recycle()
+                        pendingVisibleSignature = null
+                    }
+                }
                 val picker = rememberLauncherForActivityResult(
                     contract = ActivityResultContracts.OpenDocument(),
                 ) { uri ->
@@ -462,6 +474,34 @@ class MainActivity : ComponentActivity() {
                         viewModel.selectPdfForFormFilling(uri)
                     }
                 }
+                val createSignedPdf = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.CreateDocument("application/pdf"),
+                ) { uri ->
+                    val pending = pendingVisibleSignature
+                    pendingVisibleSignature = null
+                    if (uri == null || pending == null) {
+                        pending?.first?.recycle()
+                        viewModel.cancelPdfSigning()
+                    } else {
+                        viewModel.signSelectedPdf(uri, pending.first, pending.second)
+                    }
+                }
+                val signatureImagePicker = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.OpenDocument(),
+                ) { uri ->
+                    if (uri != null) {
+                        retainReadPermission(uri)
+                        viewModel.selectImportedSignature(uri)
+                    }
+                }
+                val signPdfPicker = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.OpenDocument(),
+                ) { uri ->
+                    if (uri != null) {
+                        retainReadPermission(uri)
+                        viewModel.selectPdfForSigning(uri)
+                    }
+                }
                 val createScannedPdf = rememberLauncherForActivityResult(
                     contract = ActivityResultContracts.CreateDocument("application/pdf"),
                 ) { uri ->
@@ -697,6 +737,27 @@ class MainActivity : ComponentActivity() {
                     },
                     onOpenFilledFormPdf = viewModel::openFilledFormPdf,
                     onDismissFillFormsResult = viewModel::clearFillFormsResult,
+                    signPdfState = viewModel.signPdfState,
+                    onSignPdf = { signPdfPicker.launch(arrayOf("application/pdf")) },
+                    onImportSignature = { signatureImagePicker.launch(arrayOf("image/*")) },
+                    renderSignaturePreview = viewModel::renderSignaturePreview,
+                    onConfirmSignature = { signature, settings ->
+                        pendingVisibleSignature?.first?.recycle()
+                        pendingVisibleSignature = try {
+                            signature.copy(Bitmap.Config.ARGB_8888, false)?.let { it to settings }
+                        } catch (_: OutOfMemoryError) {
+                            null
+                        }
+                        if (pendingVisibleSignature == null) viewModel.signatureCopyFailed()
+                        else createSignedPdf.launch("QuietPDF-visibly-signed.pdf")
+                    },
+                    onCancelPdfSigning = {
+                        pendingVisibleSignature?.first?.recycle()
+                        pendingVisibleSignature = null
+                        viewModel.cancelPdfSigning()
+                    },
+                    onOpenSignedPdf = viewModel::openSignedPdf,
+                    onDismissSignPdfResult = viewModel::clearSignPdfResult,
                     scannerCaptureState = viewModel.scannerCaptureState,
                     onScanDocument = {
                         if (ContextCompat.checkSelfPermission(
@@ -887,6 +948,16 @@ fun QuietPdfApp(
     onCancelFormFilling: () -> Unit = {},
     onOpenFilledFormPdf: () -> Unit = {},
     onDismissFillFormsResult: () -> Unit = {},
+    signPdfState: SignPdfState = SignPdfState.Idle,
+    onSignPdf: () -> Unit = {},
+    onImportSignature: () -> Unit = {},
+    renderSignaturePreview: suspend (Bitmap, VisibleSignatureSettings, Int) -> SignPdfPreviewResult = { _, _, _ ->
+        SignPdfPreviewResult.Failed
+    },
+    onConfirmSignature: (Bitmap, VisibleSignatureSettings) -> Unit = { _, _ -> },
+    onCancelPdfSigning: () -> Unit = {},
+    onOpenSignedPdf: () -> Unit = {},
+    onDismissSignPdfResult: () -> Unit = {},
     scannerCaptureState: ScannerCaptureState = ScannerCaptureState.Idle,
     onScanDocument: () -> Unit = {},
     onBeginScannerCapture: () -> File? = { null },
@@ -1033,6 +1104,11 @@ fun QuietPdfApp(
                     onCancelFormFilling = onCancelFormFilling,
                     onOpenFilledFormPdf = onOpenFilledFormPdf,
                     onDismissFillFormsResult = onDismissFillFormsResult,
+                    signPdfState = signPdfState,
+                    onSignPdf = onSignPdf,
+                    onCancelPdfSigning = onCancelPdfSigning,
+                    onOpenSignedPdf = onOpenSignedPdf,
+                    onDismissSignPdfResult = onDismissSignPdfResult,
                     scannerCaptureState = scannerCaptureState,
                     onScanDocument = onScanDocument,
                     onOpenScannerPdf = onOpenScannerPdf,
@@ -1200,6 +1276,17 @@ fun QuietPdfApp(
             analysis = fillFormsState.analysis,
             onConfirm = onConfirmFormFilling,
             onCancel = onCancelFormFilling,
+        )
+    }
+    if (signPdfState is SignPdfState.Configuring) {
+        SignPdfDialog(
+            documentName = signPdfState.displayName,
+            pageCount = signPdfState.pageCount,
+            importedSignature = signPdfState.importedSignature,
+            onImportSignature = onImportSignature,
+            renderPreview = renderSignaturePreview,
+            onConfirm = onConfirmSignature,
+            onCancel = onCancelPdfSigning,
         )
     }
 }
@@ -2910,6 +2997,11 @@ private fun OpenPdfContent(
     onCancelFormFilling: () -> Unit,
     onOpenFilledFormPdf: () -> Unit,
     onDismissFillFormsResult: () -> Unit,
+    signPdfState: SignPdfState,
+    onSignPdf: () -> Unit,
+    onCancelPdfSigning: () -> Unit,
+    onOpenSignedPdf: () -> Unit,
+    onDismissSignPdfResult: () -> Unit,
     scannerCaptureState: ScannerCaptureState,
     onScanDocument: () -> Unit,
     onOpenScannerPdf: () -> Unit,
@@ -2938,6 +3030,7 @@ private fun OpenPdfContent(
         || extractImagesState is ExtractImagesState.Failed ||
         extractImagesState is ExtractImagesState.Completed
         || fillFormsState is FillFormsState.Failed || fillFormsState is FillFormsState.Completed
+        || signPdfState is SignPdfState.Failed || signPdfState is SignPdfState.Completed
         || scannerCaptureState is ScannerCaptureState.Failed ||
         scannerCaptureState is ScannerCaptureState.Completed
     LaunchedEffect(hasResult) {
@@ -3203,6 +3296,24 @@ private fun OpenPdfContent(
             }
             else -> Unit
         }
+        when (signPdfState) {
+            SignPdfState.PreparingPdf -> {
+                OperationProgressContent(R.string.sign_pdf_preparing)
+                return@Column
+            }
+            SignPdfState.PreparingImage -> {
+                OperationProgressContent(R.string.sign_pdf_preparing_image)
+                return@Column
+            }
+            SignPdfState.Saving -> {
+                OperationProgressContent(
+                    R.string.sign_pdf_saving,
+                    onCancel = onCancelPdfSigning,
+                )
+                return@Column
+            }
+            else -> Unit
+        }
         when (state) {
             PdfOpenState.Idle -> IdleContent(
                 onOpenPdf = onOpenPdf,
@@ -3259,6 +3370,10 @@ private fun OpenPdfContent(
                 onFillForms = onFillForms,
                 onOpenFilledFormPdf = onOpenFilledFormPdf,
                 onDismissFillFormsResult = onDismissFillFormsResult,
+                signPdfState = signPdfState,
+                onSignPdf = onSignPdf,
+                onOpenSignedPdf = onOpenSignedPdf,
+                onDismissSignPdfResult = onDismissSignPdfResult,
                 scannerCaptureState = scannerCaptureState,
                 onScanDocument = onScanDocument,
                 onOpenScannerPdf = onOpenScannerPdf,
@@ -3327,6 +3442,10 @@ private fun IdleContent(
     onFillForms: () -> Unit,
     onOpenFilledFormPdf: () -> Unit,
     onDismissFillFormsResult: () -> Unit,
+    signPdfState: SignPdfState,
+    onSignPdf: () -> Unit,
+    onOpenSignedPdf: () -> Unit,
+    onDismissSignPdfResult: () -> Unit,
     scannerCaptureState: ScannerCaptureState,
     onScanDocument: () -> Unit,
     onOpenScannerPdf: () -> Unit,
@@ -3448,6 +3567,12 @@ private fun IdleContent(
         label = stringResource(R.string.fill_forms),
         onClick = onFillForms,
         testTag = "fill_forms_button",
+    )
+    Spacer(Modifier.height(4.dp))
+    OpenButton(
+        label = stringResource(R.string.sign_pdf),
+        onClick = onSignPdf,
+        testTag = "sign_pdf_button",
     )
     if (imagesToPdfState is ImagesToPdfState.Failed) {
         Spacer(Modifier.height(20.dp))
@@ -3843,6 +3968,39 @@ private fun IdleContent(
                     modifier = Modifier.testTag("open_filled_form_pdf"),
                 ) { Text(stringResource(R.string.open_pdf)) }
                 TextButton(onClick = onDismissFillFormsResult) {
+                    Text(stringResource(R.string.dismiss))
+                }
+            }
+        }
+        else -> Unit
+    }
+    when (signPdfState) {
+        is SignPdfState.Failed -> {
+            Spacer(Modifier.height(20.dp))
+            Text(
+                text = stringResource(signPdfState.failure.messageResource),
+                color = MaterialTheme.colorScheme.error,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.testTag("sign_pdf_error"),
+            )
+            TextButton(onClick = onDismissSignPdfResult) {
+                Text(stringResource(R.string.dismiss))
+            }
+        }
+        is SignPdfState.Completed -> {
+            Spacer(Modifier.height(20.dp))
+            Text(
+                text = stringResource(R.string.sign_pdf_completed, signPdfState.pageCount),
+                color = MaterialTheme.colorScheme.primary,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.testTag("sign_pdf_success"),
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(
+                    onClick = onOpenSignedPdf,
+                    modifier = Modifier.testTag("open_signed_pdf"),
+                ) { Text(stringResource(R.string.open_pdf)) }
+                TextButton(onClick = onDismissSignPdfResult) {
                     Text(stringResource(R.string.dismiss))
                 }
             }

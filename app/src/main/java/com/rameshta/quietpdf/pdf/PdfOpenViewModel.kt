@@ -355,6 +355,31 @@ enum class FillFormsFailure(@get:StringRes val messageResource: Int) {
     UnableToSave(R.string.fill_forms_save_error),
 }
 
+sealed interface SignPdfState {
+    data object Idle : SignPdfState
+    data object PreparingPdf : SignPdfState
+    data object PreparingImage : SignPdfState
+    data class Configuring(
+        val sourceUri: Uri,
+        val displayName: String,
+        val pageCount: Int,
+        val importedSignature: Bitmap? = null,
+    ) : SignPdfState
+    data object Saving : SignPdfState
+    data class Completed(val outputUri: Uri, val pageCount: Int) : SignPdfState
+    data class Failed(val failure: SignPdfFailure) : SignPdfState
+}
+
+enum class SignPdfFailure(@get:StringRes val messageResource: Int) {
+    PasswordProtected(R.string.sign_pdf_password_protected),
+    InvalidDocument(R.string.sign_pdf_invalid_document),
+    InvalidSignature(R.string.sign_pdf_invalid_signature),
+    InvalidImage(R.string.sign_pdf_invalid_image),
+    PermissionDenied(R.string.sign_pdf_permission_denied),
+    InsufficientMemory(R.string.sign_pdf_memory_error),
+    UnableToSave(R.string.sign_pdf_save_error),
+}
+
 enum class TextWatermarkFailure(@get:StringRes val messageResource: Int) {
     PasswordProtected(R.string.text_watermark_password_protected),
     InvalidDocument(R.string.text_watermark_invalid_document),
@@ -483,6 +508,7 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
     private val imageWatermarkEngine = ImageWatermarkEngine(application)
     private val extractImagesEngine = ExtractImagesEngine(application)
     private val fillFormsEngine = FillFormsEngine(application)
+    private val signPdfEngine = SignPdfEngine(application)
     private val scannerCaptureEngine = ScannerCaptureEngine(application)
     private val scannerCropCorrectionEngine = ScannerCropCorrectionEngine(application.cacheDir)
     private val scannerEnhancementEngine = ScannerEnhancementEngine(application.cacheDir)
@@ -503,6 +529,8 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
     private var imageWatermarkJob: Job? = null
     private var extractImagesJob: Job? = null
     private var fillFormsJob: Job? = null
+    private var signPdfJob: Job? = null
+    private var signPdfConfiguration: SignPdfState.Configuring? = null
     private var extractImagesConfiguration: ExtractImagesState.Configuring? = null
     private var scannerJob: Job? = null
     private var scannerEnhancementJob: Job? = null
@@ -575,6 +603,9 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
         private set
 
     var fillFormsState: FillFormsState by mutableStateOf(FillFormsState.Idle)
+        private set
+
+    var signPdfState: SignPdfState by mutableStateOf(SignPdfState.Idle)
         private set
 
     var scannerCaptureState: ScannerCaptureState by mutableStateOf(ScannerCaptureState.Idle)
@@ -2037,6 +2068,8 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
     fun selectPdfForImageExtraction(uri: Uri) {
         extractImagesJob?.cancel()
         fillFormsJob?.cancel()
+        signPdfJob?.cancel()
+        clearSignPdfConfiguration()
         clearExtractImagesConfiguration()
         extractImagesEngine.clearShareFiles()
         extractImagesState = ExtractImagesState.Preparing
@@ -2227,6 +2260,117 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
 
     fun clearFillFormsResult() {
         fillFormsState = FillFormsState.Idle
+    }
+
+    fun selectPdfForSigning(uri: Uri) {
+        signPdfJob?.cancel()
+        clearSignPdfConfiguration()
+        signPdfState = SignPdfState.PreparingPdf
+        signPdfJob = viewModelScope.launch {
+            signPdfState = when (val result = signPdfEngine.analyze(uri)) {
+                is SignPdfAnalysisResult.Ready -> SignPdfState.Configuring(
+                    uri,
+                    withContext(Dispatchers.IO) { queryDisplayName(uri) } ?: "PDF",
+                    result.analysis.pageCount,
+                ).also { signPdfConfiguration = it }
+                SignPdfAnalysisResult.PasswordProtected ->
+                    SignPdfState.Failed(SignPdfFailure.PasswordProtected)
+                SignPdfAnalysisResult.InvalidDocument ->
+                    SignPdfState.Failed(SignPdfFailure.InvalidDocument)
+                SignPdfAnalysisResult.PermissionDenied ->
+                    SignPdfState.Failed(SignPdfFailure.PermissionDenied)
+                SignPdfAnalysisResult.InsufficientMemory ->
+                    SignPdfState.Failed(SignPdfFailure.InsufficientMemory)
+            }
+        }
+    }
+
+    fun selectImportedSignature(uri: Uri) {
+        val configuring = signPdfConfiguration ?: return
+        signPdfJob?.cancel()
+        signPdfState = SignPdfState.PreparingImage
+        signPdfJob = viewModelScope.launch {
+            signPdfState = when (val result = signPdfEngine.decodeSignatureImage(uri)) {
+                is SignatureImageResult.Ready -> configuring.copy(importedSignature = result.bitmap).also {
+                    configuring.importedSignature?.recycle()
+                    signPdfConfiguration = it
+                }
+                SignatureImageResult.InvalidImage -> SignPdfState.Failed(SignPdfFailure.InvalidImage)
+                SignatureImageResult.PermissionDenied -> SignPdfState.Failed(SignPdfFailure.PermissionDenied)
+                SignatureImageResult.InsufficientMemory ->
+                    SignPdfState.Failed(SignPdfFailure.InsufficientMemory)
+            }
+            if (signPdfState is SignPdfState.Failed) clearSignPdfConfiguration()
+        }
+    }
+
+    suspend fun renderSignaturePreview(
+        signature: Bitmap,
+        settings: VisibleSignatureSettings,
+        targetWidth: Int,
+    ): SignPdfPreviewResult {
+        val configuring = signPdfConfiguration ?: return SignPdfPreviewResult.Failed
+        return signPdfEngine.preview(configuring.sourceUri, signature, settings, targetWidth)
+    }
+
+    fun signSelectedPdf(outputUri: Uri, signature: Bitmap, settings: VisibleSignatureSettings) {
+        val configuring = signPdfConfiguration ?: run {
+            signature.recycle()
+            return
+        }
+        if (!settings.isValid(configuring.pageCount, signature)) {
+            signature.recycle()
+            clearSignPdfConfiguration()
+            signPdfState = SignPdfState.Failed(SignPdfFailure.InvalidSignature)
+            return
+        }
+        signPdfJob?.cancel()
+        signPdfState = SignPdfState.Saving
+        signPdfJob = viewModelScope.launch {
+            try {
+                signPdfState = when (val result = signPdfEngine.sign(
+                    configuring.sourceUri, outputUri, signature, settings, configuring.pageCount,
+                )) {
+                    is SignPdfResult.Success -> SignPdfState.Completed(outputUri, result.pageCount)
+                    SignPdfResult.PasswordProtected -> SignPdfState.Failed(SignPdfFailure.PasswordProtected)
+                    SignPdfResult.InvalidDocument -> SignPdfState.Failed(SignPdfFailure.InvalidDocument)
+                    SignPdfResult.InvalidSignature -> SignPdfState.Failed(SignPdfFailure.InvalidSignature)
+                    SignPdfResult.PermissionDenied -> SignPdfState.Failed(SignPdfFailure.PermissionDenied)
+                    SignPdfResult.InsufficientMemory -> SignPdfState.Failed(SignPdfFailure.InsufficientMemory)
+                    SignPdfResult.Failed -> SignPdfState.Failed(SignPdfFailure.UnableToSave)
+                }
+            } finally {
+                signature.recycle()
+                clearSignPdfConfiguration()
+            }
+        }
+    }
+
+    fun openSignedPdf() {
+        val completed = signPdfState as? SignPdfState.Completed ?: return
+        signPdfState = SignPdfState.Idle
+        open(completed.outputUri)
+    }
+
+    fun cancelPdfSigning() {
+        signPdfJob?.cancel()
+        clearSignPdfConfiguration()
+        signPdfState = SignPdfState.Idle
+    }
+
+    fun signatureCopyFailed() {
+        clearSignPdfConfiguration()
+        signPdfState = SignPdfState.Failed(SignPdfFailure.InsufficientMemory)
+    }
+
+    fun clearSignPdfResult() {
+        clearSignPdfConfiguration()
+        signPdfState = SignPdfState.Idle
+    }
+
+    private fun clearSignPdfConfiguration() {
+        signPdfConfiguration?.importedSignature?.recycle()
+        signPdfConfiguration = null
     }
 
     fun rejectUnsupportedUri() {
