@@ -132,6 +132,38 @@ class QuietPdfAppTest {
         composeRule.onNodeWithTag("reset_zoom_1").assertIsDisplayed()
     }
 
+    @Test
+    fun readerModeMenu_switchesBetweenAllSupportedModesLazily() {
+        val renderCount = AtomicInteger()
+        setContent(
+            state = PdfOpenState.Opened(
+                uri = Uri.parse("content://test/reader-modes"),
+                displayName = "modes.pdf",
+                pageCount = 1_000,
+            ),
+            renderPage = { _, _ ->
+                renderCount.incrementAndGet()
+                PageRenderResult.Ready(
+                    Bitmap.createBitmap(100, 140, Bitmap.Config.ARGB_8888),
+                )
+            },
+        )
+
+        composeRule.onNodeWithTag("reader_vertical").assertIsDisplayed()
+        selectReaderMode("HorizontalContinuous")
+        composeRule.onNodeWithTag("reader_horizontal").assertIsDisplayed()
+        selectReaderMode("SinglePage")
+        composeRule.onNodeWithTag("reader_single_page").assertIsDisplayed()
+        composeRule.waitForIdle()
+
+        assertTrue("Reader modes rendered too many pages", renderCount.get() < 30)
+    }
+
+    private fun selectReaderMode(modeName: String) {
+        composeRule.onNodeWithTag("reader_mode_button").performClick()
+        composeRule.onNodeWithTag("reader_mode_$modeName").performClick()
+    }
+
     private fun setContent(
         state: PdfOpenState,
         renderPage: suspend (Int, Int) -> PageRenderResult = { _, _ ->
