@@ -22,6 +22,8 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -74,6 +76,8 @@ import com.rameshta.quietpdf.pdf.SplitPdfPlanner
 import com.rameshta.quietpdf.pdf.SplitPdfState
 import com.rameshta.quietpdf.pdf.ExtractPageSelectionParser
 import com.rameshta.quietpdf.pdf.ExtractPagesState
+import com.rameshta.quietpdf.pdf.DeletePageSelectionPlanner
+import com.rameshta.quietpdf.pdf.DeletePagesState
 import com.rameshta.quietpdf.ui.reader.PdfReaderScreen
 import com.rameshta.quietpdf.ui.theme.QuietPDFTheme
 
@@ -155,6 +159,20 @@ class MainActivity : ComponentActivity() {
                         viewModel.selectPdfForExtraction(uri)
                     }
                 }
+                val createDeletedPagesPdf = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.CreateDocument("application/pdf"),
+                ) { uri ->
+                    if (uri == null) viewModel.cancelDeletePages()
+                    else viewModel.deleteSelectedPages(uri)
+                }
+                val deletePagesPicker = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.OpenDocument(),
+                ) { uri ->
+                    if (uri != null) {
+                        retainReadPermission(uri)
+                        viewModel.selectPdfForPageDeletion(uri)
+                    }
+                }
 
                 QuietPdfApp(
                     state = viewModel.state,
@@ -198,6 +216,14 @@ class MainActivity : ComponentActivity() {
                     },
                     onCancelPageExtraction = viewModel::cancelExtractPages,
                     onDismissPageExtractionFailure = viewModel::clearExtractPagesFailure,
+                    deletePagesState = viewModel.deletePagesState,
+                    onDeletePages = { deletePagesPicker.launch(arrayOf("application/pdf")) },
+                    onConfirmPageDeletion = { deletedPages ->
+                        viewModel.configurePageDeletion(deletedPages)
+                        createDeletedPagesPdf.launch("QuietPDF-pages-removed.pdf")
+                    },
+                    onCancelPageDeletion = viewModel::cancelDeletePages,
+                    onDismissPageDeletionFailure = viewModel::clearDeletePagesFailure,
                 )
             }
         }
@@ -283,6 +309,11 @@ fun QuietPdfApp(
     onConfirmPageExtraction: (IntArray) -> Unit = {},
     onCancelPageExtraction: () -> Unit = {},
     onDismissPageExtractionFailure: () -> Unit = {},
+    deletePagesState: DeletePagesState = DeletePagesState.Idle,
+    onDeletePages: () -> Unit = {},
+    onConfirmPageDeletion: (IntArray) -> Unit = {},
+    onCancelPageDeletion: () -> Unit = {},
+    onDismissPageDeletionFailure: () -> Unit = {},
 ) {
     if (state is PdfOpenState.Opened) {
         PdfReaderScreen(
@@ -333,6 +364,10 @@ fun QuietPdfApp(
                     onExtractPages = onExtractPages,
                     onCancelPageExtraction = onCancelPageExtraction,
                     onDismissPageExtractionFailure = onDismissPageExtractionFailure,
+                    deletePagesState = deletePagesState,
+                    onDeletePages = onDeletePages,
+                    onCancelPageDeletion = onCancelPageDeletion,
+                    onDismissPageDeletionFailure = onDismissPageDeletionFailure,
                     contentPadding = PaddingValues(24.dp),
                 )
             }
@@ -370,6 +405,83 @@ fun QuietPdfApp(
             onCancel = onCancelPageExtraction,
         )
     }
+    if (deletePagesState is DeletePagesState.Configuring) {
+        DeletePagesDialog(
+            documentName = deletePagesState.displayName,
+            pageCount = deletePagesState.pageCount,
+            onConfirm = onConfirmPageDeletion,
+            onCancel = onCancelPageDeletion,
+        )
+    }
+}
+
+@Composable
+private fun DeletePagesDialog(
+    documentName: String,
+    pageCount: Int,
+    onConfirm: (IntArray) -> Unit,
+    onCancel: () -> Unit,
+) {
+    var pageSelection by remember(documentName, pageCount) { mutableStateOf("") }
+    val deletedPages = ExtractPageSelectionParser.parse(pageSelection, pageCount)
+    val keptPages = deletedPages?.let {
+        DeletePageSelectionPlanner.keptPageIndices(pageCount, it)
+    }
+    AlertDialog(
+        onDismissRequest = onCancel,
+        title = { Text(stringResource(R.string.delete_pages_title)) },
+        text = {
+            Column {
+                Text(stringResource(R.string.delete_pages_document_summary, documentName, pageCount))
+                OutlinedTextField(
+                    value = pageSelection,
+                    onValueChange = { pageSelection = it },
+                    label = { Text(stringResource(R.string.delete_pages_selection_label)) },
+                    supportingText = {
+                        Text(stringResource(R.string.delete_pages_selection_help, pageCount))
+                    },
+                    singleLine = true,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 12.dp)
+                        .testTag("delete_pages_input"),
+                )
+                when {
+                    deletedPages != null && keptPages != null -> Text(
+                        text = stringResource(
+                            R.string.delete_pages_selection_count,
+                            deletedPages.size,
+                            keptPages.size,
+                        ),
+                        style = MaterialTheme.typography.labelLarge,
+                        modifier = Modifier
+                            .padding(top = 12.dp)
+                            .testTag("delete_pages_count"),
+                    )
+                    pageSelection.isNotBlank() -> Text(
+                        text = stringResource(R.string.delete_pages_invalid_selection),
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier
+                            .padding(top = 12.dp)
+                            .testTag("delete_pages_selection_error"),
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { if (keptPages != null) onConfirm(deletedPages) },
+                enabled = keptPages != null,
+                modifier = Modifier.testTag("delete_pages_confirm"),
+            ) { Text(stringResource(R.string.save_without_pages)) }
+        },
+        dismissButton = {
+            TextButton(onClick = onCancel, modifier = Modifier.testTag("delete_pages_cancel")) {
+                Text(stringResource(R.string.cancel))
+            }
+        },
+        modifier = Modifier.testTag("delete_pages_dialog"),
+    )
 }
 
 @Composable
@@ -714,10 +826,16 @@ private fun OpenPdfContent(
     onExtractPages: () -> Unit,
     onCancelPageExtraction: () -> Unit,
     onDismissPageExtractionFailure: () -> Unit,
+    deletePagesState: DeletePagesState,
+    onDeletePages: () -> Unit,
+    onCancelPageDeletion: () -> Unit,
+    onDismissPageDeletionFailure: () -> Unit,
     contentPadding: PaddingValues,
 ) {
     Column(
-        modifier = Modifier.padding(contentPadding),
+        modifier = Modifier
+            .verticalScroll(rememberScrollState())
+            .padding(contentPadding),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         if (imagesToPdfState is ImagesToPdfState.Creating) {
@@ -770,6 +888,22 @@ private fun OpenPdfContent(
             }
             else -> Unit
         }
+        when (deletePagesState) {
+            DeletePagesState.Preparing -> {
+                OperationProgressContent(R.string.delete_pages_preparing)
+                return@Column
+            }
+            is DeletePagesState.Deleting -> {
+                OperationProgressContent(
+                    messageResource = R.string.delete_pages_deleting,
+                    firstArgument = deletePagesState.deletedPageCount,
+                    secondArgument = deletePagesState.remainingPageCount,
+                    onCancel = onCancelPageDeletion,
+                )
+                return@Column
+            }
+            else -> Unit
+        }
         when (state) {
             PdfOpenState.Idle -> IdleContent(
                 onOpenPdf = onOpenPdf,
@@ -785,6 +919,9 @@ private fun OpenPdfContent(
                 extractPagesState = extractPagesState,
                 onExtractPages = onExtractPages,
                 onDismissPageExtractionFailure = onDismissPageExtractionFailure,
+                deletePagesState = deletePagesState,
+                onDeletePages = onDeletePages,
+                onDismissPageDeletionFailure = onDismissPageDeletionFailure,
             )
             PdfOpenState.Opening -> OpeningContent()
             is PdfOpenState.Opened -> Unit
@@ -808,6 +945,9 @@ private fun IdleContent(
     extractPagesState: ExtractPagesState,
     onExtractPages: () -> Unit,
     onDismissPageExtractionFailure: () -> Unit,
+    deletePagesState: DeletePagesState,
+    onDeletePages: () -> Unit,
+    onDismissPageDeletionFailure: () -> Unit,
 ) {
     Text(
         text = stringResource(R.string.home_title),
@@ -847,6 +987,12 @@ private fun IdleContent(
         label = stringResource(R.string.extract_pages),
         onClick = onExtractPages,
         testTag = "extract_pages_button",
+    )
+    Spacer(Modifier.height(12.dp))
+    OpenButton(
+        label = stringResource(R.string.delete_pages),
+        onClick = onDeletePages,
+        testTag = "delete_pages_button",
     )
     if (imagesToPdfState is ImagesToPdfState.Failed) {
         Spacer(Modifier.height(20.dp))
@@ -908,6 +1054,18 @@ private fun IdleContent(
             modifier = Modifier.testTag("extract_pages_error"),
         )
         TextButton(onClick = onDismissPageExtractionFailure) {
+            Text(stringResource(R.string.dismiss))
+        }
+    }
+    if (deletePagesState is DeletePagesState.Failed) {
+        Spacer(Modifier.height(20.dp))
+        Text(
+            text = stringResource(deletePagesState.failure.messageResource),
+            color = MaterialTheme.colorScheme.error,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.testTag("delete_pages_error"),
+        )
+        TextButton(onClick = onDismissPageDeletionFailure) {
             Text(stringResource(R.string.dismiss))
         }
     }

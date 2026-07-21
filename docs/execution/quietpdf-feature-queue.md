@@ -18,8 +18,8 @@ COMPLETED T11-Images-To-PDF
 COMPLETED T12-Images-PDF-Layout
 COMPLETED T13-Merge-PDF
 COMPLETED T14-Split-PDF
-T15-Extract-Pages
-T16-Delete-Pages
+COMPLETED T15-Extract-Pages
+COMPLETED T16-Delete-Pages
 T17-Rearrange-Pages
 T18-Rotate-Pages
 T19-Duplicate-Pages

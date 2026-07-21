@@ -78,6 +78,27 @@ sealed interface ExtractPagesState {
     data class Failed(val failure: ExtractPagesFailure) : ExtractPagesState
 }
 
+sealed interface DeletePagesState {
+    data object Idle : DeletePagesState
+    data object Preparing : DeletePagesState
+    data class Configuring(
+        val sourceUri: Uri,
+        val displayName: String,
+        val pageCount: Int,
+    ) : DeletePagesState
+    data class Deleting(val deletedPageCount: Int, val remainingPageCount: Int) : DeletePagesState
+    data class Failed(val failure: DeletePagesFailure) : DeletePagesState
+}
+
+enum class DeletePagesFailure(@get:StringRes val messageResource: Int) {
+    NeedAtLeastTwoPages(R.string.delete_pages_need_two_pages),
+    InvalidDocument(R.string.delete_pages_invalid_document),
+    InvalidSelection(R.string.delete_pages_invalid_selection),
+    PermissionDenied(R.string.delete_pages_permission_denied),
+    InsufficientMemory(R.string.delete_pages_memory_error),
+    UnableToSave(R.string.delete_pages_save_error),
+}
+
 enum class ExtractPagesFailure(@get:StringRes val messageResource: Int) {
     InvalidDocument(R.string.extract_pages_invalid_document),
     InvalidSelection(R.string.extract_pages_invalid_selection),
@@ -128,15 +149,18 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
     private val mergePdfEngine = MergePdfEngine(application)
     private val splitPdfEngine = SplitPdfEngine(application)
     private val extractPagesEngine = ExtractPagesEngine(application)
+    private val deletePagesEngine = DeletePagesEngine(application)
     private var openJob: Job? = null
     private var imageCreationJob: Job? = null
     private var mergeJob: Job? = null
     private var splitJob: Job? = null
     private var extractPagesJob: Job? = null
+    private var deletePagesJob: Job? = null
     private var selectedImageUris: List<Uri> = emptyList()
     private var selectedImageLayout = ImagePdfLayout()
     private var selectedSplitRanges: List<SplitPageRange> = emptyList()
     private var selectedExtractPageIndices = IntArray(0)
+    private var selectedDeletedPageIndices = IntArray(0)
     private var documentGeneration = 0L
     private val pageCache = object : LruCache<PageCacheKey, Bitmap>(pageCacheBytes()) {
         override fun sizeOf(key: PageCacheKey, value: Bitmap): Int = value.allocationByteCount
@@ -155,6 +179,9 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
         private set
 
     var extractPagesState: ExtractPagesState by mutableStateOf(ExtractPagesState.Idle)
+        private set
+
+    var deletePagesState: DeletePagesState by mutableStateOf(DeletePagesState.Idle)
         private set
 
     fun open(uri: Uri) {
@@ -470,6 +497,98 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
         extractPagesState = ExtractPagesState.Idle
     }
 
+    fun selectPdfForPageDeletion(uri: Uri) {
+        deletePagesJob?.cancel()
+        selectedDeletedPageIndices = IntArray(0)
+        deletePagesState = DeletePagesState.Preparing
+        deletePagesJob = viewModelScope.launch {
+            deletePagesState = when (val result = withContext(Dispatchers.IO) { opener.open(uri) }) {
+                is PdfOpenResult.Success -> {
+                    if (result.document.pageCount < 2) {
+                        DeletePagesState.Failed(DeletePagesFailure.NeedAtLeastTwoPages)
+                    } else {
+                        DeletePagesState.Configuring(
+                            sourceUri = uri,
+                            displayName = result.document.displayName ?: "PDF",
+                            pageCount = result.document.pageCount,
+                        )
+                    }
+                }
+                is PdfOpenResult.Failure -> when (result.reason) {
+                    PdfOpenFailure.PermissionDenied -> {
+                        DeletePagesState.Failed(DeletePagesFailure.PermissionDenied)
+                    }
+                    PdfOpenFailure.Empty -> {
+                        DeletePagesState.Failed(DeletePagesFailure.NeedAtLeastTwoPages)
+                    }
+                    else -> DeletePagesState.Failed(DeletePagesFailure.InvalidDocument)
+                }
+            }
+        }
+    }
+
+    fun configurePageDeletion(deletedPageIndices: IntArray) {
+        if (deletePagesState !is DeletePagesState.Configuring) return
+        selectedDeletedPageIndices = deletedPageIndices.copyOf()
+    }
+
+    fun deleteSelectedPages(outputUri: Uri) {
+        val configuring = deletePagesState as? DeletePagesState.Configuring ?: return
+        val deletedPages = selectedDeletedPageIndices.copyOf()
+        val keptPages = DeletePageSelectionPlanner.keptPageIndices(
+            configuring.pageCount,
+            deletedPages,
+        )
+        if (keptPages == null) {
+            deletePagesState = DeletePagesState.Failed(DeletePagesFailure.InvalidSelection)
+            return
+        }
+        deletePagesJob?.cancel()
+        deletePagesState = DeletePagesState.Deleting(deletedPages.size, keptPages.size)
+        deletePagesJob = viewModelScope.launch {
+            deletePagesState = when (
+                val result = deletePagesEngine.deletePages(
+                    sourceUri = configuring.sourceUri,
+                    outputUri = outputUri,
+                    sourcePageCount = configuring.pageCount,
+                    deletedPageIndices = deletedPages,
+                )
+            ) {
+                is DeletePagesResult.Success -> {
+                    open(outputUri)
+                    DeletePagesState.Idle
+                }
+                DeletePagesResult.InvalidDocument -> {
+                    DeletePagesState.Failed(DeletePagesFailure.InvalidDocument)
+                }
+                DeletePagesResult.InvalidSelection -> {
+                    DeletePagesState.Failed(DeletePagesFailure.InvalidSelection)
+                }
+                DeletePagesResult.PermissionDenied -> {
+                    DeletePagesState.Failed(DeletePagesFailure.PermissionDenied)
+                }
+                DeletePagesResult.InsufficientMemory -> {
+                    DeletePagesState.Failed(DeletePagesFailure.InsufficientMemory)
+                }
+                DeletePagesResult.Failed -> {
+                    DeletePagesState.Failed(DeletePagesFailure.UnableToSave)
+                }
+            }
+            selectedDeletedPageIndices = IntArray(0)
+        }
+    }
+
+    fun cancelDeletePages() {
+        deletePagesJob?.cancel()
+        selectedDeletedPageIndices = IntArray(0)
+        deletePagesState = DeletePagesState.Idle
+    }
+
+    fun clearDeletePagesFailure() {
+        selectedDeletedPageIndices = IntArray(0)
+        deletePagesState = DeletePagesState.Idle
+    }
+
     fun rejectUnsupportedUri() {
         openJob?.cancel()
         searchEngine.close()
@@ -543,6 +662,7 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
         mergeJob?.cancel()
         splitJob?.cancel()
         extractPagesJob?.cancel()
+        deletePagesJob?.cancel()
         searchEngine.close()
         super.onCleared()
     }
