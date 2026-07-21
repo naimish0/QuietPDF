@@ -42,7 +42,8 @@ android {
                 "ADMOB_HOME_BANNER_ID",
                 "\"${homeBannerId.takeIf { configured }.orEmpty()}\"",
             )
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -89,6 +90,9 @@ dependencies {
     }
     implementation(libs.google.mobile.ads)
     implementation(libs.google.ump)
+    // AdMob declares an old WorkManager runtime transitively. Pin the current stable
+    // release so startup and its generated Room database remain R8-safe.
+    implementation(libs.androidx.work.runtime)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

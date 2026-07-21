@@ -270,7 +270,8 @@ class TextWatermarkEngine(context: Context) {
                     nonStrokingAlphaConstant = settings.opacity
                 },
             )
-            stream.setNonStrokingColor(90, 90, 90)
+            val watermarkGray = 90f / 255f
+            stream.setNonStrokingColor(watermarkGray, watermarkGray, watermarkGray)
             stream.transform(Matrix.getRotateInstance(pageAngle.toDouble(), pageX, pageY))
             stream.beginText()
             stream.setFont(font, fontSize)

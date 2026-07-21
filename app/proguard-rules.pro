@@ -14,8 +14,13 @@
 
 # Uncomment this to preserve the line number information for
 # debugging stack traces.
-#-keepattributes SourceFile,LineNumberTable
+-keepattributes SourceFile,LineNumberTable
 
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
-#-renamesourcefileattribute SourceFile
+-renamesourcefileattribute SourceFile
+
+# PDFBox exposes optional JPEG 2000 and certificate-encryption integrations. QuietPDF does not
+# package either optional provider and does not expose certificate-based PDF encryption workflows.
+-dontwarn com.gemalto.jp2.**
+-dontwarn org.bouncycastle.**

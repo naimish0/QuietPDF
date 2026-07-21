@@ -1205,12 +1205,13 @@ private fun RenderedPage(
     val resetLabel = stringResource(R.string.reset_zoom)
     var viewport by remember { mutableStateOf(IntSize.Zero) }
     val viewportSize = Size(viewport.width.toFloat(), viewport.height.toFloat())
-    val transformableState = rememberTransformableState { zoomChange, panChange, _ ->
+    val transformableState = rememberTransformableState { centroid, zoomChange, panChange, _ ->
         onZoomStateChange(
             zoomState.transform(
                 zoomChange = zoomChange,
                 panChange = panChange,
                 viewportSize = viewportSize,
+                centroid = centroid,
             ),
         )
     }
