@@ -29,6 +29,8 @@ import com.rameshta.quietpdf.pdf.PdfSearchMatch
 import com.rameshta.quietpdf.pdf.PdfSearchResult
 import com.rameshta.quietpdf.pdf.PdfOutlineEntry
 import com.rameshta.quietpdf.pdf.PdfTableOfContentsResult
+import com.rameshta.quietpdf.pdf.PdfHealthReport
+import com.rameshta.quietpdf.pdf.PdfHealthResult
 import com.rameshta.quietpdf.ui.theme.QuietPDFTheme
 import org.junit.Rule
 import org.junit.Assert.assertEquals
@@ -354,6 +356,36 @@ class QuietPdfAppTest {
             .assertIsDisplayed()
     }
 
+    @Test
+    fun pdfHealth_showsVerifiedDocumentProperties() {
+        setContent(
+            state = PdfOpenState.Opened(
+                uri = Uri.parse("content://test/health"),
+                displayName = "healthy.pdf",
+                pageCount = 2,
+            ),
+            inspectHealth = {
+                PdfHealthResult.Healthy(
+                    PdfHealthReport(
+                        pageCount = 2,
+                        fileSizeBytes = 2048,
+                        hasSearchableText = true,
+                        hasTableOfContents = false,
+                        title = "Sample report",
+                        author = null,
+                    ),
+                )
+            },
+        )
+
+        composeRule.onNodeWithTag("reader_mode_button").performClick()
+        composeRule.onNodeWithTag("pdf_health_button").performClick()
+        composeRule.onNodeWithTag("pdf_health_dialog").assertIsDisplayed()
+        composeRule.onNodeWithText("All 2 pages are readable").assertIsDisplayed()
+        composeRule.onNodeWithText("Searchable text").assertIsDisplayed()
+        composeRule.onNodeWithText("Sample report").assertIsDisplayed()
+    }
+
     private fun selectReaderMode(modeName: String) {
         composeRule.onNodeWithTag("reader_mode_button").performClick()
         composeRule.onNodeWithTag("reader_mode_$modeName").performClick()
@@ -372,6 +404,7 @@ class QuietPdfAppTest {
         loadTableOfContents: suspend () -> PdfTableOfContentsResult = {
             PdfTableOfContentsResult.Failed
         },
+        inspectHealth: suspend () -> PdfHealthResult = { PdfHealthResult.Failed },
     ) {
         composeRule.setContent {
             QuietPDFTheme(dynamicColor = false) {
@@ -383,6 +416,7 @@ class QuietPdfAppTest {
                     searchDocument = searchDocument,
                     onToggleBookmark = onToggleBookmark,
                     loadTableOfContents = loadTableOfContents,
+                    inspectHealth = inspectHealth,
                 )
             }
         }

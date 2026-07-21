@@ -48,6 +48,7 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
     private val searchEngine = PdfSearchEngine(application)
     private val bookmarkStore = PdfBookmarkStore(application)
     private val tableOfContentsEngine = PdfTableOfContentsEngine(application)
+    private val healthEngine = PdfHealthEngine(application)
     private var openJob: Job? = null
     private var documentGeneration = 0L
     private val pageCache = object : LruCache<PageCacheKey, Bitmap>(pageCacheBytes()) {
@@ -105,6 +106,11 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
     suspend fun loadTableOfContents(): PdfTableOfContentsResult {
         val opened = state as? PdfOpenState.Opened ?: return PdfTableOfContentsResult.Failed
         return tableOfContentsEngine.load(opened.uri, opened.pageCount)
+    }
+
+    suspend fun inspectHealth(): PdfHealthResult {
+        val opened = state as? PdfOpenState.Opened ?: return PdfHealthResult.Failed
+        return healthEngine.inspect(opened.uri, opened.pageCount)
     }
 
     fun toggleBookmark(pageIndex: Int) {

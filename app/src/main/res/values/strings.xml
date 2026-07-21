@@ -56,4 +56,19 @@
     <string name="table_of_contents_loading">Loading table of contents…</string>
     <string name="table_of_contents_empty">This PDF does not contain a table of contents.</string>
     <string name="table_of_contents_failed">Couldn’t read this PDF’s table of contents.</string>
+    <string name="pdf_health">PDF health</string>
+    <string name="pdf_health_checking">Checking every page…</string>
+    <string name="pdf_health_healthy">All %1$d pages are readable</string>
+    <string name="pdf_health_unreadable_page">Page %1$d could not be read. Keep the original file and try another PDF tool.</string>
+    <string name="pdf_health_permission_denied">File access was lost. Open the PDF again to check it.</string>
+    <string name="pdf_health_failed">QuietPDF couldn’t complete this check. Keep the original file and try opening it again.</string>
+    <string name="pdf_health_file_size">File size</string>
+    <string name="pdf_health_pages">Pages</string>
+    <string name="pdf_health_searchable_text">Searchable text</string>
+    <string name="pdf_health_table_of_contents">Embedded table of contents</string>
+    <string name="pdf_health_title">Title</string>
+    <string name="pdf_health_author">Author</string>
+    <string name="yes">Yes</string>
+    <string name="no">No</string>
+    <string name="unknown">Unknown</string>
 </resources>

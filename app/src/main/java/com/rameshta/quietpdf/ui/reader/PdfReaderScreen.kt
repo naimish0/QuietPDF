@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
 import android.graphics.Bitmap
+import android.text.format.Formatter
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.Canvas
@@ -99,6 +100,8 @@ import com.rameshta.quietpdf.pdf.PdfSearchResult
 import com.rameshta.quietpdf.pdf.PdfSearchMatch
 import com.rameshta.quietpdf.pdf.PdfOutlineEntry
 import com.rameshta.quietpdf.pdf.PdfTableOfContentsResult
+import com.rameshta.quietpdf.pdf.PdfHealthReport
+import com.rameshta.quietpdf.pdf.PdfHealthResult
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -116,6 +119,7 @@ fun PdfReaderScreen(
     searchDocument: suspend (query: String) -> PdfSearchResult,
     onToggleBookmark: (pageIndex: Int) -> Unit,
     loadTableOfContents: suspend () -> PdfTableOfContentsResult,
+    inspectHealth: suspend () -> PdfHealthResult,
 ) {
     val initialPage = document.initialPageIndex.coerceIn(0, document.pageCount - 1)
     var readerMode by remember(document.uri) { mutableStateOf(ReaderMode.VerticalContinuous) }
@@ -142,6 +146,9 @@ fun PdfReaderScreen(
         mutableStateOf<PdfTableOfContentsResult?>(null)
     }
     var tableOfContentsJob by remember(document.uri) { mutableStateOf<Job?>(null) }
+    var healthDialogVisible by remember(document.uri) { mutableStateOf(false) }
+    var healthResult by remember(document.uri) { mutableStateOf<PdfHealthResult?>(null) }
+    var healthJob by remember(document.uri) { mutableStateOf<Job?>(null) }
     val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
     val inheritedColors = MaterialTheme.colorScheme
@@ -211,9 +218,13 @@ fun PdfReaderScreen(
     }
 
     BackHandler(
-        enabled = tableOfContentsDialogVisible || bookmarkDialogVisible || isFullscreen || searchActive,
+        enabled = healthDialogVisible || tableOfContentsDialogVisible || bookmarkDialogVisible ||
+            isFullscreen || searchActive,
     ) {
-        if (tableOfContentsDialogVisible) {
+        if (healthDialogVisible) {
+            healthJob?.cancel()
+            healthDialogVisible = false
+        } else if (tableOfContentsDialogVisible) {
             tableOfContentsJob?.cancel()
             tableOfContentsDialogVisible = false
         } else if (bookmarkDialogVisible) {
@@ -247,6 +258,12 @@ fun PdfReaderScreen(
         tableOfContentsJob = coroutineScope.launch {
             tableOfContentsResult = loadTableOfContents()
         }
+    }
+    val showHealth: () -> Unit = {
+        healthJob?.cancel()
+        healthResult = null
+        healthDialogVisible = true
+        healthJob = coroutineScope.launch { healthResult = inspectHealth() }
     }
     val selectSearchMatch: (Int) -> Unit = { requestedIndex ->
         if (searchMatches.isNotEmpty()) {
@@ -338,6 +355,7 @@ fun PdfReaderScreen(
                         onToggleBookmark = onToggleBookmark,
                         onShowBookmarks = { bookmarkDialogVisible = true },
                         onShowTableOfContents = showTableOfContents,
+                        onShowHealth = showHealth,
                         modifier = Modifier.align(Alignment.TopCenter),
                     )
                 }
@@ -374,6 +392,7 @@ fun PdfReaderScreen(
                         onToggleBookmark = onToggleBookmark,
                         onShowBookmarks = { bookmarkDialogVisible = true },
                         onShowTableOfContents = showTableOfContents,
+                        onShowHealth = showHealth,
                     )
                 },
             ) { innerPadding ->
@@ -416,6 +435,15 @@ fun PdfReaderScreen(
                 },
             )
         }
+        if (healthDialogVisible) {
+            PdfHealthDialog(
+                result = healthResult,
+                onClose = {
+                    healthJob?.cancel()
+                    healthDialogVisible = false
+                },
+            )
+        }
     }
 }
 
@@ -436,6 +464,7 @@ private fun ReaderTopBar(
     onToggleBookmark: (Int) -> Unit,
     onShowBookmarks: () -> Unit,
     onShowTableOfContents: () -> Unit,
+    onShowHealth: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     TopAppBar(
@@ -458,6 +487,7 @@ private fun ReaderTopBar(
                 onToggleBookmark = onToggleBookmark,
                 onShowBookmarks = onShowBookmarks,
                 onShowTableOfContents = onShowTableOfContents,
+                onShowHealth = onShowHealth,
             )
             TextButton(
                 onClick = { onFullscreenChange(!isFullscreen) },
@@ -475,6 +505,83 @@ private fun ReaderTopBar(
         },
         modifier = modifier.testTag("reader_top_bar"),
     )
+}
+
+@Composable
+private fun PdfHealthDialog(result: PdfHealthResult?, onClose: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onClose,
+        title = { Text(stringResource(R.string.pdf_health)) },
+        text = {
+            when (result) {
+                null -> Row(verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp).testTag("pdf_health_progress"),
+                    )
+                    Text(
+                        text = stringResource(R.string.pdf_health_checking),
+                        modifier = Modifier.padding(start = 16.dp),
+                    )
+                }
+                is PdfHealthResult.Healthy -> PdfHealthReportContent(result.report)
+                is PdfHealthResult.UnreadablePage -> Text(
+                    stringResource(R.string.pdf_health_unreadable_page, result.pageIndex + 1),
+                    color = MaterialTheme.colorScheme.error,
+                )
+                PdfHealthResult.PermissionDenied -> Text(
+                    stringResource(R.string.pdf_health_permission_denied),
+                    color = MaterialTheme.colorScheme.error,
+                )
+                PdfHealthResult.Failed -> Text(
+                    stringResource(R.string.pdf_health_failed),
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onClose, modifier = Modifier.testTag("pdf_health_close")) {
+                Text(stringResource(R.string.close))
+            }
+        },
+        modifier = Modifier.testTag("pdf_health_dialog"),
+    )
+}
+
+@Composable
+private fun PdfHealthReportContent(report: PdfHealthReport) {
+    val context = LocalContext.current
+    Column {
+        Text(
+            text = stringResource(R.string.pdf_health_healthy, report.pageCount),
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.testTag("pdf_health_healthy"),
+        )
+        HealthRow(stringResource(R.string.pdf_health_pages), report.pageCount.toString())
+        HealthRow(
+            stringResource(R.string.pdf_health_file_size),
+            report.fileSizeBytes?.let { Formatter.formatShortFileSize(context, it) }
+                ?: stringResource(R.string.unknown),
+        )
+        HealthRow(
+            stringResource(R.string.pdf_health_searchable_text),
+            stringResource(if (report.hasSearchableText) R.string.yes else R.string.no),
+        )
+        HealthRow(
+            stringResource(R.string.pdf_health_table_of_contents),
+            stringResource(if (report.hasTableOfContents) R.string.yes else R.string.no),
+        )
+        report.title?.let { HealthRow(stringResource(R.string.pdf_health_title), it) }
+        report.author?.let { HealthRow(stringResource(R.string.pdf_health_author), it) }
+    }
+}
+
+@Composable
+private fun HealthRow(label: String, value: String) {
+    Row(modifier = Modifier.fillMaxWidth().padding(top = 12.dp)) {
+        Text(label, modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(value, modifier = Modifier.weight(1f))
+    }
 }
 
 @Composable
@@ -792,6 +899,7 @@ private fun ReaderModeMenu(
     onToggleBookmark: (Int) -> Unit,
     onShowBookmarks: () -> Unit,
     onShowTableOfContents: () -> Unit,
+    onShowHealth: () -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
     val controlDescription = stringResource(R.string.reader_mode)
@@ -829,6 +937,15 @@ private fun ReaderModeMenu(
                         .testTag("reader_mode_${mode.name}"),
                 )
             }
+            HorizontalDivider()
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.pdf_health)) },
+                onClick = {
+                    expanded = false
+                    onShowHealth()
+                },
+                modifier = Modifier.testTag("pdf_health_button"),
+            )
             HorizontalDivider()
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.table_of_contents)) },

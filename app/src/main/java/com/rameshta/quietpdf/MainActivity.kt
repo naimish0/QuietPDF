@@ -43,6 +43,7 @@ import com.rameshta.quietpdf.pdf.PdfOpenState
 import com.rameshta.quietpdf.pdf.PdfOpenViewModel
 import com.rameshta.quietpdf.pdf.PdfSearchResult
 import com.rameshta.quietpdf.pdf.PdfTableOfContentsResult
+import com.rameshta.quietpdf.pdf.PdfHealthResult
 import com.rameshta.quietpdf.ui.reader.PdfReaderScreen
 import com.rameshta.quietpdf.ui.theme.QuietPDFTheme
 
@@ -74,6 +75,7 @@ class MainActivity : ComponentActivity() {
                     searchDocument = viewModel::search,
                     onToggleBookmark = viewModel::toggleBookmark,
                     loadTableOfContents = viewModel::loadTableOfContents,
+                    inspectHealth = viewModel::inspectHealth,
                 )
             }
         }
@@ -125,6 +127,7 @@ fun QuietPdfApp(
     loadTableOfContents: suspend () -> PdfTableOfContentsResult = {
         PdfTableOfContentsResult.Failed
     },
+    inspectHealth: suspend () -> PdfHealthResult = { PdfHealthResult.Failed },
 ) {
     if (state is PdfOpenState.Opened) {
         PdfReaderScreen(
@@ -135,6 +138,7 @@ fun QuietPdfApp(
             searchDocument = searchDocument,
             onToggleBookmark = onToggleBookmark,
             loadTableOfContents = loadTableOfContents,
+            inspectHealth = inspectHealth,
         )
         return
     }
