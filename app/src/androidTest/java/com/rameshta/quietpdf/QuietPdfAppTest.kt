@@ -1089,6 +1089,7 @@ class QuietPdfAppTest {
     fun scannerCapture_reviewCanRetakeOrSaveSinglePagePdf() {
         val retakes = AtomicInteger()
         val saves = AtomicInteger()
+        val resets = AtomicInteger()
         val bitmap = Bitmap.createBitmap(300, 400, Bitmap.Config.ARGB_8888)
         try {
             setContent(
@@ -1097,16 +1098,23 @@ class QuietPdfAppTest {
                     ScannerCapturePreview(bitmap, sourceWidth = 2400, sourceHeight = 3200),
                 ),
                 onRetakeScannerCapture = retakes::incrementAndGet,
+                onResetScannerCrop = resets::incrementAndGet,
                 onSaveScannerPdf = saves::incrementAndGet,
             )
 
             composeRule.onNodeWithTag("scanner_review_image").assertIsDisplayed()
-            composeRule.onNodeWithText("Captured resolution: 2400 × 3200").assertIsDisplayed()
-            composeRule.onNodeWithText("Automatic crop", substring = true).assertIsDisplayed()
-            composeRule.onNodeWithTag("scanner_retake").performClick()
-            composeRule.onNodeWithTag("scanner_save_pdf").performClick()
+            composeRule.onAllNodesWithTag("scanner_crop_corner_0").assertCountEquals(1)
+            composeRule.onNodeWithText("Captured resolution: 2400 × 3200")
+                .performScrollTo().assertIsDisplayed()
+            composeRule.onNodeWithText("Position all four corners", substring = true)
+                .performScrollTo().assertIsDisplayed()
+            composeRule.onNodeWithTag("scanner_crop_reset")
+                .performScrollTo().assertIsDisplayed().performClick()
+            composeRule.onNodeWithTag("scanner_retake").performScrollTo().performClick()
+            composeRule.onNodeWithTag("scanner_save_pdf").performScrollTo().performClick()
             assertEquals(1, retakes.get())
             assertEquals(1, saves.get())
+            assertEquals(1, resets.get())
         } finally {
             bitmap.recycle()
         }
@@ -1182,6 +1190,7 @@ class QuietPdfAppTest {
         scannerCaptureState: ScannerCaptureState = ScannerCaptureState.Idle,
         onScanDocument: () -> Unit = {},
         onRetakeScannerCapture: () -> Unit = {},
+        onResetScannerCrop: () -> Unit = {},
         onSaveScannerPdf: () -> Unit = {},
     ) {
         composeRule.setContent {
@@ -1233,6 +1242,7 @@ class QuietPdfAppTest {
                     scannerCaptureState = scannerCaptureState,
                     onScanDocument = onScanDocument,
                     onRetakeScannerCapture = onRetakeScannerCapture,
+                    onResetScannerCrop = onResetScannerCrop,
                     onSaveScannerPdf = onSaveScannerPdf,
                 )
             }

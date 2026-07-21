@@ -3,6 +3,7 @@ package com.rameshta.quietpdf
 import android.Manifest
 import android.content.pm.PackageManager
 import android.content.Intent
+import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -21,10 +22,14 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -50,12 +55,22 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -64,6 +79,9 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.IntOffset
+import kotlin.math.roundToInt
 import com.rameshta.quietpdf.pdf.PdfOpenFailure
 import com.rameshta.quietpdf.pdf.PageRenderFailure
 import com.rameshta.quietpdf.pdf.PageRenderResult
@@ -97,6 +115,8 @@ import com.rameshta.quietpdf.pdf.PdfCompressionMode
 import com.rameshta.quietpdf.pdf.PdfCompressionRequest
 import com.rameshta.quietpdf.pdf.TargetFileSize
 import com.rameshta.quietpdf.pdf.ScannerCaptureState
+import com.rameshta.quietpdf.pdf.ScannerCropPoint
+import com.rameshta.quietpdf.pdf.ScannerCropSelection
 import com.rameshta.quietpdf.ui.reader.PdfReaderScreen
 import com.rameshta.quietpdf.ui.theme.QuietPDFTheme
 import androidx.camera.core.CameraSelector
@@ -372,6 +392,8 @@ class MainActivity : ComponentActivity() {
                     onScannerCaptureFailed = viewModel::scannerCaptureFailed,
                     onScannerCameraUnavailable = viewModel::scannerCameraUnavailable,
                     onRetakeScannerCapture = viewModel::retakeScannerCapture,
+                    onUpdateScannerCrop = viewModel::updateScannerCrop,
+                    onResetScannerCrop = viewModel::resetScannerCrop,
                     onSaveScannerPdf = { createScannedPdf.launch("QuietPDF-scan.pdf") },
                     onCancelScannerCapture = viewModel::cancelScannerCapture,
                     onOpenScannerPdf = viewModel::openScannerPdf,
@@ -496,6 +518,8 @@ fun QuietPdfApp(
     onScannerCaptureFailed: (File?) -> Unit = {},
     onScannerCameraUnavailable: () -> Unit = {},
     onRetakeScannerCapture: () -> Unit = {},
+    onUpdateScannerCrop: (ScannerCropSelection) -> Unit = {},
+    onResetScannerCrop: () -> Unit = {},
     onSaveScannerPdf: () -> Unit = {},
     onCancelScannerCapture: () -> Unit = {},
     onOpenScannerPdf: () -> Unit = {},
@@ -527,6 +551,8 @@ fun QuietPdfApp(
             onCaptureFailed = onScannerCaptureFailed,
             onCameraUnavailable = onScannerCameraUnavailable,
             onRetake = onRetakeScannerCapture,
+            onUpdateCrop = onUpdateScannerCrop,
+            onResetCrop = onResetScannerCrop,
             onSavePdf = onSaveScannerPdf,
             onCancel = onCancelScannerCapture,
         )
@@ -1964,6 +1990,8 @@ private fun ScannerCaptureScreen(
     onCaptureFailed: (File?) -> Unit,
     onCameraUnavailable: () -> Unit,
     onRetake: () -> Unit,
+    onUpdateCrop: (ScannerCropSelection) -> Unit,
+    onResetCrop: () -> Unit,
     onSavePdf: () -> Unit,
     onCancel: () -> Unit,
 ) {
@@ -2004,14 +2032,11 @@ private fun ScannerCaptureScreen(
                     .padding(20.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Image(
-                    bitmap = state.preview.bitmap.asImageBitmap(),
-                    contentDescription = stringResource(R.string.scanner_captured_preview),
-                    contentScale = ContentScale.Fit,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 240.dp, max = 560.dp)
-                        .testTag("scanner_review_image"),
+                ScannerCropEditor(
+                    bitmap = state.preview.bitmap,
+                    crop = state.crop,
+                    onCropChanged = onUpdateCrop,
+                    modifier = Modifier.testTag("scanner_review_image"),
                 )
                 Spacer(Modifier.height(16.dp))
                 Text(
@@ -2024,10 +2049,25 @@ private fun ScannerCaptureScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Text(
-                    text = stringResource(R.string.scanner_capture_scope_note),
+                    text = stringResource(
+                        if (state.preview.automaticCropDetected) R.string.scanner_crop_detected
+                        else R.string.scanner_crop_manual,
+                    ),
                     style = MaterialTheme.typography.bodyMedium,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.padding(top = 8.dp),
+                )
+                TextButton(
+                    onClick = onResetCrop,
+                    modifier = Modifier.testTag("scanner_crop_reset"),
+                ) {
+                    Text(stringResource(R.string.scanner_crop_reset))
+                }
+                Text(
+                    text = stringResource(R.string.scanner_capture_scope_note),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
                 )
                 state.saveFailure?.let { failure ->
                     Text(
@@ -2058,6 +2098,135 @@ private fun ScannerCaptureScreen(
                 }
             }
             else -> Unit
+        }
+    }
+}
+
+@Composable
+private fun ScannerCropEditor(
+    bitmap: Bitmap,
+    crop: ScannerCropSelection,
+    onCropChanged: (ScannerCropSelection) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var editorSize by remember { mutableStateOf(IntSize.Zero) }
+    val density = LocalDensity.current
+    val handleRadius = with(density) { 24.dp.roundToPx() }
+    val lineColor = MaterialTheme.colorScheme.primary
+    val shadeColor = Color.Black.copy(alpha = 0.38f)
+    val cornerLabels = listOf(
+        stringResource(R.string.scanner_crop_top_left),
+        stringResource(R.string.scanner_crop_top_right),
+        stringResource(R.string.scanner_crop_bottom_right),
+        stringResource(R.string.scanner_crop_bottom_left),
+    )
+    val moveLeftLabel = stringResource(R.string.scanner_crop_move_left)
+    val moveRightLabel = stringResource(R.string.scanner_crop_move_right)
+    val moveUpLabel = stringResource(R.string.scanner_crop_move_up)
+    val moveDownLabel = stringResource(R.string.scanner_crop_move_down)
+    fun move(index: Int, deltaX: Float, deltaY: Float): Boolean {
+        if (editorSize.width <= 0 || editorSize.height <= 0) return false
+        val point = crop.points[index]
+        val updated = crop.moveCorner(
+            index,
+            ScannerCropPoint(
+                point.x + deltaX / editorSize.width,
+                point.y + deltaY / editorSize.height,
+            ),
+        )
+        if (updated == crop) return false
+        onCropChanged(updated)
+        return true
+    }
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(min = 240.dp, max = 560.dp)
+            .aspectRatio(bitmap.width / bitmap.height.toFloat())
+            .onSizeChanged { editorSize = it },
+    ) {
+        Image(
+            bitmap = bitmap.asImageBitmap(),
+            contentDescription = null,
+            contentScale = ContentScale.FillBounds,
+            modifier = Modifier.fillMaxSize(),
+        )
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            if (size.width <= 0f || size.height <= 0f) return@Canvas
+            val points = crop.points.map { Offset(it.x * size.width, it.y * size.height) }
+            val cropPath = Path().apply {
+                moveTo(points[0].x, points[0].y)
+                points.drop(1).forEach { lineTo(it.x, it.y) }
+                close()
+            }
+            val outside = Path().apply {
+                addRect(androidx.compose.ui.geometry.Rect(Offset.Zero, size))
+                addPath(cropPath)
+                fillType = androidx.compose.ui.graphics.PathFillType.EvenOdd
+            }
+            drawPath(outside, shadeColor)
+            drawPath(cropPath, lineColor, style = Stroke(width = 3.dp.toPx()))
+            points.forEach { point ->
+                drawCircle(Color.White, radius = 10.dp.toPx(), center = point)
+                drawCircle(lineColor, radius = 10.dp.toPx(), center = point, style = Stroke(3.dp.toPx()))
+            }
+        }
+        crop.points.forEachIndexed { index, point ->
+            Box(
+                modifier = Modifier
+                    .offset {
+                        IntOffset(
+                            x = ((point.x * editorSize.width).roundToInt() - handleRadius).coerceIn(
+                                0,
+                                (editorSize.width - handleRadius * 2).coerceAtLeast(0),
+                            ),
+                            y = ((point.y * editorSize.height).roundToInt() - handleRadius).coerceIn(
+                                0,
+                                (editorSize.height - handleRadius * 2).coerceAtLeast(0),
+                            ),
+                        )
+                    }
+                    .size(48.dp)
+                    .semantics {
+                        contentDescription = cornerLabels[index]
+                        customActions = listOf(
+                            CustomAccessibilityAction(moveLeftLabel) {
+                                move(index, -editorSize.width * 0.02f, 0f)
+                            },
+                            CustomAccessibilityAction(moveRightLabel) {
+                                move(index, editorSize.width * 0.02f, 0f)
+                            },
+                            CustomAccessibilityAction(moveUpLabel) {
+                                move(index, 0f, -editorSize.height * 0.02f)
+                            },
+                            CustomAccessibilityAction(moveDownLabel) {
+                                move(index, 0f, editorSize.height * 0.02f)
+                            },
+                        )
+                    }
+                    .testTag("scanner_crop_corner_$index")
+                    .pointerInput(index, crop, editorSize) {
+                        var workingCrop = crop
+                        detectDragGestures { change, dragAmount ->
+                            change.consume()
+                            if (editorSize.width <= 0 || editorSize.height <= 0) {
+                                return@detectDragGestures
+                            }
+                            val current = workingCrop.points[index]
+                            val updated = workingCrop.moveCorner(
+                                index,
+                                ScannerCropPoint(
+                                    current.x + dragAmount.x / editorSize.width,
+                                    current.y + dragAmount.y / editorSize.height,
+                                ),
+                            )
+                            if (updated != workingCrop) {
+                                workingCrop = updated
+                                onCropChanged(updated)
+                            }
+                        }
+                    },
+            )
         }
     }
 }

@@ -16,6 +16,8 @@ data class ScannerCapturePreview(
     val bitmap: Bitmap,
     val sourceWidth: Int,
     val sourceHeight: Int,
+    val suggestedCrop: ScannerCropSelection = ScannerCropSelection.fullImage(),
+    val automaticCropDetected: Boolean = false,
 )
 
 sealed interface ScannerPreviewResult {
@@ -27,6 +29,7 @@ sealed interface ScannerPreviewResult {
 
 sealed interface ScannerPdfResult {
     data object Success : ScannerPdfResult
+    data object InvalidCrop : ScannerPdfResult
     data object InvalidImage : ScannerPdfResult
     data object PermissionDenied : ScannerPdfResult
     data object InsufficientMemory : ScannerPdfResult
@@ -46,6 +49,7 @@ class ScannerCaptureEngine(context: Context) {
     private val appContext = context.applicationContext
     private val contentResolver: ContentResolver = appContext.contentResolver
     private val imagesToPdfEngine = ImagesToPdfEngine(contentResolver, appContext.cacheDir)
+    private val cropCorrectionEngine = ScannerCropCorrectionEngine(appContext.cacheDir)
 
     fun createCaptureFile(): File = File.createTempFile("scanner-capture-", ".jpg", appContext.cacheDir)
 
@@ -74,8 +78,15 @@ class ScannerCaptureEngine(context: Context) {
                         ),
                     )
                 }
+                val suggestion = ScannerDocumentDetector.detect(bitmap)
                 ScannerPreviewResult.Ready(
-                    ScannerCapturePreview(bitmap, sourceWidth, sourceHeight),
+                    ScannerCapturePreview(
+                        bitmap = bitmap,
+                        sourceWidth = sourceWidth,
+                        sourceHeight = sourceHeight,
+                        suggestedCrop = suggestion.selection,
+                        automaticCropDetected = suggestion.detected,
+                    ),
                 )
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -86,12 +97,24 @@ class ScannerCaptureEngine(context: Context) {
             }
         }
 
-    suspend fun createSinglePagePdf(captureFile: File, outputUri: Uri): ScannerPdfResult {
+    suspend fun createSinglePagePdf(
+        captureFile: File,
+        outputUri: Uri,
+        crop: ScannerCropSelection = ScannerCropSelection.fullImage(),
+    ): ScannerPdfResult {
         if (!captureFile.isFile || captureFile.length() <= 0L) return ScannerPdfResult.InvalidImage
+        var correctedFile: File? = null
         return try {
+            when (val correction = cropCorrectionEngine.correct(captureFile, crop)) {
+                is ScannerCropResult.Ready -> correctedFile = correction.file
+                ScannerCropResult.InvalidCrop -> return ScannerPdfResult.InvalidCrop
+                ScannerCropResult.InvalidImage -> return ScannerPdfResult.InvalidImage
+                ScannerCropResult.InsufficientMemory -> return ScannerPdfResult.InsufficientMemory
+                ScannerCropResult.Failed -> return ScannerPdfResult.Failed
+            }
             when (
                 val result = imagesToPdfEngine.create(
-                    imageUris = listOf(Uri.fromFile(captureFile)),
+                    imageUris = listOf(Uri.fromFile(requireNotNull(correctedFile))),
                     outputUri = outputUri,
                     layout = ImagePdfLayout(
                         orientation = ImagePdfOrientation.Auto,
@@ -118,6 +141,8 @@ class ScannerCaptureEngine(context: Context) {
         } catch (cancelled: CancellationException) {
             cleanupNewPdfOutput(appContext, contentResolver, outputUri)
             throw cancelled
+        } finally {
+            correctedFile?.delete()
         }
     }
 

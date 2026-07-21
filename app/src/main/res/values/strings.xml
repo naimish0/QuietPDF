@@ -240,7 +240,18 @@
     <string name="scanner_preparing_preview">Preparing captured photo…</string>
     <string name="scanner_captured_preview">Captured document photo</string>
     <string name="scanner_capture_dimensions">Captured resolution: %1$d × %2$d</string>
-    <string name="scanner_capture_scope_note">Review the full camera capture before saving. Automatic crop, perspective correction, enhancement and multi-page scanning are not applied in this capture step.</string>
+    <string name="scanner_capture_scope_note">Perspective correction is applied when saving. Image enhancement and multi-page scanning are not applied yet.</string>
+    <string name="scanner_crop_detected">Document edges were detected automatically. Drag any corner to correct them before saving.</string>
+    <string name="scanner_crop_manual">Document edges were not clear. Position all four corners manually before saving.</string>
+    <string name="scanner_crop_reset">Reset corners</string>
+    <string name="scanner_crop_top_left">Top-left crop corner</string>
+    <string name="scanner_crop_top_right">Top-right crop corner</string>
+    <string name="scanner_crop_bottom_right">Bottom-right crop corner</string>
+    <string name="scanner_crop_bottom_left">Bottom-left crop corner</string>
+    <string name="scanner_crop_move_left">Move left</string>
+    <string name="scanner_crop_move_right">Move right</string>
+    <string name="scanner_crop_move_up">Move up</string>
+    <string name="scanner_crop_move_down">Move down</string>
     <string name="scanner_retake">Retake</string>
     <string name="scanner_save_pdf">Save as PDF</string>
     <string name="scanner_creating_pdf">Creating and validating the scanned PDF…</string>
@@ -249,6 +260,7 @@
     <string name="scanner_camera_unavailable">No usable back camera is available. Close other camera apps and try again.</string>
     <string name="scanner_capture_failed">The photo could not be captured. Keep the document steady and try again.</string>
     <string name="scanner_invalid_capture">The camera returned an unreadable or empty photo. Retake the document.</string>
+    <string name="scanner_invalid_crop">The crop corners do not form a usable document. Move the corners apart and try saving again.</string>
     <string name="scanner_memory_error">The captured photo needs more memory than is available. Close other apps and retake it.</string>
     <string name="scanner_save_error">The scanned PDF could not be created and validated. The captured photo is still available to retry.</string>
     <string name="scanner_save_permission_denied">QuietPDF lost access to the save location. Choose another location; the captured photo is still available.</string>
