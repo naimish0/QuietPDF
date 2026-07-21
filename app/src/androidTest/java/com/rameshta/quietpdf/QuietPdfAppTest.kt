@@ -73,6 +73,9 @@ import com.rameshta.quietpdf.pdf.ImageWatermarkPreviewResult
 import com.rameshta.quietpdf.pdf.ImageWatermarkSettings
 import com.rameshta.quietpdf.pdf.ImageWatermarkState
 import com.rameshta.quietpdf.pdf.WatermarkImageInfo
+import com.rameshta.quietpdf.pdf.EmbeddedImagePreview
+import com.rameshta.quietpdf.pdf.ExtractImagesAnalysis
+import com.rameshta.quietpdf.pdf.ExtractImagesState
 import com.rameshta.quietpdf.pdf.CompressibleImage
 import com.rameshta.quietpdf.pdf.PdfCompressionMode
 import com.rameshta.quietpdf.pdf.PdfCompressionRequest
@@ -1055,6 +1058,58 @@ class QuietPdfAppTest {
     }
 
     @Test
+    fun extractImages_buttonStartsPdfSelection() {
+        val selections = AtomicInteger()
+        setContent(state = PdfOpenState.Idle, onExtractImages = { selections.incrementAndGet() })
+        composeRule.onNodeWithTag("extract_images_button").performScrollTo().performClick()
+        assertEquals(1, selections.get())
+    }
+
+    @Test
+    fun extractImages_dialogSupportsSelectedAndAllExports() {
+        val selected = AtomicReference<Set<Int>>()
+        val all = AtomicReference<Set<Int>>()
+        setContent(
+            state = PdfOpenState.Idle,
+            extractImagesState = ExtractImagesState.Configuring(
+                Uri.parse("content://test/images"), "photos.pdf",
+                ExtractImagesAnalysis(2, listOf(
+                    EmbeddedImagePreview(0, 1, 120, 80,
+                        Bitmap.createBitmap(12, 8, Bitmap.Config.ARGB_8888), true),
+                    EmbeddedImagePreview(1, 2, 64, 96,
+                        Bitmap.createBitmap(8, 12, Bitmap.Config.ARGB_8888), true),
+                )),
+            ),
+            onSaveSelectedImages = selected::set,
+            onSaveAllImages = all::set,
+        )
+        composeRule.onNodeWithTag("extract_images_dialog").assertIsDisplayed()
+        composeRule.onNodeWithTag("extract_image_1").performScrollTo().performClick()
+        composeRule.onNodeWithTag("extract_images_save_selected").performScrollTo().performClick()
+        assertEquals(setOf(0), selected.get())
+
+        // Recompose because a real folder picker would temporarily own the UI.
+        composeRule.onNodeWithTag("extract_images_save_all").performScrollTo().performClick()
+        assertEquals(setOf(0, 1), all.get())
+    }
+
+    @Test
+    fun extractImages_unsafeObjectCannotBeSelected() {
+        setContent(
+            state = PdfOpenState.Idle,
+            extractImagesState = ExtractImagesState.Configuring(
+                Uri.parse("content://test/images"), "large.pdf",
+                ExtractImagesAnalysis(1, listOf(
+                    EmbeddedImagePreview(0, 1, 100000, 100000, null, false),
+                )),
+            ),
+        )
+        composeRule.onNodeWithText("Too large", substring = true).assertIsDisplayed()
+        composeRule.onNodeWithTag("extract_images_save_selected").assertIsNotEnabled()
+        composeRule.onNodeWithTag("extract_images_zip").assertIsNotEnabled()
+    }
+
+    @Test
     fun openedState_showsNameAndPageCount() {
         setContent(
             PdfOpenState.Opened(
@@ -1568,6 +1623,10 @@ class QuietPdfAppTest {
             ImageWatermarkPreviewResult.Failed
         },
         onConfirmImageWatermark: (ImageWatermarkSettings) -> Unit = {},
+        extractImagesState: ExtractImagesState = ExtractImagesState.Idle,
+        onExtractImages: () -> Unit = {},
+        onSaveSelectedImages: (Set<Int>) -> Unit = {},
+        onSaveAllImages: (Set<Int>) -> Unit = {},
         scannerCaptureState: ScannerCaptureState = ScannerCaptureState.Idle,
         onScanDocument: () -> Unit = {},
         onRetakeScannerCapture: () -> Unit = {},
@@ -1646,6 +1705,10 @@ class QuietPdfAppTest {
                     onChooseWatermarkImage = onChooseWatermarkImage,
                     renderImageWatermarkPreview = renderImageWatermarkPreview,
                     onConfirmImageWatermark = onConfirmImageWatermark,
+                    extractImagesState = extractImagesState,
+                    onExtractImages = onExtractImages,
+                    onSaveSelectedImages = onSaveSelectedImages,
+                    onSaveAllImages = onSaveAllImages,
                     scannerCaptureState = scannerCaptureState,
                     onScanDocument = onScanDocument,
                     onRetakeScannerCapture = onRetakeScannerCapture,
