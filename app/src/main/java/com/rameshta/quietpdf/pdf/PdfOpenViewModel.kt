@@ -152,12 +152,19 @@ sealed interface CompressPdfState {
         val displayName: String,
         val analysis: CompressPdfAnalysis,
     ) : CompressPdfState
-    data class Compressing(val completedPages: Int, val totalPages: Int) : CompressPdfState
+    data class Compressing(
+        val completedPages: Int,
+        val totalPages: Int,
+        val attempt: Int = 1,
+        val totalAttempts: Int = 1,
+    ) : CompressPdfState
     data class Completed(
         val outputUri: Uri,
         val originalSizeBytes: Long,
         val outputSizeBytes: Long,
         val recompressedImageCount: Int,
+        val targetSizeBytes: Long? = null,
+        val targetReached: Boolean = true,
     ) : CompressPdfState
     data class Failed(val failure: CompressPdfFailure) : CompressPdfState
 }
@@ -165,6 +172,7 @@ sealed interface CompressPdfState {
 enum class CompressPdfFailure(@get:StringRes val messageResource: Int) {
     InvalidDocument(R.string.compress_pdf_invalid_document),
     NotSmaller(R.string.compress_pdf_not_smaller),
+    InvalidTargetSize(R.string.compress_pdf_invalid_target),
     PermissionDenied(R.string.compress_pdf_permission_denied),
     InsufficientMemory(R.string.compress_pdf_memory_error),
     UnableToSave(R.string.compress_pdf_save_error),
@@ -260,7 +268,8 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
     private var selectedRotatedPageIndices = IntArray(0)
     private var selectedPageRotation = PageRotation.Clockwise90
     private var selectedDuplicatedPageIndices = IntArray(0)
-    private var selectedCompressionMode = PdfCompressionMode.Balanced
+    private var selectedCompressionRequest: PdfCompressionRequest =
+        PdfCompressionRequest.Quality(PdfCompressionMode.Balanced)
     private var documentGeneration = 0L
     private val pageCache = object : LruCache<PageCacheKey, Bitmap>(pageCacheBytes()) {
         override fun sizeOf(key: PageCacheKey, value: Bitmap): Int = value.allocationByteCount
@@ -960,7 +969,7 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
 
     fun selectPdfForCompression(uri: Uri) {
         compressPdfJob?.cancel()
-        selectedCompressionMode = PdfCompressionMode.Balanced
+        selectedCompressionRequest = PdfCompressionRequest.Quality(PdfCompressionMode.Balanced)
         compressPdfState = CompressPdfState.Preparing
         compressPdfJob = viewModelScope.launch {
             compressPdfState = when (val result = compressPdfEngine.analyze(uri)) {
@@ -985,14 +994,14 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun configurePdfCompression(mode: PdfCompressionMode) {
+    fun configurePdfCompression(request: PdfCompressionRequest) {
         if (compressPdfState !is CompressPdfState.Configuring) return
-        selectedCompressionMode = mode
+        selectedCompressionRequest = request
     }
 
     fun compressSelectedPdf(outputUri: Uri) {
         val configuring = compressPdfState as? CompressPdfState.Configuring ?: return
-        val mode = selectedCompressionMode
+        val request = selectedCompressionRequest
         compressPdfJob?.cancel()
         compressPdfState = CompressPdfState.Compressing(0, configuring.analysis.pageCount)
         compressPdfJob = viewModelScope.launch {
@@ -1000,11 +1009,16 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
                 val result = compressPdfEngine.compress(
                     sourceUri = configuring.sourceUri,
                     outputUri = outputUri,
-                    mode = mode,
+                    request = request,
                     expectedPageCount = configuring.analysis.pageCount,
                     expectedOriginalSizeBytes = configuring.analysis.originalSizeBytes,
-                ) { completed, total ->
-                    compressPdfState = CompressPdfState.Compressing(completed, total)
+                ) { progress ->
+                    compressPdfState = CompressPdfState.Compressing(
+                        progress.completedPages,
+                        progress.totalPages,
+                        progress.attempt,
+                        progress.totalAttempts,
+                    )
                 }
             ) {
                 is CompressPdfResult.Success -> CompressPdfState.Completed(
@@ -1012,12 +1026,17 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
                     originalSizeBytes = result.originalSizeBytes,
                     outputSizeBytes = result.outputSizeBytes,
                     recompressedImageCount = result.recompressedImageCount,
+                    targetSizeBytes = result.targetSizeBytes,
+                    targetReached = result.targetReached,
                 )
                 is CompressPdfResult.NotSmaller -> {
                     CompressPdfState.Failed(CompressPdfFailure.NotSmaller)
                 }
                 CompressPdfResult.InvalidDocument -> {
                     CompressPdfState.Failed(CompressPdfFailure.InvalidDocument)
+                }
+                CompressPdfResult.InvalidTargetSize -> {
+                    CompressPdfState.Failed(CompressPdfFailure.InvalidTargetSize)
                 }
                 CompressPdfResult.PermissionDenied -> {
                     CompressPdfState.Failed(CompressPdfFailure.PermissionDenied)

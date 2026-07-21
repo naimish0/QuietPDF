@@ -43,4 +43,29 @@ class CompressionEstimateTest {
         )
         assertTrue(estimate in 1..10_000)
     }
+
+    @Test
+    fun targetSizeParserAcceptsDecimalMegabytesBelowOriginal() {
+        assertEquals(2_500_000L, TargetFileSize.parseMegabytes("2.5", 4_000_000L))
+    }
+
+    @Test
+    fun targetSizeParserRejectsUnsafeOrUnreachableInputBounds() {
+        assertEquals(null, TargetFileSize.parseMegabytes("", 4_000_000L))
+        assertEquals(null, TargetFileSize.parseMegabytes("0.001", 4_000_000L))
+        assertEquals(null, TargetFileSize.parseMegabytes("4", 4_000_000L))
+        assertEquals(null, TargetFileSize.parseMegabytes("999999999999999999", 4_000_000L))
+    }
+
+    @Test
+    fun targetCompressionAttemptsBecomeProgressivelyStrongerAndStayBounded() {
+        val attempts = TargetCompressionPlanner.attempts
+        assertEquals(7, attempts.size)
+        attempts.zipWithNext().forEach { (first, second) ->
+            assertTrue(second.maxImageDimension < first.maxImageDimension)
+            assertTrue(second.jpegQuality < first.jpegQuality)
+        }
+        assertTrue(attempts.last().maxImageDimension >= 800)
+        assertTrue(attempts.last().jpegQuality >= 35)
+    }
 }

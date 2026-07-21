@@ -59,6 +59,7 @@ import com.rameshta.quietpdf.pdf.CompressPdfFailure
 import com.rameshta.quietpdf.pdf.CompressPdfState
 import com.rameshta.quietpdf.pdf.CompressibleImage
 import com.rameshta.quietpdf.pdf.PdfCompressionMode
+import com.rameshta.quietpdf.pdf.PdfCompressionRequest
 import com.rameshta.quietpdf.ui.theme.QuietPDFTheme
 import org.junit.Rule
 import org.junit.Assert.assertEquals
@@ -592,7 +593,7 @@ class QuietPdfAppTest {
 
     @Test
     fun compressPdf_dialogDisclosesTradeoffAndReturnsMode() {
-        val selected = AtomicReference<PdfCompressionMode>()
+        val selected = AtomicReference<PdfCompressionRequest>()
         setContent(
             state = PdfOpenState.Idle,
             compressPdfState = CompressPdfState.Configuring(
@@ -612,7 +613,10 @@ class QuietPdfAppTest {
         composeRule.onNodeWithText("Pages containing text", substring = true).assertIsDisplayed()
         composeRule.onNodeWithTag("compression_mode_2").performClick()
         composeRule.onNodeWithTag("compress_pdf_confirm").performClick()
-        assertEquals(PdfCompressionMode.MaximumCompression, selected.get())
+        assertEquals(
+            PdfCompressionRequest.Quality(PdfCompressionMode.MaximumCompression),
+            selected.get(),
+        )
     }
 
     @Test
@@ -626,6 +630,64 @@ class QuietPdfAppTest {
         composeRule.onNodeWithText("Processing page 2 of 5…").assertIsDisplayed()
         composeRule.onNodeWithTag("operation_cancel").performClick()
         assertEquals(1, cancellations.get())
+    }
+
+    @Test
+    fun targetFileSize_validatesInputAndReturnsTargetRequest() {
+        val selected = AtomicReference<PdfCompressionRequest>()
+        setContent(
+            state = PdfOpenState.Idle,
+            compressPdfState = CompressPdfState.Configuring(
+                sourceUri = Uri.parse("content://test/target"),
+                displayName = "scan.pdf",
+                analysis = CompressPdfAnalysis(
+                    pageCount = 3,
+                    originalSizeBytes = 4_000_000,
+                    compressibleImages = listOf(CompressibleImage(3_000_000, 2400, 2400)),
+                ),
+            ),
+            onConfirmPdfCompression = selected::set,
+        )
+
+        composeRule.onNodeWithTag("compression_mode_3").performClick()
+        composeRule.onNodeWithTag("compress_pdf_confirm").assertIsNotEnabled()
+        composeRule.onNodeWithTag("target_file_size_input").performTextInput("2.5")
+        composeRule.onNodeWithTag("compress_pdf_confirm").performClick()
+
+        assertEquals(PdfCompressionRequest.TargetSize(2_500_000), selected.get())
+    }
+
+    @Test
+    fun targetFileSize_resultHonestlyReportsUnreachedTarget() {
+        setContent(
+            state = PdfOpenState.Idle,
+            compressPdfState = CompressPdfState.Completed(
+                outputUri = Uri.parse("content://test/target-result"),
+                originalSizeBytes = 4_000_000,
+                outputSizeBytes = 1_500_000,
+                recompressedImageCount = 2,
+                targetSizeBytes = 1_000_000,
+                targetReached = false,
+            ),
+        )
+
+        composeRule.onNodeWithTag("compress_pdf_success").assertIsDisplayed()
+        composeRule.onNodeWithText("could not be reached", substring = true).assertIsDisplayed()
+    }
+
+    @Test
+    fun targetFileSize_progressShowsMeasuredAttemptAndPage() {
+        setContent(
+            state = PdfOpenState.Idle,
+            compressPdfState = CompressPdfState.Compressing(
+                completedPages = 2,
+                totalPages = 5,
+                attempt = 3,
+                totalAttempts = 7,
+            ),
+        )
+
+        composeRule.onNodeWithText("Trying level 3 of 7 · page 2 of 5…").assertIsDisplayed()
     }
 
     @Test
@@ -1059,7 +1121,7 @@ class QuietPdfAppTest {
         onCancelPageRotation: () -> Unit = {},
         compressPdfState: CompressPdfState = CompressPdfState.Idle,
         onCompressPdf: () -> Unit = {},
-        onConfirmPdfCompression: (PdfCompressionMode) -> Unit = {},
+        onConfirmPdfCompression: (PdfCompressionRequest) -> Unit = {},
         onCancelPdfCompression: () -> Unit = {},
         onOpenCompressedPdf: () -> Unit = {},
     ) {
