@@ -78,6 +78,7 @@ import com.rameshta.quietpdf.pdf.ExtractPageSelectionParser
 import com.rameshta.quietpdf.pdf.ExtractPagesState
 import com.rameshta.quietpdf.pdf.DeletePageSelectionPlanner
 import com.rameshta.quietpdf.pdf.DeletePagesState
+import com.rameshta.quietpdf.pdf.RearrangePagesState
 import com.rameshta.quietpdf.ui.reader.PdfReaderScreen
 import com.rameshta.quietpdf.ui.theme.QuietPDFTheme
 
@@ -173,6 +174,20 @@ class MainActivity : ComponentActivity() {
                         viewModel.selectPdfForPageDeletion(uri)
                     }
                 }
+                val createRearrangedPdf = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.CreateDocument("application/pdf"),
+                ) { uri ->
+                    if (uri == null) viewModel.cancelRearrangePages()
+                    else viewModel.rearrangeSelectedPdf(uri)
+                }
+                val rearrangePagesPicker = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.OpenDocument(),
+                ) { uri ->
+                    if (uri != null) {
+                        retainReadPermission(uri)
+                        viewModel.selectPdfForPageRearrangement(uri)
+                    }
+                }
 
                 QuietPdfApp(
                     state = viewModel.state,
@@ -224,6 +239,17 @@ class MainActivity : ComponentActivity() {
                     },
                     onCancelPageDeletion = viewModel::cancelDeletePages,
                     onDismissPageDeletionFailure = viewModel::clearDeletePagesFailure,
+                    rearrangePagesState = viewModel.rearrangePagesState,
+                    onRearrangePages = {
+                        rearrangePagesPicker.launch(arrayOf("application/pdf"))
+                    },
+                    onMoveRearrangedPage = viewModel::moveRearrangedPage,
+                    onResetRearrangedPages = viewModel::resetRearrangedPageOrder,
+                    onConfirmPageRearrangement = {
+                        createRearrangedPdf.launch("QuietPDF-rearranged-pages.pdf")
+                    },
+                    onCancelPageRearrangement = viewModel::cancelRearrangePages,
+                    onDismissPageRearrangementFailure = viewModel::clearRearrangePagesFailure,
                 )
             }
         }
@@ -314,6 +340,13 @@ fun QuietPdfApp(
     onConfirmPageDeletion: (IntArray) -> Unit = {},
     onCancelPageDeletion: () -> Unit = {},
     onDismissPageDeletionFailure: () -> Unit = {},
+    rearrangePagesState: RearrangePagesState = RearrangePagesState.Idle,
+    onRearrangePages: () -> Unit = {},
+    onMoveRearrangedPage: (fromIndex: Int, toIndex: Int) -> Unit = { _, _ -> },
+    onResetRearrangedPages: () -> Unit = {},
+    onConfirmPageRearrangement: () -> Unit = {},
+    onCancelPageRearrangement: () -> Unit = {},
+    onDismissPageRearrangementFailure: () -> Unit = {},
 ) {
     if (state is PdfOpenState.Opened) {
         PdfReaderScreen(
@@ -368,6 +401,10 @@ fun QuietPdfApp(
                     onDeletePages = onDeletePages,
                     onCancelPageDeletion = onCancelPageDeletion,
                     onDismissPageDeletionFailure = onDismissPageDeletionFailure,
+                    rearrangePagesState = rearrangePagesState,
+                    onRearrangePages = onRearrangePages,
+                    onCancelPageRearrangement = onCancelPageRearrangement,
+                    onDismissPageRearrangementFailure = onDismissPageRearrangementFailure,
                     contentPadding = PaddingValues(24.dp),
                 )
             }
@@ -413,6 +450,87 @@ fun QuietPdfApp(
             onCancel = onCancelPageDeletion,
         )
     }
+    if (rearrangePagesState is RearrangePagesState.Configuring) {
+        RearrangePagesDialog(
+            documentName = rearrangePagesState.displayName,
+            pageOrder = rearrangePagesState.pageOrder,
+            onMove = onMoveRearrangedPage,
+            onReset = onResetRearrangedPages,
+            onConfirm = onConfirmPageRearrangement,
+            onCancel = onCancelPageRearrangement,
+        )
+    }
+}
+
+@Composable
+private fun RearrangePagesDialog(
+    documentName: String,
+    pageOrder: List<Int>,
+    onMove: (Int, Int) -> Unit,
+    onReset: () -> Unit,
+    onConfirm: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onCancel,
+        title = { Text(stringResource(R.string.rearrange_pages_title)) },
+        text = {
+            Column {
+                Text(stringResource(R.string.rearrange_pages_document_summary, documentName))
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 420.dp)
+                        .padding(top = 12.dp)
+                        .testTag("rearrange_pages_list"),
+                ) {
+                    itemsIndexed(pageOrder, key = { _, pageIndex -> pageIndex }) { position, pageIndex ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                text = stringResource(
+                                    R.string.rearrange_pages_position,
+                                    position + 1,
+                                    pageIndex + 1,
+                                ),
+                                modifier = Modifier.weight(1f),
+                            )
+                            TextButton(
+                                onClick = { onMove(position, position - 1) },
+                                enabled = position > 0,
+                                modifier = Modifier.testTag("rearrange_page_${pageIndex}_up"),
+                            ) { Text(stringResource(R.string.move_up)) }
+                            TextButton(
+                                onClick = { onMove(position, position + 1) },
+                                enabled = position < pageOrder.lastIndex,
+                                modifier = Modifier.testTag("rearrange_page_${pageIndex}_down"),
+                            ) { Text(stringResource(R.string.move_down)) }
+                        }
+                    }
+                }
+                TextButton(
+                    onClick = onReset,
+                    modifier = Modifier.testTag("rearrange_pages_reset"),
+                ) { Text(stringResource(R.string.reset_order)) }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = onConfirm,
+                modifier = Modifier.testTag("rearrange_pages_confirm"),
+            ) { Text(stringResource(R.string.save_rearranged_pdf)) }
+        },
+        dismissButton = {
+            TextButton(onClick = onCancel, modifier = Modifier.testTag("rearrange_pages_cancel")) {
+                Text(stringResource(R.string.cancel))
+            }
+        },
+        modifier = Modifier.testTag("rearrange_pages_dialog"),
+    )
 }
 
 @Composable
@@ -830,6 +948,10 @@ private fun OpenPdfContent(
     onDeletePages: () -> Unit,
     onCancelPageDeletion: () -> Unit,
     onDismissPageDeletionFailure: () -> Unit,
+    rearrangePagesState: RearrangePagesState,
+    onRearrangePages: () -> Unit,
+    onCancelPageRearrangement: () -> Unit,
+    onDismissPageRearrangementFailure: () -> Unit,
     contentPadding: PaddingValues,
 ) {
     Column(
@@ -904,6 +1026,21 @@ private fun OpenPdfContent(
             }
             else -> Unit
         }
+        when (rearrangePagesState) {
+            RearrangePagesState.Preparing -> {
+                OperationProgressContent(R.string.rearrange_pages_preparing)
+                return@Column
+            }
+            is RearrangePagesState.Rearranging -> {
+                OperationProgressContent(
+                    messageResource = R.string.rearrange_pages_rearranging,
+                    argument = rearrangePagesState.pageCount,
+                    onCancel = onCancelPageRearrangement,
+                )
+                return@Column
+            }
+            else -> Unit
+        }
         when (state) {
             PdfOpenState.Idle -> IdleContent(
                 onOpenPdf = onOpenPdf,
@@ -922,6 +1059,9 @@ private fun OpenPdfContent(
                 deletePagesState = deletePagesState,
                 onDeletePages = onDeletePages,
                 onDismissPageDeletionFailure = onDismissPageDeletionFailure,
+                rearrangePagesState = rearrangePagesState,
+                onRearrangePages = onRearrangePages,
+                onDismissPageRearrangementFailure = onDismissPageRearrangementFailure,
             )
             PdfOpenState.Opening -> OpeningContent()
             is PdfOpenState.Opened -> Unit
@@ -948,6 +1088,9 @@ private fun IdleContent(
     deletePagesState: DeletePagesState,
     onDeletePages: () -> Unit,
     onDismissPageDeletionFailure: () -> Unit,
+    rearrangePagesState: RearrangePagesState,
+    onRearrangePages: () -> Unit,
+    onDismissPageRearrangementFailure: () -> Unit,
 ) {
     Text(
         text = stringResource(R.string.home_title),
@@ -993,6 +1136,12 @@ private fun IdleContent(
         label = stringResource(R.string.delete_pages),
         onClick = onDeletePages,
         testTag = "delete_pages_button",
+    )
+    Spacer(Modifier.height(12.dp))
+    OpenButton(
+        label = stringResource(R.string.rearrange_pages),
+        onClick = onRearrangePages,
+        testTag = "rearrange_pages_button",
     )
     if (imagesToPdfState is ImagesToPdfState.Failed) {
         Spacer(Modifier.height(20.dp))
@@ -1066,6 +1215,18 @@ private fun IdleContent(
             modifier = Modifier.testTag("delete_pages_error"),
         )
         TextButton(onClick = onDismissPageDeletionFailure) {
+            Text(stringResource(R.string.dismiss))
+        }
+    }
+    if (rearrangePagesState is RearrangePagesState.Failed) {
+        Spacer(Modifier.height(20.dp))
+        Text(
+            text = stringResource(rearrangePagesState.failure.messageResource),
+            color = MaterialTheme.colorScheme.error,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.testTag("rearrange_pages_error"),
+        )
+        TextButton(onClick = onDismissPageRearrangementFailure) {
             Text(stringResource(R.string.dismiss))
         }
     }

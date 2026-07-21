@@ -160,4 +160,18 @@
     <string name="delete_pages_permission_denied">QuietPDF lost access to the PDF or save location. Choose them again.</string>
     <string name="delete_pages_memory_error">This PDF needs more memory than is available. Close other apps or try a smaller PDF.</string>
     <string name="delete_pages_save_error">The new PDF could not be created safely. The original was not changed; choose another save location.</string>
+    <string name="rearrange_pages">Rearrange pages</string>
+    <string name="rearrange_pages_title">Rearrange pages</string>
+    <string name="rearrange_pages_preparing">Reading the selected PDF…</string>
+    <string name="rearrange_pages_rearranging">Rearranging all %1$d pages…</string>
+    <string name="rearrange_pages_document_summary">Move the pages in %1$s into the order you want. Every page will remain in the new PDF.</string>
+    <string name="rearrange_pages_position">Position %1$d: page %2$d</string>
+    <string name="reset_order">Reset order</string>
+    <string name="save_rearranged_pdf">Save new PDF</string>
+    <string name="rearrange_pages_need_two_pages">Choose a PDF with at least two pages to rearrange.</string>
+    <string name="rearrange_pages_invalid_document">This file changed or is not a readable PDF. Keep the original and choose it again.</string>
+    <string name="rearrange_pages_invalid_order">The page order must contain every page exactly once. Reset the order and try again.</string>
+    <string name="rearrange_pages_permission_denied">QuietPDF lost access to the PDF or save location. Choose them again.</string>
+    <string name="rearrange_pages_memory_error">This PDF needs more memory than is available. Close other apps or try a smaller PDF.</string>
+    <string name="rearrange_pages_save_error">The rearranged PDF could not be created safely. The original was not changed; choose another save location.</string>
 </resources>

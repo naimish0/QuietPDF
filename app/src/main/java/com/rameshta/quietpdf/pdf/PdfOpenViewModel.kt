@@ -90,6 +90,28 @@ sealed interface DeletePagesState {
     data class Failed(val failure: DeletePagesFailure) : DeletePagesState
 }
 
+sealed interface RearrangePagesState {
+    data object Idle : RearrangePagesState
+    data object Preparing : RearrangePagesState
+    data class Configuring(
+        val sourceUri: Uri,
+        val displayName: String,
+        val pageCount: Int,
+        val pageOrder: List<Int>,
+    ) : RearrangePagesState
+    data class Rearranging(val pageCount: Int) : RearrangePagesState
+    data class Failed(val failure: RearrangePagesFailure) : RearrangePagesState
+}
+
+enum class RearrangePagesFailure(@get:StringRes val messageResource: Int) {
+    NeedAtLeastTwoPages(R.string.rearrange_pages_need_two_pages),
+    InvalidDocument(R.string.rearrange_pages_invalid_document),
+    InvalidOrder(R.string.rearrange_pages_invalid_order),
+    PermissionDenied(R.string.rearrange_pages_permission_denied),
+    InsufficientMemory(R.string.rearrange_pages_memory_error),
+    UnableToSave(R.string.rearrange_pages_save_error),
+}
+
 enum class DeletePagesFailure(@get:StringRes val messageResource: Int) {
     NeedAtLeastTwoPages(R.string.delete_pages_need_two_pages),
     InvalidDocument(R.string.delete_pages_invalid_document),
@@ -150,12 +172,14 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
     private val splitPdfEngine = SplitPdfEngine(application)
     private val extractPagesEngine = ExtractPagesEngine(application)
     private val deletePagesEngine = DeletePagesEngine(application)
+    private val rearrangePagesEngine = RearrangePagesEngine(application)
     private var openJob: Job? = null
     private var imageCreationJob: Job? = null
     private var mergeJob: Job? = null
     private var splitJob: Job? = null
     private var extractPagesJob: Job? = null
     private var deletePagesJob: Job? = null
+    private var rearrangePagesJob: Job? = null
     private var selectedImageUris: List<Uri> = emptyList()
     private var selectedImageLayout = ImagePdfLayout()
     private var selectedSplitRanges: List<SplitPageRange> = emptyList()
@@ -182,6 +206,9 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
         private set
 
     var deletePagesState: DeletePagesState by mutableStateOf(DeletePagesState.Idle)
+        private set
+
+    var rearrangePagesState: RearrangePagesState by mutableStateOf(RearrangePagesState.Idle)
         private set
 
     fun open(uri: Uri) {
@@ -587,6 +614,100 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
     fun clearDeletePagesFailure() {
         selectedDeletedPageIndices = IntArray(0)
         deletePagesState = DeletePagesState.Idle
+    }
+
+    fun selectPdfForPageRearrangement(uri: Uri) {
+        rearrangePagesJob?.cancel()
+        rearrangePagesState = RearrangePagesState.Preparing
+        rearrangePagesJob = viewModelScope.launch {
+            rearrangePagesState = when (val result = withContext(Dispatchers.IO) { opener.open(uri) }) {
+                is PdfOpenResult.Success -> {
+                    if (result.document.pageCount < 2) {
+                        RearrangePagesState.Failed(RearrangePagesFailure.NeedAtLeastTwoPages)
+                    } else {
+                        RearrangePagesState.Configuring(
+                            sourceUri = uri,
+                            displayName = result.document.displayName ?: "PDF",
+                            pageCount = result.document.pageCount,
+                            pageOrder = RearrangePageOrder.initial(result.document.pageCount),
+                        )
+                    }
+                }
+                is PdfOpenResult.Failure -> when (result.reason) {
+                    PdfOpenFailure.PermissionDenied -> {
+                        RearrangePagesState.Failed(RearrangePagesFailure.PermissionDenied)
+                    }
+                    PdfOpenFailure.Empty -> {
+                        RearrangePagesState.Failed(RearrangePagesFailure.NeedAtLeastTwoPages)
+                    }
+                    else -> RearrangePagesState.Failed(RearrangePagesFailure.InvalidDocument)
+                }
+            }
+        }
+    }
+
+    fun moveRearrangedPage(fromIndex: Int, toIndex: Int) {
+        val configuring = rearrangePagesState as? RearrangePagesState.Configuring ?: return
+        rearrangePagesState = configuring.copy(
+            pageOrder = RearrangePageOrder.move(configuring.pageOrder, fromIndex, toIndex),
+        )
+    }
+
+    fun resetRearrangedPageOrder() {
+        val configuring = rearrangePagesState as? RearrangePagesState.Configuring ?: return
+        rearrangePagesState = configuring.copy(
+            pageOrder = RearrangePageOrder.initial(configuring.pageCount),
+        )
+    }
+
+    fun rearrangeSelectedPdf(outputUri: Uri) {
+        val configuring = rearrangePagesState as? RearrangePagesState.Configuring ?: return
+        val pageOrder = configuring.pageOrder.toIntArray()
+        if (!RearrangePageOrder.isCompletePermutation(pageOrder, configuring.pageCount)) {
+            rearrangePagesState = RearrangePagesState.Failed(RearrangePagesFailure.InvalidOrder)
+            return
+        }
+        rearrangePagesJob?.cancel()
+        rearrangePagesState = RearrangePagesState.Rearranging(configuring.pageCount)
+        rearrangePagesJob = viewModelScope.launch {
+            rearrangePagesState = when (
+                val result = rearrangePagesEngine.rearrange(
+                    sourceUri = configuring.sourceUri,
+                    outputUri = outputUri,
+                    pageOrder = pageOrder,
+                    expectedSourcePageCount = configuring.pageCount,
+                )
+            ) {
+                is RearrangePagesResult.Success -> {
+                    open(outputUri)
+                    RearrangePagesState.Idle
+                }
+                RearrangePagesResult.InvalidDocument -> {
+                    RearrangePagesState.Failed(RearrangePagesFailure.InvalidDocument)
+                }
+                RearrangePagesResult.InvalidOrder -> {
+                    RearrangePagesState.Failed(RearrangePagesFailure.InvalidOrder)
+                }
+                RearrangePagesResult.PermissionDenied -> {
+                    RearrangePagesState.Failed(RearrangePagesFailure.PermissionDenied)
+                }
+                RearrangePagesResult.InsufficientMemory -> {
+                    RearrangePagesState.Failed(RearrangePagesFailure.InsufficientMemory)
+                }
+                RearrangePagesResult.Failed -> {
+                    RearrangePagesState.Failed(RearrangePagesFailure.UnableToSave)
+                }
+            }
+        }
+    }
+
+    fun cancelRearrangePages() {
+        rearrangePagesJob?.cancel()
+        rearrangePagesState = RearrangePagesState.Idle
+    }
+
+    fun clearRearrangePagesFailure() {
+        rearrangePagesState = RearrangePagesState.Idle
     }
 
     fun rejectUnsupportedUri() {
