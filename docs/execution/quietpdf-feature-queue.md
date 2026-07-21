@@ -37,7 +37,7 @@ COMPLETED T30-Image-Watermark
 COMPLETED T31-Extract-Images
 COMPLETED T32-Fill-Forms
 COMPLETED T33-Sign-PDF
-T34-Annotate-PDF
+COMPLETED T34-Annotate-PDF
 T35-Recent-Files
 T36-Favorites
 T37-History

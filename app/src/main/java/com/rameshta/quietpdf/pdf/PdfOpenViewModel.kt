@@ -380,6 +380,28 @@ enum class SignPdfFailure(@get:StringRes val messageResource: Int) {
     UnableToSave(R.string.sign_pdf_save_error),
 }
 
+sealed interface AnnotatePdfState {
+    data object Idle : AnnotatePdfState
+    data object Preparing : AnnotatePdfState
+    data class Configuring(val sourceUri: Uri, val displayName: String, val pageCount: Int) : AnnotatePdfState
+    data object Saving : AnnotatePdfState
+    data class Completed(
+        val outputUri: Uri,
+        val pageCount: Int,
+        val annotationCount: Int,
+    ) : AnnotatePdfState
+    data class Failed(val failure: AnnotatePdfFailure) : AnnotatePdfState
+}
+
+enum class AnnotatePdfFailure(@get:StringRes val messageResource: Int) {
+    PasswordProtected(R.string.annotate_pdf_password_protected),
+    InvalidDocument(R.string.annotate_pdf_invalid_document),
+    InvalidAnnotations(R.string.annotate_pdf_invalid_annotations),
+    PermissionDenied(R.string.annotate_pdf_permission_denied),
+    InsufficientMemory(R.string.annotate_pdf_memory_error),
+    UnableToSave(R.string.annotate_pdf_save_error),
+}
+
 enum class TextWatermarkFailure(@get:StringRes val messageResource: Int) {
     PasswordProtected(R.string.text_watermark_password_protected),
     InvalidDocument(R.string.text_watermark_invalid_document),
@@ -509,6 +531,7 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
     private val extractImagesEngine = ExtractImagesEngine(application)
     private val fillFormsEngine = FillFormsEngine(application)
     private val signPdfEngine = SignPdfEngine(application)
+    private val annotatePdfEngine = AnnotatePdfEngine(application)
     private val scannerCaptureEngine = ScannerCaptureEngine(application)
     private val scannerCropCorrectionEngine = ScannerCropCorrectionEngine(application.cacheDir)
     private val scannerEnhancementEngine = ScannerEnhancementEngine(application.cacheDir)
@@ -531,6 +554,8 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
     private var fillFormsJob: Job? = null
     private var signPdfJob: Job? = null
     private var signPdfConfiguration: SignPdfState.Configuring? = null
+    private var annotatePdfJob: Job? = null
+    private var annotatePdfConfiguration: AnnotatePdfState.Configuring? = null
     private var extractImagesConfiguration: ExtractImagesState.Configuring? = null
     private var scannerJob: Job? = null
     private var scannerEnhancementJob: Job? = null
@@ -606,6 +631,9 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
         private set
 
     var signPdfState: SignPdfState by mutableStateOf(SignPdfState.Idle)
+        private set
+
+    var annotatePdfState: AnnotatePdfState by mutableStateOf(AnnotatePdfState.Idle)
         private set
 
     var scannerCaptureState: ScannerCaptureState by mutableStateOf(ScannerCaptureState.Idle)
@@ -2373,6 +2401,87 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
         signPdfConfiguration = null
     }
 
+    fun selectPdfForAnnotation(uri: Uri) {
+        annotatePdfJob?.cancel()
+        annotatePdfConfiguration = null
+        annotatePdfState = AnnotatePdfState.Preparing
+        annotatePdfJob = viewModelScope.launch {
+            annotatePdfState = when (val result = annotatePdfEngine.analyze(uri)) {
+                is AnnotatePdfAnalysisResult.Ready -> AnnotatePdfState.Configuring(
+                    uri,
+                    withContext(Dispatchers.IO) { queryDisplayName(uri) } ?: "PDF",
+                    result.analysis.pageCount,
+                ).also { annotatePdfConfiguration = it }
+                AnnotatePdfAnalysisResult.PasswordProtected ->
+                    AnnotatePdfState.Failed(AnnotatePdfFailure.PasswordProtected)
+                AnnotatePdfAnalysisResult.InvalidDocument ->
+                    AnnotatePdfState.Failed(AnnotatePdfFailure.InvalidDocument)
+                AnnotatePdfAnalysisResult.PermissionDenied ->
+                    AnnotatePdfState.Failed(AnnotatePdfFailure.PermissionDenied)
+                AnnotatePdfAnalysisResult.InsufficientMemory ->
+                    AnnotatePdfState.Failed(AnnotatePdfFailure.InsufficientMemory)
+            }
+        }
+    }
+
+    suspend fun renderAnnotationPreview(
+        annotations: List<PdfAnnotationItem>,
+        pageIndex: Int,
+        targetWidth: Int,
+    ): AnnotatePdfPreviewResult {
+        val configuring = annotatePdfConfiguration ?: return AnnotatePdfPreviewResult.Failed
+        return annotatePdfEngine.preview(configuring.sourceUri, annotations, pageIndex, targetWidth)
+    }
+
+    fun annotateSelectedPdf(outputUri: Uri, annotations: List<PdfAnnotationItem>) {
+        val configuring = annotatePdfConfiguration ?: return
+        if (annotations.isEmpty()) {
+            annotatePdfConfiguration = null
+            annotatePdfState = AnnotatePdfState.Failed(AnnotatePdfFailure.InvalidAnnotations)
+            return
+        }
+        annotatePdfJob?.cancel()
+        annotatePdfState = AnnotatePdfState.Saving
+        annotatePdfJob = viewModelScope.launch {
+            annotatePdfState = when (val result = annotatePdfEngine.annotate(
+                configuring.sourceUri, outputUri, annotations, configuring.pageCount,
+            )) {
+                is AnnotatePdfResult.Success -> AnnotatePdfState.Completed(
+                    outputUri, result.pageCount, result.annotationCount,
+                )
+                AnnotatePdfResult.PasswordProtected ->
+                    AnnotatePdfState.Failed(AnnotatePdfFailure.PasswordProtected)
+                AnnotatePdfResult.InvalidDocument ->
+                    AnnotatePdfState.Failed(AnnotatePdfFailure.InvalidDocument)
+                AnnotatePdfResult.InvalidAnnotations ->
+                    AnnotatePdfState.Failed(AnnotatePdfFailure.InvalidAnnotations)
+                AnnotatePdfResult.PermissionDenied ->
+                    AnnotatePdfState.Failed(AnnotatePdfFailure.PermissionDenied)
+                AnnotatePdfResult.InsufficientMemory ->
+                    AnnotatePdfState.Failed(AnnotatePdfFailure.InsufficientMemory)
+                AnnotatePdfResult.Failed -> AnnotatePdfState.Failed(AnnotatePdfFailure.UnableToSave)
+            }
+            annotatePdfConfiguration = null
+        }
+    }
+
+    fun openAnnotatedPdf() {
+        val completed = annotatePdfState as? AnnotatePdfState.Completed ?: return
+        annotatePdfState = AnnotatePdfState.Idle
+        open(completed.outputUri)
+    }
+
+    fun cancelPdfAnnotation() {
+        annotatePdfJob?.cancel()
+        annotatePdfConfiguration = null
+        annotatePdfState = AnnotatePdfState.Idle
+    }
+
+    fun clearAnnotatePdfResult() {
+        annotatePdfConfiguration = null
+        annotatePdfState = AnnotatePdfState.Idle
+    }
+
     fun rejectUnsupportedUri() {
         openJob?.cancel()
         searchEngine.close()
@@ -2450,6 +2559,8 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
         duplicatePagesJob?.cancel()
         compressPdfJob?.cancel()
         extractImagesJob?.cancel()
+        annotatePdfJob?.cancel()
+        annotatePdfConfiguration = null
         clearExtractImagesConfiguration()
         extractImagesEngine.clearShareFiles()
         scannerJob?.cancel()

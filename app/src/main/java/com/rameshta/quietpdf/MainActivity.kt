@@ -144,6 +144,9 @@ import com.rameshta.quietpdf.pdf.FillFormsEngine
 import com.rameshta.quietpdf.pdf.SignPdfPreviewResult
 import com.rameshta.quietpdf.pdf.SignPdfState
 import com.rameshta.quietpdf.pdf.VisibleSignatureSettings
+import com.rameshta.quietpdf.pdf.AnnotatePdfPreviewResult
+import com.rameshta.quietpdf.pdf.AnnotatePdfState
+import com.rameshta.quietpdf.pdf.PdfAnnotationItem
 import com.rameshta.quietpdf.pdf.PdfCompressionMode
 import com.rameshta.quietpdf.pdf.PdfCompressionRequest
 import com.rameshta.quietpdf.pdf.TargetFileSize
@@ -187,6 +190,7 @@ class MainActivity : ComponentActivity() {
                 var pendingVisibleSignature by remember {
                     mutableStateOf<Pair<Bitmap, VisibleSignatureSettings>?>(null)
                 }
+                var pendingAnnotations by remember { mutableStateOf<List<PdfAnnotationItem>?>(null) }
                 DisposableEffect(Unit) {
                     onDispose {
                         pendingVisibleSignature?.first?.recycle()
@@ -502,6 +506,22 @@ class MainActivity : ComponentActivity() {
                         viewModel.selectPdfForSigning(uri)
                     }
                 }
+                val createAnnotatedPdf = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.CreateDocument("application/pdf"),
+                ) { uri ->
+                    val annotations = pendingAnnotations
+                    pendingAnnotations = null
+                    if (uri == null || annotations == null) viewModel.cancelPdfAnnotation()
+                    else viewModel.annotateSelectedPdf(uri, annotations)
+                }
+                val annotatePdfPicker = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.OpenDocument(),
+                ) { uri ->
+                    if (uri != null) {
+                        retainReadPermission(uri)
+                        viewModel.selectPdfForAnnotation(uri)
+                    }
+                }
                 val createScannedPdf = rememberLauncherForActivityResult(
                     contract = ActivityResultContracts.CreateDocument("application/pdf"),
                 ) { uri ->
@@ -758,6 +778,19 @@ class MainActivity : ComponentActivity() {
                     },
                     onOpenSignedPdf = viewModel::openSignedPdf,
                     onDismissSignPdfResult = viewModel::clearSignPdfResult,
+                    annotatePdfState = viewModel.annotatePdfState,
+                    onAnnotatePdf = { annotatePdfPicker.launch(arrayOf("application/pdf")) },
+                    renderAnnotationPreview = viewModel::renderAnnotationPreview,
+                    onConfirmAnnotations = { annotations ->
+                        pendingAnnotations = annotations
+                        createAnnotatedPdf.launch("QuietPDF-annotated.pdf")
+                    },
+                    onCancelPdfAnnotation = {
+                        pendingAnnotations = null
+                        viewModel.cancelPdfAnnotation()
+                    },
+                    onOpenAnnotatedPdf = viewModel::openAnnotatedPdf,
+                    onDismissAnnotatePdfResult = viewModel::clearAnnotatePdfResult,
                     scannerCaptureState = viewModel.scannerCaptureState,
                     onScanDocument = {
                         if (ContextCompat.checkSelfPermission(
@@ -958,6 +991,15 @@ fun QuietPdfApp(
     onCancelPdfSigning: () -> Unit = {},
     onOpenSignedPdf: () -> Unit = {},
     onDismissSignPdfResult: () -> Unit = {},
+    annotatePdfState: AnnotatePdfState = AnnotatePdfState.Idle,
+    onAnnotatePdf: () -> Unit = {},
+    renderAnnotationPreview: suspend (List<PdfAnnotationItem>, Int, Int) -> AnnotatePdfPreviewResult = { _, _, _ ->
+        AnnotatePdfPreviewResult.Failed
+    },
+    onConfirmAnnotations: (List<PdfAnnotationItem>) -> Unit = {},
+    onCancelPdfAnnotation: () -> Unit = {},
+    onOpenAnnotatedPdf: () -> Unit = {},
+    onDismissAnnotatePdfResult: () -> Unit = {},
     scannerCaptureState: ScannerCaptureState = ScannerCaptureState.Idle,
     onScanDocument: () -> Unit = {},
     onBeginScannerCapture: () -> File? = { null },
@@ -1109,6 +1151,11 @@ fun QuietPdfApp(
                     onCancelPdfSigning = onCancelPdfSigning,
                     onOpenSignedPdf = onOpenSignedPdf,
                     onDismissSignPdfResult = onDismissSignPdfResult,
+                    annotatePdfState = annotatePdfState,
+                    onAnnotatePdf = onAnnotatePdf,
+                    onCancelPdfAnnotation = onCancelPdfAnnotation,
+                    onOpenAnnotatedPdf = onOpenAnnotatedPdf,
+                    onDismissAnnotatePdfResult = onDismissAnnotatePdfResult,
                     scannerCaptureState = scannerCaptureState,
                     onScanDocument = onScanDocument,
                     onOpenScannerPdf = onOpenScannerPdf,
@@ -1287,6 +1334,15 @@ fun QuietPdfApp(
             renderPreview = renderSignaturePreview,
             onConfirm = onConfirmSignature,
             onCancel = onCancelPdfSigning,
+        )
+    }
+    if (annotatePdfState is AnnotatePdfState.Configuring) {
+        AnnotatePdfDialog(
+            documentName = annotatePdfState.displayName,
+            pageCount = annotatePdfState.pageCount,
+            renderPreview = renderAnnotationPreview,
+            onConfirm = onConfirmAnnotations,
+            onCancel = onCancelPdfAnnotation,
         )
     }
 }
@@ -3002,6 +3058,11 @@ private fun OpenPdfContent(
     onCancelPdfSigning: () -> Unit,
     onOpenSignedPdf: () -> Unit,
     onDismissSignPdfResult: () -> Unit,
+    annotatePdfState: AnnotatePdfState,
+    onAnnotatePdf: () -> Unit,
+    onCancelPdfAnnotation: () -> Unit,
+    onOpenAnnotatedPdf: () -> Unit,
+    onDismissAnnotatePdfResult: () -> Unit,
     scannerCaptureState: ScannerCaptureState,
     onScanDocument: () -> Unit,
     onOpenScannerPdf: () -> Unit,
@@ -3031,6 +3092,7 @@ private fun OpenPdfContent(
         extractImagesState is ExtractImagesState.Completed
         || fillFormsState is FillFormsState.Failed || fillFormsState is FillFormsState.Completed
         || signPdfState is SignPdfState.Failed || signPdfState is SignPdfState.Completed
+        || annotatePdfState is AnnotatePdfState.Failed || annotatePdfState is AnnotatePdfState.Completed
         || scannerCaptureState is ScannerCaptureState.Failed ||
         scannerCaptureState is ScannerCaptureState.Completed
     LaunchedEffect(hasResult) {
@@ -3314,6 +3376,20 @@ private fun OpenPdfContent(
             }
             else -> Unit
         }
+        when (annotatePdfState) {
+            AnnotatePdfState.Preparing -> {
+                OperationProgressContent(R.string.annotate_pdf_preparing)
+                return@Column
+            }
+            AnnotatePdfState.Saving -> {
+                OperationProgressContent(
+                    R.string.annotate_pdf_saving,
+                    onCancel = onCancelPdfAnnotation,
+                )
+                return@Column
+            }
+            else -> Unit
+        }
         when (state) {
             PdfOpenState.Idle -> IdleContent(
                 onOpenPdf = onOpenPdf,
@@ -3374,6 +3450,10 @@ private fun OpenPdfContent(
                 onSignPdf = onSignPdf,
                 onOpenSignedPdf = onOpenSignedPdf,
                 onDismissSignPdfResult = onDismissSignPdfResult,
+                annotatePdfState = annotatePdfState,
+                onAnnotatePdf = onAnnotatePdf,
+                onOpenAnnotatedPdf = onOpenAnnotatedPdf,
+                onDismissAnnotatePdfResult = onDismissAnnotatePdfResult,
                 scannerCaptureState = scannerCaptureState,
                 onScanDocument = onScanDocument,
                 onOpenScannerPdf = onOpenScannerPdf,
@@ -3446,6 +3526,10 @@ private fun IdleContent(
     onSignPdf: () -> Unit,
     onOpenSignedPdf: () -> Unit,
     onDismissSignPdfResult: () -> Unit,
+    annotatePdfState: AnnotatePdfState,
+    onAnnotatePdf: () -> Unit,
+    onOpenAnnotatedPdf: () -> Unit,
+    onDismissAnnotatePdfResult: () -> Unit,
     scannerCaptureState: ScannerCaptureState,
     onScanDocument: () -> Unit,
     onOpenScannerPdf: () -> Unit,
@@ -3573,6 +3657,12 @@ private fun IdleContent(
         label = stringResource(R.string.sign_pdf),
         onClick = onSignPdf,
         testTag = "sign_pdf_button",
+    )
+    Spacer(Modifier.height(4.dp))
+    OpenButton(
+        label = stringResource(R.string.annotate_pdf),
+        onClick = onAnnotatePdf,
+        testTag = "annotate_pdf_button",
     )
     if (imagesToPdfState is ImagesToPdfState.Failed) {
         Spacer(Modifier.height(20.dp))
@@ -4001,6 +4091,43 @@ private fun IdleContent(
                     modifier = Modifier.testTag("open_signed_pdf"),
                 ) { Text(stringResource(R.string.open_pdf)) }
                 TextButton(onClick = onDismissSignPdfResult) {
+                    Text(stringResource(R.string.dismiss))
+                }
+            }
+        }
+        else -> Unit
+    }
+    when (annotatePdfState) {
+        is AnnotatePdfState.Failed -> {
+            Spacer(Modifier.height(20.dp))
+            Text(
+                text = stringResource(annotatePdfState.failure.messageResource),
+                color = MaterialTheme.colorScheme.error,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.testTag("annotate_pdf_error"),
+            )
+            TextButton(onClick = onDismissAnnotatePdfResult) {
+                Text(stringResource(R.string.dismiss))
+            }
+        }
+        is AnnotatePdfState.Completed -> {
+            Spacer(Modifier.height(20.dp))
+            Text(
+                text = stringResource(
+                    R.string.annotate_pdf_completed,
+                    annotatePdfState.annotationCount,
+                    annotatePdfState.pageCount,
+                ),
+                color = MaterialTheme.colorScheme.primary,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.testTag("annotate_pdf_success"),
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(
+                    onClick = onOpenAnnotatedPdf,
+                    modifier = Modifier.testTag("open_annotated_pdf"),
+                ) { Text(stringResource(R.string.open_pdf)) }
+                TextButton(onClick = onDismissAnnotatePdfResult) {
                     Text(stringResource(R.string.dismiss))
                 }
             }
