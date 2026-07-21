@@ -64,6 +64,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.withFrameNanos
@@ -181,6 +182,9 @@ import com.rameshta.quietpdf.pdf.ScannerColorMode
 import com.rameshta.quietpdf.pdf.ScannerEnhancementSettings
 import com.rameshta.quietpdf.ui.reader.PdfReaderScreen
 import com.rameshta.quietpdf.ui.theme.QuietPDFTheme
+import com.rameshta.quietpdf.ads.AdMobController
+import com.rameshta.quietpdf.ads.AdPlacementPolicy
+import com.rameshta.quietpdf.ads.HomeBannerAd
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
@@ -200,15 +204,18 @@ import java.util.Date
 
 class MainActivity : ComponentActivity() {
     private val viewModel: PdfOpenViewModel by viewModels()
+    private val adMobController = AdMobController()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        adMobController.start(this)
 
         if (savedInstanceState == null) openFromIntent(intent)
 
         setContent {
             QuietPDFTheme {
+                val adMobState by adMobController.state.collectAsState()
                 var pendingProtectPassword by remember { mutableStateOf<CharArray?>(null) }
                 var pendingRemovalPassword by remember { mutableStateOf<CharArray?>(null) }
                 var pendingPasswordChange by remember {
@@ -602,7 +609,13 @@ class MainActivity : ComponentActivity() {
                     onClearHistory = viewModel::clearHistory,
                     onToggleFavoriteTool = viewModel::toggleFavoriteTool,
                     onSharePdf = ::sharePdf,
-                    onOpenSettings = ::openAppSettings,
+                    onOpenSettings = {
+                        adMobController.showPrivacyOptions(this, ::openAppSettings)
+                    },
+                    adsCanLoad = adMobState.canRequestAds,
+                    homeBannerContent = {
+                        HomeBannerAd(BuildConfig.ADMOB_HOME_BANNER_ID)
+                    },
                     onOpenPdf = { picker.launch(arrayOf("application/pdf")) },
                     renderPage = viewModel::renderPage,
                     onPageChanged = viewModel::rememberPage,
@@ -1038,6 +1051,8 @@ fun QuietPdfApp(
     onToggleFavoriteTool: (SmartTool) -> Unit = {},
     onSharePdf: (Uri) -> Unit = {},
     onOpenSettings: () -> Unit = {},
+    adsCanLoad: Boolean = false,
+    homeBannerContent: (@Composable () -> Unit)? = null,
     onOpenPdf: () -> Unit,
     renderPage: suspend (pageIndex: Int, targetWidth: Int) -> PageRenderResult,
     onPageChanged: (pageIndex: Int) -> Unit = {},
@@ -1228,6 +1243,23 @@ fun QuietPdfApp(
     }
 
     var destination by rememberSaveable { mutableStateOf(SmartHomeDestination.Home) }
+    val operationsAreIdle = imagesToPdfState is ImagesToPdfState.Idle &&
+        mergePdfState is MergePdfState.Idle && splitPdfState is SplitPdfState.Idle &&
+        extractPagesState is ExtractPagesState.Idle && deletePagesState is DeletePagesState.Idle &&
+        rearrangePagesState is RearrangePagesState.Idle && rotatePagesState is RotatePagesState.Idle &&
+        duplicatePagesState is DuplicatePagesState.Idle && compressPdfState is CompressPdfState.Idle &&
+        protectPdfState is ProtectPdfState.Idle && removePasswordState is RemovePasswordState.Idle &&
+        changePasswordState is ChangePasswordState.Idle && textWatermarkState is TextWatermarkState.Idle &&
+        imageWatermarkState is ImageWatermarkState.Idle && extractImagesState is ExtractImagesState.Idle &&
+        fillFormsState is FillFormsState.Idle && signPdfState is SignPdfState.Idle &&
+        annotatePdfState is AnnotatePdfState.Idle && scannerCaptureState is ScannerCaptureState.Idle
+    val showHomeBanner = AdPlacementPolicy.showHomeBanner(
+        isHome = destination == SmartHomeDestination.Home,
+        documentIsClosed = state is PdfOpenState.Idle,
+        operationsAreIdle = operationsAreIdle,
+        consentAllowsAds = adsCanLoad,
+        isConfigured = homeBannerContent != null,
+    )
     BackHandler(destination != SmartHomeDestination.Home) {
         destination = SmartHomeDestination.Home
     }
@@ -1258,11 +1290,14 @@ fun QuietPdfApp(
                     )
                 },
                 bottomBar = {
-                    if (!useNavigationRail) {
+                    Column {
+                        if (showHomeBanner) homeBannerContent?.invoke()
+                        if (!useNavigationRail) {
                         SmartHomeNavigationBar(
                             selected = destination,
                             onSelect = { destination = it },
                         )
+                        }
                     }
                 },
             ) { innerPadding ->
@@ -4067,6 +4102,13 @@ private fun SmartHomeDashboard(
             )
         }
     }
+    Text(
+        text = stringResource(R.string.ad_privacy_disclosure),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+            .testTag("ad_privacy_disclosure"),
+    )
     Spacer(Modifier.height(16.dp))
     if (continueReading != null) {
         var actionsExpanded by remember(continueReading.uri) { mutableStateOf(false) }

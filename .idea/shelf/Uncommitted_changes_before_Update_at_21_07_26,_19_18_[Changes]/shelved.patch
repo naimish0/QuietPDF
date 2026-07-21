@@ -1,0 +1,18 @@
+Index: docs/execution/quietpdf-feature-queue.md
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+># QuietPDF Feature Queue\n\nProcess this list sequentially. Feature branch names must exactly match the pending queue entry. The\nuser owns branch creation, Git operations, pull requests, merges, main pulls, and queue-status\nupdates. Codex implements the requested feature, writes its focused tests, and runs relevant\nverification after implementation is complete. Codex reports the verification commands and results,\nthen stops without changing this queue or performing any Git or pull-request operation.\n\nCOMPLETED T3-PDF-Reader-Modes\nCOMPLETED T4-PDF-Fullscreen\nCOMPLETED T5-PDF-Dark-Mode\nCOMPLETED T6-PDF-Remember-Page\nCOMPLETED T7-PDF-Search\nCOMPLETED T8-PDF-Bookmarks\nCOMPLETED T9-PDF-Table-Of-Contents\nCOMPLETED T10-PDF-Health\nCOMPLETED T11-Images-To-PDF\nCOMPLETED T12-Images-PDF-Layout\nCOMPLETED T13-Merge-PDF\nCOMPLETED T14-Split-PDF\nCOMPLETED T15-Extract-Pages\nCOMPLETED T16-Delete-Pages\nCOMPLETED T17-Rearrange-Pages\nCOMPLETED T18-Rotate-Pages\nCOMPLETED T19-Duplicate-Pages\nCOMPLETED T20-Compress-PDF\nCOMPLETED T21-Target-File-Size\nCOMPLETED T22-Scanner-Capture\nCOMPLETED T23-Scanner-Crop-Correction\nCOMPLETED T24-Scanner-Enhancement\nCOMPLETED T25-Scanner-Multi-Page\nCOMPLETED T26-Protect-PDF\nCOMPLETED T27-Remove-Password\nCOMPLETED 28-Change-Password\nCOMPLETED T29-Text-Watermark\nCOMPLETED T30-Image-Watermark\nCOMPLETED T31-Extract-Images\nCOMPLETED T32-Fill-Forms\nCOMPLETED T33-Sign-PDF\nCOMPLETED T34-Annotate-PDF\nCOMPLETED T35-Recent-Files\nCOMPLETED T36-Favorites\nCOMPLETED T37-History\nCOMPLETED T38-File-Search-Sort\nT39-Share-PDF\nT40-Smart-Home\nT41-AdMob\nT42-Production-Hardening\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/docs/execution/quietpdf-feature-queue.md b/docs/execution/quietpdf-feature-queue.md
+--- a/docs/execution/quietpdf-feature-queue.md	(revision 9c18a611f047d1efc183f48444cb0ae4fd52155c)
++++ b/docs/execution/quietpdf-feature-queue.md	(date 1784641683938)
+@@ -43,6 +43,6 @@
+ COMPLETED T37-History
+ COMPLETED T38-File-Search-Sort
+ T39-Share-PDF
+-T40-Smart-Home
++COMPLETED T40-Smart-Home
+ T41-AdMob
+ T42-Production-Hardening

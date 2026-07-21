@@ -18,7 +18,30 @@ android {
     }
 
     buildTypes {
+        debug {
+            manifestPlaceholders["admobApplicationId"] = "ca-app-pub-3940256099942544~3347511713"
+            buildConfigField("boolean", "ADMOB_ENABLED", "true")
+            buildConfigField(
+                "String",
+                "ADMOB_HOME_BANNER_ID",
+                "\"ca-app-pub-3940256099942544/9214589741\"",
+            )
+        }
         release {
+            val applicationId = providers.gradleProperty("ADMOB_APP_ID").orNull
+            val homeBannerId = providers.gradleProperty("ADMOB_HOME_BANNER_ID").orNull
+            val configured = applicationId?.matches(Regex("^ca-app-pub-\\d{16}~\\d{10}$")) == true &&
+                homeBannerId?.matches(Regex("^ca-app-pub-\\d{16}/\\d{10}$")) == true
+            // Keep unconfigured local release builds crash-safe without inventing a production ID.
+            // Ads stay disabled until both production values are supplied by the release environment.
+            manifestPlaceholders["admobApplicationId"] = applicationId.takeIf { configured }
+                ?: "ca-app-pub-3940256099942544~3347511713"
+            buildConfigField("boolean", "ADMOB_ENABLED", configured.toString())
+            buildConfigField(
+                "String",
+                "ADMOB_HOME_BANNER_ID",
+                "\"${homeBannerId.takeIf { configured }.orEmpty()}\"",
+            )
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
@@ -38,6 +61,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
@@ -63,6 +87,8 @@ dependencies {
         // certificate-encryption stack so this feature does not ship unused crypto code.
         exclude(group = "org.bouncycastle")
     }
+    implementation(libs.google.mobile.ads)
+    implementation(libs.google.ump)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
