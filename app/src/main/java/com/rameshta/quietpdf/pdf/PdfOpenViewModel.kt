@@ -124,6 +124,26 @@ sealed interface RotatePagesState {
     data class Failed(val failure: RotatePagesFailure) : RotatePagesState
 }
 
+sealed interface DuplicatePagesState {
+    data object Idle : DuplicatePagesState
+    data object Preparing : DuplicatePagesState
+    data class Configuring(
+        val sourceUri: Uri,
+        val displayName: String,
+        val pageCount: Int,
+    ) : DuplicatePagesState
+    data class Duplicating(val selectedPageCount: Int, val outputPageCount: Int) : DuplicatePagesState
+    data class Failed(val failure: DuplicatePagesFailure) : DuplicatePagesState
+}
+
+enum class DuplicatePagesFailure(@get:StringRes val messageResource: Int) {
+    InvalidDocument(R.string.duplicate_pages_invalid_document),
+    InvalidSelection(R.string.duplicate_pages_invalid_selection),
+    PermissionDenied(R.string.duplicate_pages_permission_denied),
+    InsufficientMemory(R.string.duplicate_pages_memory_error),
+    UnableToSave(R.string.duplicate_pages_save_error),
+}
+
 enum class RotatePagesFailure(@get:StringRes val messageResource: Int) {
     InvalidDocument(R.string.rotate_pages_invalid_document),
     InvalidSelection(R.string.rotate_pages_invalid_selection),
@@ -194,6 +214,7 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
     private val deletePagesEngine = DeletePagesEngine(application)
     private val rearrangePagesEngine = RearrangePagesEngine(application)
     private val rotatePagesEngine = RotatePagesEngine(application)
+    private val duplicatePagesEngine = DuplicatePagesEngine(application)
     private var openJob: Job? = null
     private var imageCreationJob: Job? = null
     private var mergeJob: Job? = null
@@ -202,6 +223,7 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
     private var deletePagesJob: Job? = null
     private var rearrangePagesJob: Job? = null
     private var rotatePagesJob: Job? = null
+    private var duplicatePagesJob: Job? = null
     private var selectedImageUris: List<Uri> = emptyList()
     private var selectedImageLayout = ImagePdfLayout()
     private var selectedSplitRanges: List<SplitPageRange> = emptyList()
@@ -209,6 +231,7 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
     private var selectedDeletedPageIndices = IntArray(0)
     private var selectedRotatedPageIndices = IntArray(0)
     private var selectedPageRotation = PageRotation.Clockwise90
+    private var selectedDuplicatedPageIndices = IntArray(0)
     private var documentGeneration = 0L
     private val pageCache = object : LruCache<PageCacheKey, Bitmap>(pageCacheBytes()) {
         override fun sizeOf(key: PageCacheKey, value: Bitmap): Int = value.allocationByteCount
@@ -236,6 +259,9 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
         private set
 
     var rotatePagesState: RotatePagesState by mutableStateOf(RotatePagesState.Idle)
+        private set
+
+    var duplicatePagesState: DuplicatePagesState by mutableStateOf(DuplicatePagesState.Idle)
         private set
 
     fun open(uri: Uri) {
@@ -820,6 +846,86 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
         rotatePagesState = RotatePagesState.Idle
     }
 
+    fun selectPdfForPageDuplication(uri: Uri) {
+        duplicatePagesJob?.cancel()
+        selectedDuplicatedPageIndices = IntArray(0)
+        duplicatePagesState = DuplicatePagesState.Preparing
+        duplicatePagesJob = viewModelScope.launch {
+            duplicatePagesState = when (val result = withContext(Dispatchers.IO) { opener.open(uri) }) {
+                is PdfOpenResult.Success -> DuplicatePagesState.Configuring(
+                    sourceUri = uri,
+                    displayName = result.document.displayName ?: "PDF",
+                    pageCount = result.document.pageCount,
+                )
+                is PdfOpenResult.Failure -> when (result.reason) {
+                    PdfOpenFailure.PermissionDenied -> {
+                        DuplicatePagesState.Failed(DuplicatePagesFailure.PermissionDenied)
+                    }
+                    else -> DuplicatePagesState.Failed(DuplicatePagesFailure.InvalidDocument)
+                }
+            }
+        }
+    }
+
+    fun configurePageDuplication(selectedPageIndices: IntArray) {
+        if (duplicatePagesState !is DuplicatePagesState.Configuring) return
+        selectedDuplicatedPageIndices = selectedPageIndices.copyOf()
+    }
+
+    fun duplicateSelectedPages(outputUri: Uri) {
+        val configuring = duplicatePagesState as? DuplicatePagesState.Configuring ?: return
+        val selectedPages = selectedDuplicatedPageIndices.copyOf()
+        val pageOrder = DuplicatePagePlan.outputPageOrder(selectedPages, configuring.pageCount)
+        if (pageOrder == null) {
+            duplicatePagesState = DuplicatePagesState.Failed(DuplicatePagesFailure.InvalidSelection)
+            return
+        }
+        duplicatePagesJob?.cancel()
+        duplicatePagesState = DuplicatePagesState.Duplicating(selectedPages.size, pageOrder.size)
+        duplicatePagesJob = viewModelScope.launch {
+            duplicatePagesState = when (
+                val result = duplicatePagesEngine.duplicate(
+                    sourceUri = configuring.sourceUri,
+                    outputUri = outputUri,
+                    selectedPageIndices = selectedPages,
+                    expectedSourcePageCount = configuring.pageCount,
+                )
+            ) {
+                is DuplicatePagesResult.Success -> {
+                    open(outputUri)
+                    DuplicatePagesState.Idle
+                }
+                DuplicatePagesResult.InvalidDocument -> {
+                    DuplicatePagesState.Failed(DuplicatePagesFailure.InvalidDocument)
+                }
+                DuplicatePagesResult.InvalidSelection -> {
+                    DuplicatePagesState.Failed(DuplicatePagesFailure.InvalidSelection)
+                }
+                DuplicatePagesResult.PermissionDenied -> {
+                    DuplicatePagesState.Failed(DuplicatePagesFailure.PermissionDenied)
+                }
+                DuplicatePagesResult.InsufficientMemory -> {
+                    DuplicatePagesState.Failed(DuplicatePagesFailure.InsufficientMemory)
+                }
+                DuplicatePagesResult.Failed -> {
+                    DuplicatePagesState.Failed(DuplicatePagesFailure.UnableToSave)
+                }
+            }
+            selectedDuplicatedPageIndices = IntArray(0)
+        }
+    }
+
+    fun cancelDuplicatePages() {
+        duplicatePagesJob?.cancel()
+        selectedDuplicatedPageIndices = IntArray(0)
+        duplicatePagesState = DuplicatePagesState.Idle
+    }
+
+    fun clearDuplicatePagesFailure() {
+        selectedDuplicatedPageIndices = IntArray(0)
+        duplicatePagesState = DuplicatePagesState.Idle
+    }
+
     fun rejectUnsupportedUri() {
         openJob?.cancel()
         searchEngine.close()
@@ -894,6 +1000,7 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
         splitJob?.cancel()
         extractPagesJob?.cancel()
         deletePagesJob?.cancel()
+        duplicatePagesJob?.cancel()
         searchEngine.close()
         super.onCleared()
     }

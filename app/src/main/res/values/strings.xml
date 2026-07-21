@@ -192,4 +192,18 @@
     <string name="rotate_pages_permission_denied">QuietPDF lost access to the PDF or save location. Choose them again.</string>
     <string name="rotate_pages_memory_error">This PDF needs more memory than is available. Close other apps or try a smaller PDF.</string>
     <string name="rotate_pages_save_error">The rotated PDF could not be created safely. The original was not changed; choose another save location.</string>
+    <string name="duplicate_pages">Duplicate pages</string>
+    <string name="duplicate_pages_title">Duplicate pages</string>
+    <string name="duplicate_pages_preparing">Reading the selected PDF…</string>
+    <string name="duplicate_pages_duplicating">Duplicating %1$d selected pages; the new PDF will contain %2$d pages…</string>
+    <string name="duplicate_pages_document_summary">%1$s contains %2$d pages. Each selected page will be copied immediately after its original in a new PDF.</string>
+    <string name="duplicate_pages_selection_label">Pages to duplicate</string>
+    <string name="duplicate_pages_selection_help">Use page numbers and ranges from 1 to %1$d, for example: 1, 3, 5-7</string>
+    <string name="duplicate_pages_selection_count">%1$d pages selected. The new PDF will contain %2$d pages.</string>
+    <string name="save_duplicated_pdf">Save new PDF</string>
+    <string name="duplicate_pages_invalid_document">This file changed or is not a readable PDF. Keep the original and choose it again.</string>
+    <string name="duplicate_pages_invalid_selection">Choose unique pages in their original order, within this PDF’s page range.</string>
+    <string name="duplicate_pages_permission_denied">QuietPDF lost access to the PDF or save location. Choose them again.</string>
+    <string name="duplicate_pages_memory_error">This PDF needs more memory than is available. Close other apps or select fewer pages.</string>
+    <string name="duplicate_pages_save_error">The duplicated-page PDF could not be created safely. The original was not changed; choose another save location.</string>
 </resources>
