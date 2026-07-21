@@ -1,6 +1,6 @@
 COMPLETED T3-PDF-Reader-Modes
 COMPLETED T4-PDF-Fullscreen
-T5-PDF-Dark-Mode
+COMPLETED T5-PDF-Dark-Mode
 T6-PDF-Remember-Page
 T7-PDF-Search
 T8-PDF-Bookmarks
