@@ -79,11 +79,13 @@ import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.IntSize
@@ -147,6 +149,7 @@ import com.rameshta.quietpdf.pdf.VisibleSignatureSettings
 import com.rameshta.quietpdf.pdf.AnnotatePdfPreviewResult
 import com.rameshta.quietpdf.pdf.AnnotatePdfState
 import com.rameshta.quietpdf.pdf.PdfAnnotationItem
+import com.rameshta.quietpdf.pdf.RecentPdf
 import com.rameshta.quietpdf.pdf.PdfCompressionMode
 import com.rameshta.quietpdf.pdf.PdfCompressionRequest
 import com.rameshta.quietpdf.pdf.TargetFileSize
@@ -556,6 +559,10 @@ class MainActivity : ComponentActivity() {
 
                 QuietPdfApp(
                     state = viewModel.state,
+                    recentPdfs = viewModel.recentPdfs,
+                    onOpenRecentPdf = viewModel::openRecentPdf,
+                    onRemoveRecentPdf = viewModel::removeRecentPdf,
+                    onClearRecentPdfs = viewModel::clearRecentPdfs,
                     onOpenPdf = { picker.launch(arrayOf("application/pdf")) },
                     renderPage = viewModel::renderPage,
                     onPageChanged = viewModel::rememberPage,
@@ -871,6 +878,10 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun QuietPdfApp(
     state: PdfOpenState,
+    recentPdfs: List<RecentPdf> = emptyList(),
+    onOpenRecentPdf: (Uri) -> Unit = {},
+    onRemoveRecentPdf: (Uri) -> Unit = {},
+    onClearRecentPdfs: () -> Unit = {},
     onOpenPdf: () -> Unit,
     renderPage: suspend (pageIndex: Int, targetWidth: Int) -> PageRenderResult,
     onPageChanged: (pageIndex: Int) -> Unit = {},
@@ -1077,6 +1088,10 @@ fun QuietPdfApp(
             ) {
                 OpenPdfContent(
                     state = state,
+                    recentPdfs = recentPdfs,
+                    onOpenRecentPdf = onOpenRecentPdf,
+                    onRemoveRecentPdf = onRemoveRecentPdf,
+                    onClearRecentPdfs = onClearRecentPdfs,
                     onOpenPdf = onOpenPdf,
                     imagesToPdfState = imagesToPdfState,
                     onImagesToPdf = onImagesToPdf,
@@ -2984,6 +2999,10 @@ private fun LayoutChoiceRow(
 @Composable
 private fun OpenPdfContent(
     state: PdfOpenState,
+    recentPdfs: List<RecentPdf>,
+    onOpenRecentPdf: (Uri) -> Unit,
+    onRemoveRecentPdf: (Uri) -> Unit,
+    onClearRecentPdfs: () -> Unit,
     onOpenPdf: () -> Unit,
     imagesToPdfState: ImagesToPdfState,
     onImagesToPdf: () -> Unit,
@@ -3393,6 +3412,10 @@ private fun OpenPdfContent(
         when (state) {
             PdfOpenState.Idle -> IdleContent(
                 onOpenPdf = onOpenPdf,
+                recentPdfs = recentPdfs,
+                onOpenRecentPdf = onOpenRecentPdf,
+                onRemoveRecentPdf = onRemoveRecentPdf,
+                onClearRecentPdfs = onClearRecentPdfs,
                 onImagesToPdf = onImagesToPdf,
                 imagesToPdfState = imagesToPdfState,
                 onDismissImagesToPdfFailure = onDismissImagesToPdfFailure,
@@ -3467,8 +3490,90 @@ private fun OpenPdfContent(
 }
 
 @Composable
+private fun RecentFilesSection(
+    recentPdfs: List<RecentPdf>,
+    onOpen: (Uri) -> Unit,
+    onRemove: (Uri) -> Unit,
+    onClear: () -> Unit,
+) {
+    var confirmClear by remember { mutableStateOf(false) }
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(top = 20.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Text(
+            text = stringResource(R.string.recent_files),
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.testTag("recent_files_title"),
+        )
+        TextButton(
+            onClick = { confirmClear = true },
+            modifier = Modifier.testTag("recent_files_clear"),
+        ) { Text(stringResource(R.string.recent_files_clear)) }
+    }
+    recentPdfs.take(5).forEachIndexed { index, recent ->
+        val name = recent.displayName ?: stringResource(R.string.recent_file_unnamed)
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Button(
+                onClick = { onOpen(recent.uri) },
+                modifier = Modifier.weight(1f).heightIn(min = 56.dp).testTag("recent_file_$index"),
+            ) {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = name,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = pluralStringResource(
+                            R.plurals.recent_file_pages,
+                            recent.pageCount,
+                            recent.pageCount,
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            }
+            TextButton(
+                onClick = { onRemove(recent.uri) },
+                modifier = Modifier.testTag("recent_file_remove_$index"),
+            ) { Text(stringResource(R.string.recent_file_remove)) }
+        }
+    }
+    if (confirmClear) {
+        AlertDialog(
+            onDismissRequest = { confirmClear = false },
+            title = { Text(stringResource(R.string.recent_files_clear_title)) },
+            text = { Text(stringResource(R.string.recent_files_clear_message)) },
+            confirmButton = {
+                Button(
+                    onClick = { confirmClear = false; onClear() },
+                    modifier = Modifier.testTag("recent_files_clear_confirm"),
+                ) { Text(stringResource(R.string.recent_files_clear_confirm)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmClear = false }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            },
+            modifier = Modifier.testTag("recent_files_clear_dialog"),
+        )
+    }
+}
+
+@Composable
 private fun IdleContent(
     onOpenPdf: () -> Unit,
+    recentPdfs: List<RecentPdf>,
+    onOpenRecentPdf: (Uri) -> Unit,
+    onRemoveRecentPdf: (Uri) -> Unit,
+    onClearRecentPdfs: () -> Unit,
     onImagesToPdf: () -> Unit,
     imagesToPdfState: ImagesToPdfState,
     onDismissImagesToPdfFailure: () -> Unit,
@@ -3548,6 +3653,14 @@ private fun IdleContent(
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         textAlign = TextAlign.Center,
     )
+    if (recentPdfs.isNotEmpty()) {
+        RecentFilesSection(
+            recentPdfs = recentPdfs,
+            onOpen = onOpenRecentPdf,
+            onRemove = onRemoveRecentPdf,
+            onClear = onClearRecentPdfs,
+        )
+    }
     Spacer(Modifier.height(24.dp))
     OpenButton(label = stringResource(R.string.open_pdf), onClick = onOpenPdf)
     Spacer(Modifier.height(4.dp))

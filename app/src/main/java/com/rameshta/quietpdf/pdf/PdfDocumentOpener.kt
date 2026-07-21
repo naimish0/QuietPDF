@@ -41,6 +41,8 @@ class PdfDocumentOpener(private val contentResolver: ContentResolver) {
             return PdfOpenResult.Failure(PdfOpenFailure.FileUnavailable)
         } catch (_: IOException) {
             return PdfOpenResult.Failure(PdfOpenFailure.FileUnavailable)
+        } catch (_: IllegalArgumentException) {
+            return PdfOpenResult.Failure(PdfOpenFailure.FileUnavailable)
         }
 
         val pageCount = try {

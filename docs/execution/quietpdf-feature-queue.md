@@ -38,7 +38,7 @@ COMPLETED T31-Extract-Images
 COMPLETED T32-Fill-Forms
 COMPLETED T33-Sign-PDF
 COMPLETED T34-Annotate-PDF
-T35-Recent-Files
+COMPLETED T35-Recent-Files
 T36-Favorites
 T37-History
 T38-File-Search-Sort
