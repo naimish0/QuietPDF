@@ -12,6 +12,7 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.rameshta.quietpdf.R
+import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.CancellationException
@@ -41,6 +42,30 @@ sealed interface ImagesToPdfState {
     data class Configuring(val imageCount: Int) : ImagesToPdfState
     data class Creating(val imageCount: Int) : ImagesToPdfState
     data class Failed(val failure: ImagesToPdfFailure) : ImagesToPdfState
+}
+
+sealed interface ScannerCaptureState {
+    data object Idle : ScannerCaptureState
+    data object Camera : ScannerCaptureState
+    data object Capturing : ScannerCaptureState
+    data object PreparingPreview : ScannerCaptureState
+    data class Review(
+        val preview: ScannerCapturePreview,
+        val saveFailure: ScannerCaptureFailure? = null,
+    ) : ScannerCaptureState
+    data object CreatingPdf : ScannerCaptureState
+    data class Completed(val outputUri: Uri) : ScannerCaptureState
+    data class Failed(val failure: ScannerCaptureFailure) : ScannerCaptureState
+}
+
+enum class ScannerCaptureFailure(@get:StringRes val messageResource: Int) {
+    PermissionDenied(R.string.scanner_permission_denied),
+    CameraUnavailable(R.string.scanner_camera_unavailable),
+    CaptureFailed(R.string.scanner_capture_failed),
+    InvalidCapture(R.string.scanner_invalid_capture),
+    InsufficientMemory(R.string.scanner_memory_error),
+    UnableToSave(R.string.scanner_save_error),
+    SavePermissionDenied(R.string.scanner_save_permission_denied),
 }
 
 data class MergePdfItem(val uri: Uri, val displayName: String)
@@ -250,6 +275,7 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
     private val rotatePagesEngine = RotatePagesEngine(application)
     private val duplicatePagesEngine = DuplicatePagesEngine(application)
     private val compressPdfEngine = CompressPdfEngine(application)
+    private val scannerCaptureEngine = ScannerCaptureEngine(application)
     private var openJob: Job? = null
     private var imageCreationJob: Job? = null
     private var mergeJob: Job? = null
@@ -260,6 +286,9 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
     private var rotatePagesJob: Job? = null
     private var duplicatePagesJob: Job? = null
     private var compressPdfJob: Job? = null
+    private var scannerJob: Job? = null
+    private var scannerCaptureFile: File? = null
+    private var scannerPreview: ScannerCapturePreview? = null
     private var selectedImageUris: List<Uri> = emptyList()
     private var selectedImageLayout = ImagePdfLayout()
     private var selectedSplitRanges: List<SplitPageRange> = emptyList()
@@ -304,6 +333,127 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
 
     var compressPdfState: CompressPdfState by mutableStateOf(CompressPdfState.Idle)
         private set
+
+    var scannerCaptureState: ScannerCaptureState by mutableStateOf(ScannerCaptureState.Idle)
+        private set
+
+    fun startScannerCapture() {
+        clearScannerCapture()
+        scannerCaptureState = ScannerCaptureState.Camera
+    }
+
+    fun scannerPermissionDenied() {
+        clearScannerCapture()
+        scannerCaptureState = ScannerCaptureState.Failed(ScannerCaptureFailure.PermissionDenied)
+    }
+
+    fun scannerCameraUnavailable() {
+        if (scannerCaptureState !is ScannerCaptureState.Camera) return
+        clearScannerCapture()
+        scannerCaptureState = ScannerCaptureState.Failed(ScannerCaptureFailure.CameraUnavailable)
+    }
+
+    fun beginScannerCapture(): File? {
+        if (scannerCaptureState !is ScannerCaptureState.Camera) return null
+        return try {
+            scannerCaptureEngine.createCaptureFile().also { file ->
+                scannerCaptureFile = file
+                scannerCaptureState = ScannerCaptureState.Capturing
+            }
+        } catch (_: Exception) {
+            scannerCaptureState = ScannerCaptureState.Failed(ScannerCaptureFailure.CaptureFailed)
+            null
+        }
+    }
+
+    fun scannerCaptureSaved(captureFile: File) {
+        if (scannerCaptureState !is ScannerCaptureState.Capturing || scannerCaptureFile != captureFile) {
+            scannerCaptureEngine.discard(captureFile)
+            return
+        }
+        scannerCaptureState = ScannerCaptureState.PreparingPreview
+        scannerJob?.cancel()
+        scannerJob = viewModelScope.launch {
+            when (val result = scannerCaptureEngine.preparePreview(captureFile)) {
+                is ScannerPreviewResult.Ready -> {
+                    scannerPreview = result.preview
+                    scannerCaptureState = ScannerCaptureState.Review(result.preview)
+                }
+                ScannerPreviewResult.InvalidImage -> failScannerCapture(
+                    ScannerCaptureFailure.InvalidCapture,
+                )
+                ScannerPreviewResult.InsufficientMemory -> failScannerCapture(
+                    ScannerCaptureFailure.InsufficientMemory,
+                )
+                ScannerPreviewResult.Failed -> failScannerCapture(
+                    ScannerCaptureFailure.CaptureFailed,
+                )
+            }
+        }
+    }
+
+    fun scannerCaptureFailed(captureFile: File?) {
+        if (captureFile != null && captureFile != scannerCaptureFile) {
+            scannerCaptureEngine.discard(captureFile)
+            return
+        }
+        failScannerCapture(ScannerCaptureFailure.CaptureFailed)
+    }
+
+    fun retakeScannerCapture() {
+        if (scannerCaptureState !is ScannerCaptureState.Review) return
+        releaseScannerCapture()
+        scannerCaptureState = ScannerCaptureState.Camera
+    }
+
+    fun createScannerPdf(outputUri: Uri) {
+        val review = scannerCaptureState as? ScannerCaptureState.Review ?: return
+        val captureFile = scannerCaptureFile ?: return
+        scannerCaptureState = ScannerCaptureState.CreatingPdf
+        scannerJob?.cancel()
+        scannerJob = viewModelScope.launch {
+            when (scannerCaptureEngine.createSinglePagePdf(captureFile, outputUri)) {
+                ScannerPdfResult.Success -> {
+                    releaseScannerCapture()
+                    scannerCaptureState = ScannerCaptureState.Completed(outputUri)
+                }
+                ScannerPdfResult.InvalidImage -> failScannerCapture(
+                    ScannerCaptureFailure.InvalidCapture,
+                )
+                ScannerPdfResult.PermissionDenied -> {
+                    scannerCaptureState = review.copy(
+                        saveFailure = ScannerCaptureFailure.SavePermissionDenied,
+                    )
+                }
+                ScannerPdfResult.InsufficientMemory -> {
+                    scannerCaptureState = review.copy(
+                        saveFailure = ScannerCaptureFailure.InsufficientMemory,
+                    )
+                }
+                ScannerPdfResult.Failed -> {
+                    scannerCaptureState = review.copy(
+                        saveFailure = ScannerCaptureFailure.UnableToSave,
+                    )
+                }
+            }
+        }
+    }
+
+    fun openScannerPdf() {
+        val completed = scannerCaptureState as? ScannerCaptureState.Completed ?: return
+        scannerCaptureState = ScannerCaptureState.Idle
+        open(completed.outputUri)
+    }
+
+    fun cancelScannerCapture() {
+        clearScannerCapture()
+        scannerCaptureState = ScannerCaptureState.Idle
+    }
+
+    fun clearScannerResult() {
+        clearScannerCapture()
+        scannerCaptureState = ScannerCaptureState.Idle
+    }
 
     fun open(uri: Uri) {
         openJob?.cancel()
@@ -1142,6 +1292,8 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
         deletePagesJob?.cancel()
         duplicatePagesJob?.cancel()
         compressPdfJob?.cancel()
+        scannerJob?.cancel()
+        releaseScannerCapture()
         searchEngine.close()
         super.onCleared()
     }
@@ -1153,6 +1305,24 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
             val memoryBudget = Runtime.getRuntime().maxMemory() / 12L
             return memoryBudget.coerceIn(8L * 1024 * 1024, 32L * 1024 * 1024).toInt()
         }
+    }
+
+    private fun failScannerCapture(failure: ScannerCaptureFailure) {
+        releaseScannerCapture()
+        scannerCaptureState = ScannerCaptureState.Failed(failure)
+    }
+
+    private fun clearScannerCapture() {
+        scannerJob?.cancel()
+        scannerJob = null
+        releaseScannerCapture()
+    }
+
+    private fun releaseScannerCapture() {
+        scannerPreview?.bitmap?.takeUnless(Bitmap::isRecycled)?.recycle()
+        scannerPreview = null
+        scannerCaptureEngine.discard(scannerCaptureFile)
+        scannerCaptureFile = null
     }
 
     private fun queryDisplayName(uri: Uri): String? = try {

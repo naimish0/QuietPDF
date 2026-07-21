@@ -60,6 +60,9 @@ import com.rameshta.quietpdf.pdf.CompressPdfState
 import com.rameshta.quietpdf.pdf.CompressibleImage
 import com.rameshta.quietpdf.pdf.PdfCompressionMode
 import com.rameshta.quietpdf.pdf.PdfCompressionRequest
+import com.rameshta.quietpdf.pdf.ScannerCaptureFailure
+import com.rameshta.quietpdf.pdf.ScannerCapturePreview
+import com.rameshta.quietpdf.pdf.ScannerCaptureState
 import com.rameshta.quietpdf.ui.theme.QuietPDFTheme
 import org.junit.Rule
 import org.junit.Assert.assertEquals
@@ -1070,6 +1073,58 @@ class QuietPdfAppTest {
         composeRule.onNodeWithText("Sample report").assertIsDisplayed()
     }
 
+    @Test
+    fun scannerCapture_buttonStartsPermissionAwareWorkflow() {
+        val starts = AtomicInteger()
+        setContent(
+            state = PdfOpenState.Idle,
+            onScanDocument = starts::incrementAndGet,
+        )
+
+        composeRule.onNodeWithTag("scan_document_button").performScrollTo().performClick()
+        assertEquals(1, starts.get())
+    }
+
+    @Test
+    fun scannerCapture_reviewCanRetakeOrSaveSinglePagePdf() {
+        val retakes = AtomicInteger()
+        val saves = AtomicInteger()
+        val bitmap = Bitmap.createBitmap(300, 400, Bitmap.Config.ARGB_8888)
+        try {
+            setContent(
+                state = PdfOpenState.Idle,
+                scannerCaptureState = ScannerCaptureState.Review(
+                    ScannerCapturePreview(bitmap, sourceWidth = 2400, sourceHeight = 3200),
+                ),
+                onRetakeScannerCapture = retakes::incrementAndGet,
+                onSaveScannerPdf = saves::incrementAndGet,
+            )
+
+            composeRule.onNodeWithTag("scanner_review_image").assertIsDisplayed()
+            composeRule.onNodeWithText("Captured resolution: 2400 × 3200").assertIsDisplayed()
+            composeRule.onNodeWithText("Automatic crop", substring = true).assertIsDisplayed()
+            composeRule.onNodeWithTag("scanner_retake").performClick()
+            composeRule.onNodeWithTag("scanner_save_pdf").performClick()
+            assertEquals(1, retakes.get())
+            assertEquals(1, saves.get())
+        } finally {
+            bitmap.recycle()
+        }
+    }
+
+    @Test
+    fun scannerCapture_permissionFailureIsActionable() {
+        setContent(
+            state = PdfOpenState.Idle,
+            scannerCaptureState = ScannerCaptureState.Failed(
+                ScannerCaptureFailure.PermissionDenied,
+            ),
+        )
+
+        composeRule.onNodeWithTag("scanner_error").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("Android settings", substring = true).assertIsDisplayed()
+    }
+
     private fun selectReaderMode(modeName: String) {
         composeRule.onNodeWithTag("reader_mode_button").performClick()
         composeRule.onNodeWithTag("reader_mode_$modeName").performClick()
@@ -1124,6 +1179,10 @@ class QuietPdfAppTest {
         onConfirmPdfCompression: (PdfCompressionRequest) -> Unit = {},
         onCancelPdfCompression: () -> Unit = {},
         onOpenCompressedPdf: () -> Unit = {},
+        scannerCaptureState: ScannerCaptureState = ScannerCaptureState.Idle,
+        onScanDocument: () -> Unit = {},
+        onRetakeScannerCapture: () -> Unit = {},
+        onSaveScannerPdf: () -> Unit = {},
     ) {
         composeRule.setContent {
             QuietPDFTheme(dynamicColor = false) {
@@ -1171,6 +1230,10 @@ class QuietPdfAppTest {
                     onConfirmPdfCompression = onConfirmPdfCompression,
                     onCancelPdfCompression = onCancelPdfCompression,
                     onOpenCompressedPdf = onOpenCompressedPdf,
+                    scannerCaptureState = scannerCaptureState,
+                    onScanDocument = onScanDocument,
+                    onRetakeScannerCapture = onRetakeScannerCapture,
+                    onSaveScannerPdf = onSaveScannerPdf,
                 )
             }
         }

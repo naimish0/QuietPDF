@@ -234,4 +234,22 @@
     <string name="compress_pdf_permission_denied">QuietPDF lost access to the PDF or save location. Choose them again.</string>
     <string name="compress_pdf_memory_error">This PDF needs more memory than is available. Close other apps or try a smaller PDF.</string>
     <string name="compress_pdf_save_error">The compressed PDF could not be created and validated safely. The original was not changed; choose another save location.</string>
+    <string name="scan_document">Scan document</string>
+    <string name="scanner_title">Scan document</string>
+    <string name="scanner_capture">Capture</string>
+    <string name="scanner_preparing_preview">Preparing captured photo…</string>
+    <string name="scanner_captured_preview">Captured document photo</string>
+    <string name="scanner_capture_dimensions">Captured resolution: %1$d × %2$d</string>
+    <string name="scanner_capture_scope_note">Review the full camera capture before saving. Automatic crop, perspective correction, enhancement and multi-page scanning are not applied in this capture step.</string>
+    <string name="scanner_retake">Retake</string>
+    <string name="scanner_save_pdf">Save as PDF</string>
+    <string name="scanner_creating_pdf">Creating and validating the scanned PDF…</string>
+    <string name="scanner_pdf_saved">The captured photo was saved as a validated one-page PDF.</string>
+    <string name="scanner_permission_denied">Camera access is required to scan. Allow Camera permission in Android settings, then try again.</string>
+    <string name="scanner_camera_unavailable">No usable back camera is available. Close other camera apps and try again.</string>
+    <string name="scanner_capture_failed">The photo could not be captured. Keep the document steady and try again.</string>
+    <string name="scanner_invalid_capture">The camera returned an unreadable or empty photo. Retake the document.</string>
+    <string name="scanner_memory_error">The captured photo needs more memory than is available. Close other apps and retake it.</string>
+    <string name="scanner_save_error">The scanned PDF could not be created and validated. The captured photo is still available to retry.</string>
+    <string name="scanner_save_permission_denied">QuietPDF lost access to the save location. Choose another location; the captured photo is still available.</string>
 </resources>

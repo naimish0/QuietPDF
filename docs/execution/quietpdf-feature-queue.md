@@ -24,8 +24,8 @@ COMPLETED T17-Rearrange-Pages
 COMPLETED T18-Rotate-Pages
 COMPLETED T19-Duplicate-Pages
 COMPLETED T20-Compress-PDF
-T21-Target-File-Size
-T22-Scanner-Capture
+COMPLETED T21-Target-File-Size
+COMPLETED T22-Scanner-Capture
 T23-Scanner-Crop-Correction
 T24-Scanner-Enhancement
 T25-Scanner-Multi-Page
