@@ -51,6 +51,7 @@ sealed interface ScannerCaptureState {
     data object PreparingPreview : ScannerCaptureState
     data class Review(
         val preview: ScannerCapturePreview,
+        val crop: ScannerCropSelection = preview.suggestedCrop,
         val saveFailure: ScannerCaptureFailure? = null,
     ) : ScannerCaptureState
     data object CreatingPdf : ScannerCaptureState
@@ -63,6 +64,7 @@ enum class ScannerCaptureFailure(@get:StringRes val messageResource: Int) {
     CameraUnavailable(R.string.scanner_camera_unavailable),
     CaptureFailed(R.string.scanner_capture_failed),
     InvalidCapture(R.string.scanner_invalid_capture),
+    InvalidCrop(R.string.scanner_invalid_crop),
     InsufficientMemory(R.string.scanner_memory_error),
     UnableToSave(R.string.scanner_save_error),
     SavePermissionDenied(R.string.scanner_save_permission_denied),
@@ -406,13 +408,27 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
         scannerCaptureState = ScannerCaptureState.Camera
     }
 
+    fun updateScannerCrop(crop: ScannerCropSelection) {
+        val review = scannerCaptureState as? ScannerCaptureState.Review ?: return
+        if (!ScannerCropGeometry.isValid(crop)) return
+        scannerCaptureState = review.copy(crop = crop, saveFailure = null)
+    }
+
+    fun resetScannerCrop() {
+        val review = scannerCaptureState as? ScannerCaptureState.Review ?: return
+        scannerCaptureState = review.copy(
+            crop = review.preview.suggestedCrop,
+            saveFailure = null,
+        )
+    }
+
     fun createScannerPdf(outputUri: Uri) {
         val review = scannerCaptureState as? ScannerCaptureState.Review ?: return
         val captureFile = scannerCaptureFile ?: return
         scannerCaptureState = ScannerCaptureState.CreatingPdf
         scannerJob?.cancel()
         scannerJob = viewModelScope.launch {
-            when (scannerCaptureEngine.createSinglePagePdf(captureFile, outputUri)) {
+            when (scannerCaptureEngine.createSinglePagePdf(captureFile, outputUri, review.crop)) {
                 ScannerPdfResult.Success -> {
                     releaseScannerCapture()
                     scannerCaptureState = ScannerCaptureState.Completed(outputUri)
@@ -420,6 +436,11 @@ class PdfOpenViewModel(application: Application) : AndroidViewModel(application)
                 ScannerPdfResult.InvalidImage -> failScannerCapture(
                     ScannerCaptureFailure.InvalidCapture,
                 )
+                ScannerPdfResult.InvalidCrop -> {
+                    scannerCaptureState = review.copy(
+                        saveFailure = ScannerCaptureFailure.InvalidCrop,
+                    )
+                }
                 ScannerPdfResult.PermissionDenied -> {
                     scannerCaptureState = review.copy(
                         saveFailure = ScannerCaptureFailure.SavePermissionDenied,
