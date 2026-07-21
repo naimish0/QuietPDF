@@ -19,6 +19,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.swipeLeft
@@ -50,6 +51,9 @@ import com.rameshta.quietpdf.pdf.DeletePagesFailure
 import com.rameshta.quietpdf.pdf.DeletePagesState
 import com.rameshta.quietpdf.pdf.RearrangePagesFailure
 import com.rameshta.quietpdf.pdf.RearrangePagesState
+import com.rameshta.quietpdf.pdf.PageRotation
+import com.rameshta.quietpdf.pdf.RotatePagesFailure
+import com.rameshta.quietpdf.pdf.RotatePagesState
 import com.rameshta.quietpdf.ui.theme.QuietPDFTheme
 import org.junit.Rule
 import org.junit.Assert.assertEquals
@@ -104,7 +108,7 @@ class QuietPdfAppTest {
         )
 
         composeRule.onNodeWithTag("images_to_pdf_error").assertIsDisplayed()
-        composeRule.onNodeWithText("Dismiss").assertIsDisplayed()
+        composeRule.onNodeWithText("Dismiss").performScrollTo().assertIsDisplayed()
     }
 
     @Test
@@ -196,7 +200,7 @@ class QuietPdfAppTest {
         )
 
         composeRule.onNodeWithTag("merge_pdf_error").assertIsDisplayed()
-        composeRule.onNodeWithText("Dismiss").assertIsDisplayed()
+        composeRule.onNodeWithText("Dismiss").performScrollTo().assertIsDisplayed()
     }
 
     @Test
@@ -347,7 +351,7 @@ class QuietPdfAppTest {
             extractPagesState = ExtractPagesState.Failed(ExtractPagesFailure.InvalidDocument),
         )
         composeRule.onNodeWithTag("extract_pages_error").assertIsDisplayed()
-        composeRule.onNodeWithText("Dismiss").assertIsDisplayed()
+        composeRule.onNodeWithText("Dismiss").performScrollTo().assertIsDisplayed()
     }
 
     @Test
@@ -425,7 +429,7 @@ class QuietPdfAppTest {
             deletePagesState = DeletePagesState.Failed(DeletePagesFailure.InvalidDocument),
         )
         composeRule.onNodeWithTag("delete_pages_error").assertIsDisplayed()
-        composeRule.onNodeWithText("Dismiss").assertIsDisplayed()
+        composeRule.onNodeWithText("Dismiss").performScrollTo().assertIsDisplayed()
     }
 
     @Test
@@ -492,7 +496,82 @@ class QuietPdfAppTest {
             ),
         )
         composeRule.onNodeWithTag("rearrange_pages_error").assertIsDisplayed()
-        composeRule.onNodeWithText("Dismiss").assertIsDisplayed()
+        composeRule.onNodeWithText("Dismiss").performScrollTo().assertIsDisplayed()
+    }
+
+    @Test
+    fun rotatePages_buttonStartsSingleDocumentSelection() {
+        val selections = AtomicInteger()
+        setContent(state = PdfOpenState.Idle, onRotatePages = { selections.incrementAndGet() })
+
+        composeRule.onNodeWithTag("rotate_pages_button")
+            .assertTextEquals("Rotate pages")
+            .performClick()
+        assertEquals(1, selections.get())
+    }
+
+    @Test
+    fun rotatePages_dialogReturnsSelectedPagesAndRotation() {
+        val selectedPages = AtomicReference<IntArray>()
+        val selectedRotation = AtomicReference<PageRotation>()
+        setContent(
+            state = PdfOpenState.Idle,
+            rotatePagesState = RotatePagesState.Configuring(
+                sourceUri = Uri.parse("content://test/rotate"),
+                displayName = "source.pdf",
+                pageCount = 6,
+            ),
+            onConfirmPageRotation = { pages, rotation ->
+                selectedPages.set(pages)
+                selectedRotation.set(rotation)
+            },
+        )
+
+        composeRule.onNodeWithTag("rotate_pages_dialog").assertIsDisplayed()
+        composeRule.onNodeWithTag("rotate_pages_input").performTextInput("2, 4-5")
+        composeRule.onNodeWithText("3 pages selected.").assertIsDisplayed()
+        composeRule.onNodeWithTag("rotate_direction_2").performClick()
+        composeRule.onNodeWithTag("rotate_pages_confirm").performClick()
+        assertArrayEquals(intArrayOf(1, 3, 4), selectedPages.get())
+        assertEquals(PageRotation.CounterClockwise90, selectedRotation.get())
+    }
+
+    @Test
+    fun rotatePages_invalidSelectionCannotBeSaved() {
+        setContent(
+            state = PdfOpenState.Idle,
+            rotatePagesState = RotatePagesState.Configuring(
+                sourceUri = Uri.parse("content://test/rotate-invalid"),
+                displayName = "source.pdf",
+                pageCount = 3,
+            ),
+        )
+        composeRule.onNodeWithTag("rotate_pages_input").performTextInput("3, 2")
+        composeRule.onNodeWithTag("rotate_pages_selection_error").assertIsDisplayed()
+        composeRule.onNodeWithTag("rotate_pages_confirm").assertIsNotEnabled()
+    }
+
+    @Test
+    fun rotatePages_progressCanBeCancelled() {
+        val cancellations = AtomicInteger()
+        setContent(
+            state = PdfOpenState.Idle,
+            rotatePagesState = RotatePagesState.Rotating(selectedPageCount = 3),
+            onCancelPageRotation = { cancellations.incrementAndGet() },
+        )
+        composeRule.onNodeWithText("Rotating 3 selected pages…").assertIsDisplayed()
+        composeRule.onNodeWithTag("operation_cancel").performClick()
+        assertEquals(1, cancellations.get())
+    }
+
+    @Test
+    fun rotatePages_failureIsActionable() {
+        setContent(
+            state = PdfOpenState.Idle,
+            rotatePagesState = RotatePagesState.Failed(RotatePagesFailure.InvalidDocument),
+        )
+        composeRule.onNodeWithTag("rotate_pages_error").assertIsDisplayed()
+        composeRule.onNodeWithText("Dismiss").performScrollTo().assertIsDisplayed()
     }
 
     @Test
@@ -873,6 +952,10 @@ class QuietPdfAppTest {
         onResetRearrangedPages: () -> Unit = {},
         onConfirmPageRearrangement: () -> Unit = {},
         onCancelPageRearrangement: () -> Unit = {},
+        rotatePagesState: RotatePagesState = RotatePagesState.Idle,
+        onRotatePages: () -> Unit = {},
+        onConfirmPageRotation: (IntArray, PageRotation) -> Unit = { _, _ -> },
+        onCancelPageRotation: () -> Unit = {},
     ) {
         composeRule.setContent {
             QuietPDFTheme(dynamicColor = false) {
@@ -911,6 +994,10 @@ class QuietPdfAppTest {
                     onResetRearrangedPages = onResetRearrangedPages,
                     onConfirmPageRearrangement = onConfirmPageRearrangement,
                     onCancelPageRearrangement = onCancelPageRearrangement,
+                    rotatePagesState = rotatePagesState,
+                    onRotatePages = onRotatePages,
+                    onConfirmPageRotation = onConfirmPageRotation,
+                    onCancelPageRotation = onCancelPageRotation,
                 )
             }
         }

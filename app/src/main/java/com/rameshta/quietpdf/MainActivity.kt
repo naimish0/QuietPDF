@@ -79,6 +79,8 @@ import com.rameshta.quietpdf.pdf.ExtractPagesState
 import com.rameshta.quietpdf.pdf.DeletePageSelectionPlanner
 import com.rameshta.quietpdf.pdf.DeletePagesState
 import com.rameshta.quietpdf.pdf.RearrangePagesState
+import com.rameshta.quietpdf.pdf.PageRotation
+import com.rameshta.quietpdf.pdf.RotatePagesState
 import com.rameshta.quietpdf.ui.reader.PdfReaderScreen
 import com.rameshta.quietpdf.ui.theme.QuietPDFTheme
 
@@ -188,6 +190,20 @@ class MainActivity : ComponentActivity() {
                         viewModel.selectPdfForPageRearrangement(uri)
                     }
                 }
+                val createRotatedPagesPdf = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.CreateDocument("application/pdf"),
+                ) { uri ->
+                    if (uri == null) viewModel.cancelRotatePages()
+                    else viewModel.rotateSelectedPages(uri)
+                }
+                val rotatePagesPicker = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.OpenDocument(),
+                ) { uri ->
+                    if (uri != null) {
+                        retainReadPermission(uri)
+                        viewModel.selectPdfForPageRotation(uri)
+                    }
+                }
 
                 QuietPdfApp(
                     state = viewModel.state,
@@ -250,6 +266,14 @@ class MainActivity : ComponentActivity() {
                     },
                     onCancelPageRearrangement = viewModel::cancelRearrangePages,
                     onDismissPageRearrangementFailure = viewModel::clearRearrangePagesFailure,
+                    rotatePagesState = viewModel.rotatePagesState,
+                    onRotatePages = { rotatePagesPicker.launch(arrayOf("application/pdf")) },
+                    onConfirmPageRotation = { selectedPages, rotation ->
+                        viewModel.configurePageRotation(selectedPages, rotation)
+                        createRotatedPagesPdf.launch("QuietPDF-rotated-pages.pdf")
+                    },
+                    onCancelPageRotation = viewModel::cancelRotatePages,
+                    onDismissPageRotationFailure = viewModel::clearRotatePagesFailure,
                 )
             }
         }
@@ -347,6 +371,11 @@ fun QuietPdfApp(
     onConfirmPageRearrangement: () -> Unit = {},
     onCancelPageRearrangement: () -> Unit = {},
     onDismissPageRearrangementFailure: () -> Unit = {},
+    rotatePagesState: RotatePagesState = RotatePagesState.Idle,
+    onRotatePages: () -> Unit = {},
+    onConfirmPageRotation: (IntArray, PageRotation) -> Unit = { _, _ -> },
+    onCancelPageRotation: () -> Unit = {},
+    onDismissPageRotationFailure: () -> Unit = {},
 ) {
     if (state is PdfOpenState.Opened) {
         PdfReaderScreen(
@@ -405,6 +434,10 @@ fun QuietPdfApp(
                     onRearrangePages = onRearrangePages,
                     onCancelPageRearrangement = onCancelPageRearrangement,
                     onDismissPageRearrangementFailure = onDismissPageRearrangementFailure,
+                    rotatePagesState = rotatePagesState,
+                    onRotatePages = onRotatePages,
+                    onCancelPageRotation = onCancelPageRotation,
+                    onDismissPageRotationFailure = onDismissPageRotationFailure,
                     contentPadding = PaddingValues(24.dp),
                 )
             }
@@ -460,6 +493,88 @@ fun QuietPdfApp(
             onCancel = onCancelPageRearrangement,
         )
     }
+    if (rotatePagesState is RotatePagesState.Configuring) {
+        RotatePagesDialog(
+            documentName = rotatePagesState.displayName,
+            pageCount = rotatePagesState.pageCount,
+            onConfirm = onConfirmPageRotation,
+            onCancel = onCancelPageRotation,
+        )
+    }
+}
+
+@Composable
+private fun RotatePagesDialog(
+    documentName: String,
+    pageCount: Int,
+    onConfirm: (IntArray, PageRotation) -> Unit,
+    onCancel: () -> Unit,
+) {
+    var pageSelection by remember(documentName, pageCount) { mutableStateOf("") }
+    var rotation by remember(documentName, pageCount) { mutableStateOf(PageRotation.Clockwise90) }
+    val selectedPages = ExtractPageSelectionParser.parse(pageSelection, pageCount)
+    AlertDialog(
+        onDismissRequest = onCancel,
+        title = { Text(stringResource(R.string.rotate_pages_title)) },
+        text = {
+            Column {
+                Text(stringResource(R.string.rotate_pages_document_summary, documentName, pageCount))
+                OutlinedTextField(
+                    value = pageSelection,
+                    onValueChange = { pageSelection = it },
+                    label = { Text(stringResource(R.string.rotate_pages_selection_label)) },
+                    supportingText = {
+                        Text(stringResource(R.string.rotate_pages_selection_help, pageCount))
+                    },
+                    singleLine = true,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 12.dp)
+                        .testTag("rotate_pages_input"),
+                )
+                if (selectedPages != null) {
+                    Text(
+                        text = stringResource(
+                            R.string.rotate_pages_selection_count,
+                            selectedPages.size,
+                        ),
+                        style = MaterialTheme.typography.labelLarge,
+                        modifier = Modifier.padding(top = 12.dp).testTag("rotate_pages_count"),
+                    )
+                } else if (pageSelection.isNotBlank()) {
+                    Text(
+                        text = stringResource(R.string.rotate_pages_invalid_selection),
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(top = 12.dp).testTag("rotate_pages_selection_error"),
+                    )
+                }
+                LayoutChoiceRow(
+                    label = stringResource(R.string.rotate_pages_direction),
+                    options = listOf(
+                        stringResource(R.string.rotate_clockwise_90),
+                        stringResource(R.string.rotate_180),
+                        stringResource(R.string.rotate_counterclockwise_90),
+                    ),
+                    selectedIndex = rotation.ordinal,
+                    tagPrefix = "rotate_direction",
+                    onSelect = { rotation = PageRotation.entries[it] },
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { selectedPages?.let { onConfirm(it, rotation) } },
+                enabled = selectedPages != null,
+                modifier = Modifier.testTag("rotate_pages_confirm"),
+            ) { Text(stringResource(R.string.save_rotated_pdf)) }
+        },
+        dismissButton = {
+            TextButton(onClick = onCancel, modifier = Modifier.testTag("rotate_pages_cancel")) {
+                Text(stringResource(R.string.cancel))
+            }
+        },
+        modifier = Modifier.testTag("rotate_pages_dialog"),
+    )
 }
 
 @Composable
@@ -952,6 +1067,10 @@ private fun OpenPdfContent(
     onRearrangePages: () -> Unit,
     onCancelPageRearrangement: () -> Unit,
     onDismissPageRearrangementFailure: () -> Unit,
+    rotatePagesState: RotatePagesState,
+    onRotatePages: () -> Unit,
+    onCancelPageRotation: () -> Unit,
+    onDismissPageRotationFailure: () -> Unit,
     contentPadding: PaddingValues,
 ) {
     Column(
@@ -1041,6 +1160,21 @@ private fun OpenPdfContent(
             }
             else -> Unit
         }
+        when (rotatePagesState) {
+            RotatePagesState.Preparing -> {
+                OperationProgressContent(R.string.rotate_pages_preparing)
+                return@Column
+            }
+            is RotatePagesState.Rotating -> {
+                OperationProgressContent(
+                    messageResource = R.string.rotate_pages_rotating,
+                    argument = rotatePagesState.selectedPageCount,
+                    onCancel = onCancelPageRotation,
+                )
+                return@Column
+            }
+            else -> Unit
+        }
         when (state) {
             PdfOpenState.Idle -> IdleContent(
                 onOpenPdf = onOpenPdf,
@@ -1062,6 +1196,9 @@ private fun OpenPdfContent(
                 rearrangePagesState = rearrangePagesState,
                 onRearrangePages = onRearrangePages,
                 onDismissPageRearrangementFailure = onDismissPageRearrangementFailure,
+                rotatePagesState = rotatePagesState,
+                onRotatePages = onRotatePages,
+                onDismissPageRotationFailure = onDismissPageRotationFailure,
             )
             PdfOpenState.Opening -> OpeningContent()
             is PdfOpenState.Opened -> Unit
@@ -1091,6 +1228,9 @@ private fun IdleContent(
     rearrangePagesState: RearrangePagesState,
     onRearrangePages: () -> Unit,
     onDismissPageRearrangementFailure: () -> Unit,
+    rotatePagesState: RotatePagesState,
+    onRotatePages: () -> Unit,
+    onDismissPageRotationFailure: () -> Unit,
 ) {
     Text(
         text = stringResource(R.string.home_title),
@@ -1142,6 +1282,12 @@ private fun IdleContent(
         label = stringResource(R.string.rearrange_pages),
         onClick = onRearrangePages,
         testTag = "rearrange_pages_button",
+    )
+    Spacer(Modifier.height(12.dp))
+    OpenButton(
+        label = stringResource(R.string.rotate_pages),
+        onClick = onRotatePages,
+        testTag = "rotate_pages_button",
     )
     if (imagesToPdfState is ImagesToPdfState.Failed) {
         Spacer(Modifier.height(20.dp))
@@ -1227,6 +1373,18 @@ private fun IdleContent(
             modifier = Modifier.testTag("rearrange_pages_error"),
         )
         TextButton(onClick = onDismissPageRearrangementFailure) {
+            Text(stringResource(R.string.dismiss))
+        }
+    }
+    if (rotatePagesState is RotatePagesState.Failed) {
+        Spacer(Modifier.height(20.dp))
+        Text(
+            text = stringResource(rotatePagesState.failure.messageResource),
+            color = MaterialTheme.colorScheme.error,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.testTag("rotate_pages_error"),
+        )
+        TextButton(onClick = onDismissPageRotationFailure) {
             Text(stringResource(R.string.dismiss))
         }
     }

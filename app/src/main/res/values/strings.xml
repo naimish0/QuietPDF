@@ -174,4 +174,22 @@
     <string name="rearrange_pages_permission_denied">QuietPDF lost access to the PDF or save location. Choose them again.</string>
     <string name="rearrange_pages_memory_error">This PDF needs more memory than is available. Close other apps or try a smaller PDF.</string>
     <string name="rearrange_pages_save_error">The rearranged PDF could not be created safely. The original was not changed; choose another save location.</string>
+    <string name="rotate_pages">Rotate pages</string>
+    <string name="rotate_pages_title">Rotate pages</string>
+    <string name="rotate_pages_preparing">Reading the selected PDF…</string>
+    <string name="rotate_pages_rotating">Rotating %1$d selected pages…</string>
+    <string name="rotate_pages_document_summary">%1$s contains %2$d pages. A new PDF will be created; the original will not change.</string>
+    <string name="rotate_pages_selection_label">Pages to rotate</string>
+    <string name="rotate_pages_selection_help">Use page numbers and ranges from 1 to %1$d, for example: 1, 3, 5-7</string>
+    <string name="rotate_pages_selection_count">%1$d pages selected.</string>
+    <string name="rotate_pages_direction">Rotation</string>
+    <string name="rotate_clockwise_90">90° right</string>
+    <string name="rotate_180">180°</string>
+    <string name="rotate_counterclockwise_90">90° left</string>
+    <string name="save_rotated_pdf">Save new PDF</string>
+    <string name="rotate_pages_invalid_document">This file changed or is not a readable PDF. Keep the original and choose it again.</string>
+    <string name="rotate_pages_invalid_selection">Choose unique pages in their original order, within this PDF’s page range.</string>
+    <string name="rotate_pages_permission_denied">QuietPDF lost access to the PDF or save location. Choose them again.</string>
+    <string name="rotate_pages_memory_error">This PDF needs more memory than is available. Close other apps or try a smaller PDF.</string>
+    <string name="rotate_pages_save_error">The rotated PDF could not be created safely. The original was not changed; choose another save location.</string>
 </resources>
