@@ -1,0 +1,38 @@
+{
+  "system": "Quiet Confidence",
+  "version": 2,
+  "canvas": {
+    "phone": [
+      1080,
+      1920
+    ],
+    "tablet": [
+      1920,
+      1080
+    ],
+    "feature": [
+      1024,
+      500
+    ]
+  },
+  "safe_margin_phone": 76,
+  "spacing_unit": 8,
+  "palette": {
+    "primary": "#2563EB",
+    "soft_blue": "#DBEAFE",
+    "background": "#F8FAFC",
+    "text": "#0F172A",
+    "success": "#16A34A"
+  },
+  "renderer": "tools/generate_assets.py",
+  "ui_capture": {
+    "source": "production Compose UI via PlayStoreUiCaptureTest",
+    "device": "Pixel_7a emulator",
+    "directory": "source/real-ui-captures-no-ads/compose-pixel-7a"
+  },
+  "selected_icon": "concept-1-document-q",
+  "ad_capture": {
+    "requests_enabled": false,
+    "containers_rendered": false
+  }
+}
