@@ -27,8 +27,10 @@
   "renderer": "tools/generate_assets.py",
   "ui_capture": {
     "source": "production Compose UI via PlayStoreUiCaptureTest",
-    "device": "Pixel_7a emulator",
-    "directory": "source/real-ui-captures-no-ads/compose-pixel-7a"
+    "english_device": "Pixel_7a emulator",
+    "localized_device": "Samsung SM-S928B",
+    "english_directory": "source/real-ui-captures-no-ads/compose-pixel-7a",
+    "localized_directory": "source/real-ui-captures-no-ads/localized"
   },
   "selected_icon": "concept-1-document-q",
   "ad_capture": {

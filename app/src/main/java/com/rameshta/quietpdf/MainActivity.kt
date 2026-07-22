@@ -1,13 +1,16 @@
 package com.rameshta.quietpdf
 
 import android.Manifest
+import android.app.LocaleManager
+import android.content.Context
 import android.content.pm.PackageManager
 import android.content.ClipData
 import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Bundle
-import android.provider.Settings
+import android.os.Build
+import android.os.LocaleList
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -52,9 +55,12 @@ import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Scaffold
@@ -211,6 +217,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.text.DateFormat
 import java.util.Date
+import java.util.Locale
 
 class MainActivity : ComponentActivity(), DefaultLifecycleObserver {
     private val viewModel: PdfOpenViewModel by viewModels()
@@ -221,6 +228,22 @@ class MainActivity : ComponentActivity(), DefaultLifecycleObserver {
             BuildConfig.ADMOB_INTERSTITIAL_ID,
             BuildConfig.ADMOB_APP_OPEN_ID,
         ).also { processAdCoordinator = it }
+    }
+
+    override fun attachBaseContext(newBase: Context) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            super.attachBaseContext(newBase)
+            return
+        }
+        val languageTag = newBase.getSharedPreferences(LanguagePreferences, Context.MODE_PRIVATE)
+            .getString(LanguageTagKey, "").orEmpty()
+        if (languageTag.isBlank()) {
+            super.attachBaseContext(newBase)
+        } else {
+            val configuration = newBase.resources.configuration
+            configuration.setLocale(Locale.forLanguageTag(languageTag))
+            super.attachBaseContext(newBase.createConfigurationContext(configuration))
+        }
     }
     private var adsConsentAllowsRequests = false
     private var externalTransitionActive = false
@@ -672,9 +695,12 @@ class MainActivity : ComponentActivity(), DefaultLifecycleObserver {
                     onRemoveHistoryEntry = viewModel::removeHistoryEntry,
                     onToggleFavoriteTool = viewModel::toggleFavoriteTool,
                     onSharePdf = ::sharePdf,
-                    onOpenSettings = {
-                        adMobController.showPrivacyOptions(this, ::openAppSettings)
-                    },
+                    settings = QuietPdfSettings(
+                        selectedLanguageTag = currentAppLanguageTag(),
+                        onChangeLanguage = ::changeAppLanguage,
+                        adPrivacyOptionsRequired = adMobState.privacyOptionsRequired,
+                        onOpenAdvertisingPrivacy = ::openAdvertisingPrivacy,
+                    ),
                     adsCanLoad = adMobState.canRequestAds,
                     homeBannerContent = homeBannerAdSession?.let { session ->
                         { HomeBannerAd(session) }
@@ -1117,17 +1143,31 @@ class MainActivity : ComponentActivity(), DefaultLifecycleObserver {
         }
     }
 
-    private fun openAppSettings() {
-        try {
-            externalTransitionActive = true
-            startActivity(
-                Intent(
-                    Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                    Uri.parse("package:$packageName"),
-                ),
-            )
-        } catch (_: RuntimeException) {
-            Toast.makeText(this, R.string.smart_home_settings_unavailable, Toast.LENGTH_LONG).show()
+    private fun currentAppLanguageTag(): String = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        getSystemService(LocaleManager::class.java).applicationLocales.get(0)?.toLanguageTag().orEmpty()
+    } else {
+        getSharedPreferences(LanguagePreferences, Context.MODE_PRIVATE)
+            .getString(LanguageTagKey, "").orEmpty()
+    }
+
+    private fun changeAppLanguage(languageTag: String) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            getSystemService(LocaleManager::class.java).applicationLocales =
+                LocaleList.forLanguageTags(languageTag)
+        } else {
+            getSharedPreferences(LanguagePreferences, Context.MODE_PRIVATE)
+                .edit().putString(LanguageTagKey, languageTag).apply()
+            recreate()
+        }
+    }
+
+    private fun openAdvertisingPrivacy() {
+        adMobController.showPrivacyOptions(this) {
+            Toast.makeText(
+                this,
+                R.string.settings_advertising_unavailable,
+                Toast.LENGTH_LONG,
+            ).show()
         }
     }
 
@@ -1144,6 +1184,8 @@ class MainActivity : ComponentActivity(), DefaultLifecycleObserver {
 
     private companion object {
         const val ContentResolverScheme = "content"
+        const val LanguagePreferences = "quietpdf_language"
+        const val LanguageTagKey = "language_tag"
         var processAdCoordinator: FullScreenAdCoordinator? = null
         var processIsForeground = false
         var processSessionActive = false
@@ -1166,7 +1208,14 @@ private fun PdfHistoryOperation.isInterstitialEligibleWorkflow(): Boolean = when
     else -> false
 }
 
-private enum class SmartHomeDestination { Home, Files, Tools, History, Search }
+private enum class SmartHomeDestination { Home, Files, Tools, History, Search, Settings }
+
+data class QuietPdfSettings(
+    val selectedLanguageTag: String = "",
+    val onChangeLanguage: (String) -> Unit = {},
+    val adPrivacyOptionsRequired: Boolean = false,
+    val onOpenAdvertisingPrivacy: () -> Unit = {},
+)
 
 private enum class SmartToolCategory { Create, Organize, Optimize, Secure, EditAndSign, Extract }
 
@@ -1190,7 +1239,9 @@ private fun SmartHomeNavigationBar(
     onSelect: (SmartHomeDestination) -> Unit,
 ) {
     NavigationBar(modifier = Modifier.testTag("smart_home_bottom_navigation")) {
-        SmartHomeDestination.entries.filterNot { it == SmartHomeDestination.Search }
+        SmartHomeDestination.entries.filterNot {
+            it == SmartHomeDestination.Search || it == SmartHomeDestination.Settings
+        }
             .forEach { destination ->
             val label = smartHomeDestinationLabel(destination)
             NavigationBarItem(
@@ -1210,7 +1261,9 @@ private fun SmartHomeNavigationRail(
     onSelect: (SmartHomeDestination) -> Unit,
 ) {
     NavigationRail(modifier = Modifier.testTag("smart_home_navigation_rail")) {
-        SmartHomeDestination.entries.filterNot { it == SmartHomeDestination.Search }
+        SmartHomeDestination.entries.filterNot {
+            it == SmartHomeDestination.Search || it == SmartHomeDestination.Settings
+        }
             .forEach { destination ->
             val label = smartHomeDestinationLabel(destination)
             NavigationRailItem(
@@ -1232,6 +1285,7 @@ private fun smartHomeDestinationLabel(destination: SmartHomeDestination): String
         SmartHomeDestination.Tools -> R.string.smart_home_nav_tools
         SmartHomeDestination.History -> R.string.smart_home_nav_history
         SmartHomeDestination.Search -> R.string.smart_home_nav_search
+        SmartHomeDestination.Settings -> R.string.smart_home_settings
     },
 )
 
@@ -1241,6 +1295,7 @@ private fun navigationSymbol(destination: SmartHomeDestination): String = when (
     SmartHomeDestination.Tools -> "◆"
     SmartHomeDestination.History -> "◷"
     SmartHomeDestination.Search -> "⌕"
+    SmartHomeDestination.Settings -> "⚙"
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -1263,7 +1318,7 @@ fun QuietPdfApp(
     onRemoveHistoryEntry: (PdfHistoryEntry) -> Unit = {},
     onToggleFavoriteTool: (SmartTool) -> Unit = {},
     onSharePdf: (Uri) -> Unit = {},
-    onOpenSettings: () -> Unit = {},
+    settings: QuietPdfSettings = QuietPdfSettings(),
     adsCanLoad: Boolean = false,
     homeBannerContent: (@Composable () -> Unit)? = null,
     onOpenPdf: () -> Unit,
@@ -1460,6 +1515,14 @@ fun QuietPdfApp(
             destination = target
         }
     }
+    val navigateBack: () -> Unit = {
+        if (destinationHistory.isNotEmpty()) {
+            destination = SmartHomeDestination.valueOf(destinationHistory.last())
+            destinationHistory = destinationHistory.dropLast(1)
+        } else if (destination != SmartHomeDestination.Home) {
+            destination = SmartHomeDestination.Home
+        }
+    }
     if (state is PdfOpenState.Opened) {
         PdfReaderScreen(
             document = state,
@@ -1514,14 +1577,14 @@ fun QuietPdfApp(
         fillFormsState is FillFormsState.Idle && signPdfState is SignPdfState.Idle &&
         annotatePdfState is AnnotatePdfState.Idle && scannerCaptureState is ScannerCaptureState.Idle
     val showBanner = AdPlacementPolicy.showBanner(
-        screenAllowsBanner = operationsAreIdle || successfulResultIsVisible,
+        screenAllowsBanner = destination != SmartHomeDestination.Settings &&
+            (operationsAreIdle || successfulResultIsVisible),
         documentIsClosed = state is PdfOpenState.Idle,
         consentAllowsAds = adsCanLoad,
         isConfigured = homeBannerContent != null,
     )
-    BackHandler(destinationHistory.isNotEmpty()) {
-        destination = SmartHomeDestination.valueOf(destinationHistory.last())
-        destinationHistory = destinationHistory.dropLast(1)
+    BackHandler(destinationHistory.isNotEmpty() || destination != SmartHomeDestination.Home) {
+        navigateBack()
     }
     BackHandler(state is PdfOpenState.Failed) {
         onClosePdf()
@@ -1529,7 +1592,7 @@ fun QuietPdfApp(
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val useNavigationRail = maxWidth >= 600.dp
         Row(modifier = Modifier.fillMaxSize()) {
-            if (useNavigationRail) {
+            if (useNavigationRail && destination != SmartHomeDestination.Settings) {
                 SmartHomeNavigationRail(
                     selected = destination,
                     onSelect = navigateTo,
@@ -1538,21 +1601,51 @@ fun QuietPdfApp(
             Scaffold(
                 modifier = Modifier.weight(1f),
                 topBar = {
-                    TopAppBar(
-                        title = { Text(stringResource(R.string.app_name)) },
+                    if (destination == SmartHomeDestination.Settings) {
+                        val settingsBackDescription = stringResource(R.string.settings_back)
+                        CenterAlignedTopAppBar(
+                            title = {
+                                Text(
+                                    text = stringResource(R.string.smart_home_settings),
+                                    fontWeight = FontWeight.Bold,
+                                )
+                            },
+                            navigationIcon = {
+                                IconButton(
+                                    onClick = navigateBack,
+                                    modifier = Modifier.testTag("settings_back_action"),
+                                ) {
+                                    Text(
+                                        text = "←",
+                                        style = MaterialTheme.typography.headlineMedium,
+                                        modifier = Modifier.semantics {
+                                            contentDescription = settingsBackDescription
+                                        },
+                                    )
+                                }
+                            },
+                        )
+                    } else {
+                        TopAppBar(
+                        title = {
+                            Text(stringResource(R.string.app_name))
+                        },
                         actions = {
-                            Text(
-                                text = stringResource(R.string.smart_home_offline_indicator),
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.padding(horizontal = 8.dp),
-                            )
-                            TextButton(
-                                onClick = onOpenSettings,
-                                modifier = Modifier.testTag("smart_home_settings_action"),
-                            ) { Text(stringResource(R.string.smart_home_settings)) }
+                            val settingsDescription = stringResource(R.string.smart_home_settings)
+                            IconButton(
+                                onClick = { navigateTo(SmartHomeDestination.Settings) },
+                                modifier = Modifier
+                                    .semantics { contentDescription = settingsDescription }
+                                    .testTag("smart_home_settings_action"),
+                            ) {
+                                Text(
+                                    text = "⚙",
+                                    style = MaterialTheme.typography.titleLarge,
+                                )
+                                }
                         },
                     )
+                    }
                 },
                 bottomBar = {
                     Column {
@@ -1565,7 +1658,7 @@ fun QuietPdfApp(
                             )
                             homeBannerContent?.invoke()
                         }
-                        if (!useNavigationRail) {
+                        if (!useNavigationRail && destination != SmartHomeDestination.Settings) {
                         SmartHomeNavigationBar(
                             selected = destination,
                             onSelect = navigateTo,
@@ -1586,7 +1679,12 @@ fun QuietPdfApp(
                     .fillMaxWidth()
                     .widthIn(max = 560.dp),
                 shape = MaterialTheme.shapes.extraLarge,
-                tonalElevation = 2.dp,
+                color = if (destination == SmartHomeDestination.Settings) {
+                    Color.Transparent
+                } else {
+                    MaterialTheme.colorScheme.surface
+                },
+                tonalElevation = if (destination == SmartHomeDestination.Settings) 0.dp else 2.dp,
             ) {
                 OpenPdfContent(
                     state = state,
@@ -1608,6 +1706,10 @@ fun QuietPdfApp(
                     onToggleFavoriteTool = onToggleFavoriteTool,
                     onSharePdf = onSharePdf,
                     onNavigate = navigateTo,
+                    selectedLanguageTag = settings.selectedLanguageTag,
+                    onChangeLanguage = settings.onChangeLanguage,
+                    adPrivacyOptionsRequired = settings.adPrivacyOptionsRequired,
+                    onOpenAdvertisingPrivacy = settings.onOpenAdvertisingPrivacy,
                     onOpenPdf = onOpenPdf,
                     imagesToPdfState = imagesToPdfState,
                     onImagesToPdf = onImagesToPdf,
@@ -3535,6 +3637,10 @@ private fun OpenPdfContent(
     onToggleFavoriteTool: (SmartTool) -> Unit,
     onSharePdf: (Uri) -> Unit,
     onNavigate: (SmartHomeDestination) -> Unit,
+    selectedLanguageTag: String,
+    onChangeLanguage: (String) -> Unit,
+    adPrivacyOptionsRequired: Boolean,
+    onOpenAdvertisingPrivacy: () -> Unit,
     onOpenPdf: () -> Unit,
     imagesToPdfState: ImagesToPdfState,
     onImagesToPdf: () -> Unit,
@@ -3625,12 +3731,14 @@ private fun OpenPdfContent(
     val toolsScroll = rememberScrollState()
     val historyScroll = rememberScrollState()
     val searchScroll = rememberScrollState()
+    val settingsScroll = rememberScrollState()
     val contentScroll = when (destination) {
         SmartHomeDestination.Home -> homeScroll
         SmartHomeDestination.Files -> filesScroll
         SmartHomeDestination.Tools -> toolsScroll
         SmartHomeDestination.History -> historyScroll
         SmartHomeDestination.Search -> searchScroll
+        SmartHomeDestination.Settings -> settingsScroll
     }
     val hasResult = imagesToPdfState is ImagesToPdfState.Failed ||
         mergePdfState is MergePdfState.Failed ||
@@ -3973,6 +4081,10 @@ private fun OpenPdfContent(
                 onToggleFavoriteTool = onToggleFavoriteTool,
                 onSharePdf = onSharePdf,
                 onNavigate = onNavigate,
+                selectedLanguageTag = selectedLanguageTag,
+                onChangeLanguage = onChangeLanguage,
+                adPrivacyOptionsRequired = adPrivacyOptionsRequired,
+                onOpenAdvertisingPrivacy = onOpenAdvertisingPrivacy,
                 onImagesToPdf = onImagesToPdf,
                 imagesToPdfState = imagesToPdfState,
                 onDismissImagesToPdfFailure = onDismissImagesToPdfFailure,
@@ -5142,6 +5254,245 @@ private fun PdfHistoryOperation.suggestedSmartTool(): SmartTool? = when (this) {
 }
 
 @Composable
+private fun SettingsContent(
+    selectedLanguageTag: String,
+    onChangeLanguage: (String) -> Unit,
+    adPrivacyOptionsRequired: Boolean,
+    onOpenAdvertisingPrivacy: () -> Unit,
+) {
+    val languageOptions = listOf(
+        "en" to R.string.settings_language_english,
+        "de" to R.string.settings_language_german,
+        "fr" to R.string.settings_language_french,
+        "ja" to R.string.settings_language_japanese,
+        "hi" to R.string.settings_language_hindi,
+        "ru" to R.string.settings_language_russian,
+        "es" to R.string.settings_language_spanish,
+        "pt-PT" to R.string.settings_language_portuguese_portugal,
+        "pt-BR" to R.string.settings_language_portuguese_brazil,
+        "it" to R.string.settings_language_italian,
+        "id" to R.string.settings_language_indonesian,
+        "ar" to R.string.settings_language_arabic,
+        "ko" to R.string.settings_language_korean,
+        "ur" to R.string.settings_language_urdu,
+    )
+    var languageDialogVisible by remember { mutableStateOf(false) }
+    var privacyDialogVisible by remember { mutableStateOf(false) }
+    var languageQuery by rememberSaveable { mutableStateOf("") }
+    val currentLanguage = languageOptions.firstOrNull { (tag, _) ->
+        tag.equals(selectedLanguageTag, ignoreCase = true) ||
+            (!tag.contains('-') && tag == selectedLanguageTag.substringBefore('-'))
+    }
+
+    Column(
+        modifier = Modifier.fillMaxWidth().testTag("settings_content"),
+        verticalArrangement = Arrangement.spacedBy(20.dp),
+    ) {
+        SettingsCard(
+            title = stringResource(R.string.settings_language_title),
+            description = stringResource(
+                R.string.settings_language_current,
+                stringResource(currentLanguage?.second ?: R.string.settings_language_system),
+            ),
+            testTag = "settings_language_card",
+            onClick = {
+                languageQuery = ""
+                languageDialogVisible = true
+            },
+        ) {
+            SettingsOutlineAction(
+                text = stringResource(R.string.settings_choose_language),
+                onClick = {
+                    languageQuery = ""
+                    languageDialogVisible = true
+                },
+                testTag = "settings_language_picker",
+            )
+        }
+        SettingsCard(
+            title = stringResource(R.string.settings_privacy_title),
+            description = stringResource(R.string.settings_privacy_description),
+            testTag = "settings_privacy_card",
+        ) {
+            SettingsOutlineAction(
+                text = stringResource(R.string.settings_privacy_policy),
+                onClick = { privacyDialogVisible = true },
+                testTag = "settings_privacy_policy",
+            )
+        }
+        SettingsCard(
+            title = stringResource(R.string.settings_advertising_title),
+            description = stringResource(
+                if (adPrivacyOptionsRequired) {
+                    R.string.settings_advertising_description
+                } else {
+                    R.string.settings_advertising_not_required
+                },
+            ),
+            testTag = "settings_advertising_card",
+        ) {
+            SettingsOutlineAction(
+                text = stringResource(R.string.settings_advertising_manage),
+                onClick = onOpenAdvertisingPrivacy,
+                testTag = "settings_advertising_manage",
+            )
+        }
+        SettingsCard(
+            title = stringResource(R.string.settings_about_title),
+            description = stringResource(
+                R.string.settings_about_description,
+                BuildConfig.VERSION_NAME,
+            ),
+            testTag = "settings_about_card",
+        )
+    }
+
+    if (languageDialogVisible) {
+        val localizedOptions = languageOptions.map { (tag, label) -> tag to stringResource(label) }
+        val filteredOptions = localizedOptions.filter { (_, label) ->
+            label.contains(languageQuery.trim(), ignoreCase = true)
+        }
+        AlertDialog(
+            onDismissRequest = { languageDialogVisible = false },
+            title = { Text(stringResource(R.string.settings_choose_language)) },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth().testTag("settings_language_dialog"),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    OutlinedTextField(
+                        value = languageQuery,
+                        onValueChange = { languageQuery = it },
+                        label = { Text(stringResource(R.string.settings_search_language)) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().testTag("settings_language_search"),
+                    )
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 320.dp)
+                            .verticalScroll(rememberScrollState())
+                            .testTag("settings_language_list"),
+                    ) {
+                        TextButton(
+                            onClick = {
+                                languageDialogVisible = false
+                                if (selectedLanguageTag.isNotBlank()) onChangeLanguage("")
+                            },
+                            modifier = Modifier.fillMaxWidth().testTag("settings_language_system"),
+                        ) {
+                            Text(stringResource(R.string.settings_language_system))
+                        }
+                        filteredOptions.forEach { (tag, label) ->
+                            TextButton(
+                                onClick = {
+                                    languageDialogVisible = false
+                                    if (tag != currentLanguage?.first) onChangeLanguage(tag)
+                                },
+                                modifier = Modifier.fillMaxWidth().testTag("settings_language_$tag"),
+                            ) {
+                                Text(
+                                    text = label,
+                                    fontWeight = if (tag == currentLanguage?.first) {
+                                        FontWeight.SemiBold
+                                    } else {
+                                        FontWeight.Normal
+                                    },
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { languageDialogVisible = false }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            },
+            modifier = Modifier.testTag("settings_language_dialog_container"),
+        )
+    }
+
+    if (privacyDialogVisible) {
+        AlertDialog(
+            onDismissRequest = { privacyDialogVisible = false },
+            title = { Text(stringResource(R.string.settings_privacy_policy)) },
+            text = {
+                Text(
+                    text = stringResource(R.string.settings_privacy_policy_details),
+                    modifier = Modifier.testTag("settings_privacy_policy_dialog"),
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { privacyDialogVisible = false }) {
+                    Text(stringResource(R.string.settings_close))
+                }
+            },
+            modifier = Modifier.testTag("settings_privacy_policy_dialog_container"),
+        )
+    }
+}
+
+@Composable
+private fun SettingsCard(
+    title: String,
+    description: String,
+    testTag: String,
+    onClick: (() -> Unit)? = null,
+    action: (@Composable () -> Unit)? = null,
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(testTag)
+            .then(
+                if (onClick != null) {
+                    Modifier.clickable(role = Role.Button, onClick = onClick)
+                } else {
+                    Modifier
+                },
+            ),
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        tonalElevation = 1.dp,
+        shadowElevation = 2.dp,
+    ) {
+        Column(modifier = Modifier.fillMaxWidth().padding(24.dp)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+            )
+            Text(
+                text = description,
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 12.dp),
+            )
+            action?.let {
+                Box(modifier = Modifier.fillMaxWidth().padding(top = 20.dp)) { it() }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SettingsOutlineAction(
+    text: String,
+    onClick: () -> Unit,
+    testTag: String,
+) {
+    OutlinedButton(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp).testTag(testTag),
+        shape = MaterialTheme.shapes.extraLarge,
+    ) {
+        Text(text = text, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+@Composable
 private fun IdleContent(
     destination: SmartHomeDestination,
     legacyHomeSections: Boolean,
@@ -5162,6 +5513,10 @@ private fun IdleContent(
     onToggleFavoriteTool: (SmartTool) -> Unit,
     onSharePdf: (Uri) -> Unit,
     onNavigate: (SmartHomeDestination) -> Unit,
+    selectedLanguageTag: String,
+    onChangeLanguage: (String) -> Unit,
+    adPrivacyOptionsRequired: Boolean,
+    onOpenAdvertisingPrivacy: () -> Unit,
     onImagesToPdf: () -> Unit,
     imagesToPdfState: ImagesToPdfState,
     onDismissImagesToPdfFailure: () -> Unit,
@@ -5228,6 +5583,15 @@ private fun IdleContent(
     onOpenScannerPdf: () -> Unit,
     onDismissScannerResult: () -> Unit,
 ) {
+    if (destination == SmartHomeDestination.Settings) {
+        SettingsContent(
+            selectedLanguageTag = selectedLanguageTag,
+            onChangeLanguage = onChangeLanguage,
+            adPrivacyOptionsRequired = adPrivacyOptionsRequired,
+            onOpenAdvertisingPrivacy = onOpenAdvertisingPrivacy,
+        )
+        return
+    }
     var fileQuery by rememberSaveable { mutableStateOf("") }
     var fileSortOrder by rememberSaveable { mutableStateOf(PdfFileSortOrder.Newest) }
     var fileFilter by rememberSaveable { mutableStateOf(SmartFileFilter.All) }

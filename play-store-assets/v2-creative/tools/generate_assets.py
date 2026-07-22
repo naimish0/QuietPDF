@@ -12,6 +12,8 @@ import csv
 import json
 import math
 import os
+import unicodedata
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Callable
 
@@ -35,6 +37,313 @@ WARNING = "#F59E0B"
 LINE = "#CBD5E1"
 SLATE = "#E2E8F0"
 NAVY = "#172554"
+
+LOCALE_FONTS = {
+    "de-DE": (FONT_PATH, 0),
+    "fr-FR": (FONT_PATH, 0),
+    "ja-JP": (Path("/System/Library/Fonts/Hiragino Sans GB.ttc"), 2),
+    "hi-IN": (Path("/System/Library/Fonts/Supplemental/Devanagari Sangam MN.ttc"), 1),
+    "ru-RU": (FONT_PATH, 0), "es-ES": (FONT_PATH, 0),
+    "pt-PT": (FONT_PATH, 0), "pt-BR": (FONT_PATH, 0),
+    "it-IT": (FONT_PATH, 0), "id-ID": (FONT_PATH, 0),
+    "ar": (Path("/System/Library/Fonts/Supplemental/Arial Unicode.ttf"), 0),
+    "ko-KR": (Path("/System/Library/Fonts/AppleSDGothicNeo.ttc"), 0),
+    "ur-PK": (Path("/System/Library/Fonts/Supplemental/Arial Unicode.ttf"), 0),
+}
+
+RTL_LOCALES = {"ar", "ur-PK"}
+
+LOCALIZED_COPY = {
+    "de-DE": {
+        "phone": [
+            ("Alle PDF-Werkzeuge.\nEine ruhige App.", "Öffnen, scannen, organisieren und komprimieren."),
+            ("Vom schiefen Foto\nzum sauberen PDF.", "Zuschneiden, korrigieren und optimieren."),
+            ("Ungestört lesen.", "Flüssig zoomen, suchen und Lesezeichen setzen."),
+            ("Kleinere Datei. Klare Seiten.", "Größe vor dem Speichern vergleichen."),
+            ("Fotos in professionelle\nPDFs verwandeln.", "Anordnen, drehen und Layout wählen."),
+            ("Sicher zusammenführen\nund sortieren.", "Jede Seite vor dem Speichern prüfen."),
+            ("Deine Dokumente bleiben\nauf deinem Gerät.", "Die PDF-Verarbeitung erfolgt lokal."),
+            ("Gespeichert. Geteilt.\nLeicht zu finden.", "Öffnen, umbenennen, teilen oder Ordner anzeigen."),
+        ],
+        "before": "VORHER", "after": "NACHHER",
+        "utility": "PDF-Werkzeuge für jeden Tag.\nHerrlich einfach.",
+        "privacy": "Deine PDFs bleiben\nauf deinem Gerät.",
+        "scan": "SCAN", "clean": "SAUBER", "local": "LOKAL", "processing": "VERARBEITET",
+    },
+    "fr-FR": {
+        "phone": [
+            ("Tous vos outils PDF.\nUne app sereine.", "Ouvrez, scannez, organisez et compressez."),
+            ("De la photo inclinée\nau PDF net.", "Recadrez, corrigez et améliorez."),
+            ("Lisez sans distractions.", "Zoom fluide, recherche et favoris."),
+            ("Fichier réduit. Pages nettes.", "Comparez la taille avant d’enregistrer."),
+            ("Transformez vos photos\nen PDF soignés.", "Organisez, pivotez et choisissez la mise en page."),
+            ("Fusionnez et réorganisez\nsereinement.", "Prévisualisez chaque page avant d’enregistrer."),
+            ("Vos documents restent\nsur votre appareil.", "Le traitement PDF s’effectue localement."),
+            ("Enregistré. Partagé.\nFacile à retrouver.", "Ouvrez, renommez, partagez ou affichez le dossier."),
+        ],
+        "before": "AVANT", "after": "APRÈS",
+        "utility": "Vos outils PDF au quotidien.\nTout simplement.",
+        "privacy": "Vos PDF restent\nsur votre appareil.",
+        "scan": "PHOTO", "clean": "NET", "local": "LOCAL", "processing": "TRAITEMENT",
+    },
+    "ja-JP": {
+        "phone": [
+            ("PDFツールを、\nひとつの快適なアプリに。", "開く、スキャン、整理、圧縮。"),
+            ("傾いた写真を、\nきれいなPDFに。", "切り抜き、補正、鮮明化。"),
+            ("集中できるPDFリーダー。", "スムーズな拡大、検索、ブックマーク。"),
+            ("小さなファイル。\n読みやすいページ。", "保存前にサイズを比較。"),
+            ("写真を美しいPDFに。", "並べ替え、回転、レイアウト選択。"),
+            ("安心して結合・並べ替え。", "保存前に全ページを確認。"),
+            ("書類は端末から出ません。", "PDF処理は端末内で完結。"),
+            ("保存、共有、\nすぐ見つかる。", "開く、名前変更、共有、フォルダ表示。"),
+        ],
+        "before": "変更前", "after": "変更後",
+        "utility": "毎日のPDFツールを、\nもっとシンプルに。",
+        "privacy": "PDFは端末から\n出ません。",
+        "scan": "撮影", "clean": "補正後", "local": "端末内", "processing": "処理",
+    },
+    "hi-IN": {
+        "phone": [
+            ("आपके सभी PDF टूल।\nएक आसान ऐप।", "खोलें, स्कैन करें, व्यवस्थित करें और कंप्रेस करें।"),
+            ("टेढ़ी फोटो से\nसाफ़ PDF।", "क्रॉप करें, सुधारें और बेहतर बनाएँ।"),
+            ("बिना रुकावट पढ़ें।", "आसान ज़ूम, खोज और बुकमार्क।"),
+            ("छोटी फ़ाइल। साफ़ पेज।", "सेव करने से पहले आकार देखें।"),
+            ("फोटो से सुंदर\nPDF बनाएँ।", "क्रम बदलें, घुमाएँ और लेआउट चुनें।"),
+            ("भरोसे से मर्ज और\nक्रम बदलें।", "सेव करने से पहले हर पेज देखें।"),
+            ("आपके दस्तावेज़ आपके\nडिवाइस पर रहते हैं।", "PDF प्रोसेसिंग डिवाइस पर होती है।"),
+            ("सेव। शेयर।\nआसानी से खोजें।", "खोलें, नाम बदलें, शेयर करें या फ़ोल्डर देखें।"),
+        ],
+        "before": "पहले", "after": "बाद में",
+        "utility": "रोज़मर्रा के PDF टूल।\nबेहद आसान।",
+        "privacy": "आपके PDF आपके\nडिवाइस पर रहते हैं।",
+        "scan": "फोटो", "clean": "साफ़", "local": "डिवाइस पर", "processing": "प्रोसेसिंग",
+    },
+}
+
+CONTENT_COPY = {
+    "de-DE": {
+        "quarterly": "Quartalsübersicht", "travel": "Reiseplan", "notes": "Projektnotizen",
+        "research": "Forschungsbericht", "catalogue": "Produktkatalog", "brief": "Projektübersicht",
+        "budget": "Budgetübersicht", "timeline": "Lieferzeitplan", "contract": "Vertragsentwurf",
+        "itinerary": "Reiseablauf", "pages": "{n} Seiten", "original": "Original",
+        "smaller": "Kleinere PDF", "completed": "Fertig", "local_pdf": "Lokale PDF",
+        "contents": "INHALT", "context": "Kontext", "findings": "Ergebnisse", "methods": "Methoden",
+        "search": "Suche", "privacy_query": "Datenschutz", "result_count": "3 von 8",
+        "output_note": "Ausgabegröße wird beim Speichern gemessen", "page": "Seite {n}",
+        "project": "Projekt", "pavilion": "Pavillon", "pine": "Waldweg", "stairs": "Blaue Treppe", "lake": "Seehaus",
+        "processing": "Lokale Verarbeitung", "stays": "Bleibt auf dem Gerät", "workflow": "LOKALER ABLAUF",
+        "open": "Öffnen", "process": "Verarbeiten", "save": "Speichern", "no_upload": "Kein Dokument-Upload",
+        "ready": "Bereit zum Teilen", "stored": "Lokal gespeichert", "share": "PDF teilen",
+        "home": "Start", "files": "Dateien", "tools": "Werkzeuge", "history": "Verlauf",
+    },
+    "fr-FR": {
+        "quarterly": "Synthèse trimestrielle", "travel": "Plan de voyage", "notes": "Notes de projet",
+        "research": "Rapport de recherche", "catalogue": "Catalogue produits", "brief": "Brief projet",
+        "budget": "Aperçu du budget", "timeline": "Calendrier de livraison", "contract": "Projet de contrat",
+        "itinerary": "Itinéraire de voyage", "pages": "{n} pages", "original": "Original",
+        "smaller": "PDF réduit", "completed": "Terminé", "local_pdf": "PDF local",
+        "contents": "SOMMAIRE", "context": "Contexte", "findings": "Résultats", "methods": "Méthodes",
+        "search": "Recherche", "privacy_query": "confidentialité", "result_count": "3 sur 8",
+        "output_note": "Taille mesurée dans l’app à l’enregistrement", "page": "Page {n}",
+        "project": "Projet", "pavilion": "Pavillon", "pine": "Sentier", "stairs": "Escalier bleu", "lake": "Maison du lac",
+        "processing": "Traitement local", "stays": "Reste sur l’appareil", "workflow": "FLUX LOCAL",
+        "open": "Ouvrir", "process": "Traiter", "save": "Enregistrer", "no_upload": "Aucun envoi de document",
+        "ready": "Prêt à partager", "stored": "Enregistré localement", "share": "Partager le PDF",
+        "home": "Accueil", "files": "Fichiers", "tools": "Outils", "history": "Historique",
+    },
+    "ja-JP": {
+        "quarterly": "四半期サマリー", "travel": "旅行プラン", "notes": "プロジェクトノート",
+        "research": "調査レポート", "catalogue": "製品カタログ", "brief": "プロジェクト概要",
+        "budget": "予算概要", "timeline": "納品スケジュール", "contract": "契約書案",
+        "itinerary": "旅行日程", "pages": "{n}ページ", "original": "元のPDF",
+        "smaller": "小さいPDF", "completed": "完了", "local_pdf": "端末内PDF",
+        "contents": "目次", "context": "背景", "findings": "調査結果", "methods": "方法",
+        "search": "検索", "privacy_query": "プライバシー", "result_count": "3 / 8",
+        "output_note": "保存時にアプリ内でサイズを測定", "page": "{n}ページ",
+        "project": "プロジェクト", "pavilion": "パビリオン", "pine": "森の小道", "stairs": "青い階段", "lake": "湖畔の家",
+        "processing": "端末内で処理", "stays": "端末内に保存", "workflow": "端末内の流れ",
+        "open": "開く", "process": "処理", "save": "保存", "no_upload": "文書をアップロードしません",
+        "ready": "共有できます", "stored": "端末内に保存", "share": "PDFを共有",
+        "home": "ホーム", "files": "ファイル", "tools": "ツール", "history": "履歴",
+    },
+    "hi-IN": {
+        "quarterly": "तिमाही सारांश", "travel": "यात्रा योजना", "notes": "प्रोजेक्ट नोट्स",
+        "research": "शोध रिपोर्ट", "catalogue": "उत्पाद कैटलॉग", "brief": "प्रोजेक्ट ब्रीफ़",
+        "budget": "बजट अवलोकन", "timeline": "डिलीवरी समयरेखा", "contract": "अनुबंध मसौदा",
+        "itinerary": "यात्रा कार्यक्रम", "pages": "{n} पेज", "original": "मूल",
+        "smaller": "छोटी PDF", "completed": "पूर्ण", "local_pdf": "लोकल PDF",
+        "contents": "विषय सूची", "context": "संदर्भ", "findings": "निष्कर्ष", "methods": "तरीके",
+        "search": "खोज", "privacy_query": "निजता", "result_count": "8 में से 3",
+        "output_note": "सेव करते समय ऐप में आकार मापा जाता है", "page": "पेज {n}",
+        "project": "प्रोजेक्ट", "pavilion": "मंडप", "pine": "वन पथ", "stairs": "नीली सीढ़ियाँ", "lake": "झील का घर",
+        "processing": "डिवाइस पर प्रोसेसिंग", "stays": "डिवाइस पर रहता है", "workflow": "लोकल प्रक्रिया",
+        "open": "खोलें", "process": "प्रोसेस", "save": "सेव", "no_upload": "दस्तावेज़ अपलोड नहीं होता",
+        "ready": "शेयर के लिए तैयार", "stored": "डिवाइस पर सेव", "share": "PDF शेयर करें",
+        "home": "होम", "files": "फ़ाइलें", "tools": "टूल", "history": "इतिहास",
+    },
+}
+
+GENERATED_LOCALIZED_COPY = ROOT / "source/editable-layouts/localized-copy.generated.json"
+if GENERATED_LOCALIZED_COPY.is_file():
+    generated_copy = json.loads(GENERATED_LOCALIZED_COPY.read_text(encoding="utf-8"))
+    LOCALIZED_COPY.update(generated_copy["localized_copy"])
+    CONTENT_COPY.update(generated_copy["content_copy"])
+
+OVERVIEW_COPY = {
+    "en-US": {
+        "title": "QuietPDF: All features", "subtitle": "Eight essential workflows and 20 built-in PDF tools",
+        "tools_title": "Every PDF tool, in one calm app", "tools_badge": "20 TOOLS", "essentials_title": "Reader, files and everyday essentials",
+        "features": ["All PDF tools", "Scan to PDF", "PDF reader", "Compress PDF", "Photos to PDF", "Merge & reorder", "On-device privacy", "Save & share"],
+    },
+    "de-DE": {
+        "title": "QuietPDF: Alle Funktionen", "subtitle": "Acht wichtige Abläufe und 20 integrierte PDF-Werkzeuge",
+        "tools_title": "Alle PDF-Werkzeuge in einer ruhigen App", "tools_badge": "20 WERKZEUGE", "essentials_title": "Lesen, Dateien und tägliche Funktionen",
+        "features": ["Alle PDF-Werkzeuge", "Als PDF scannen", "PDF lesen", "PDF komprimieren", "Fotos als PDF", "Zusammenführen", "Datenschutz am Gerät", "Speichern & teilen"],
+    },
+    "fr-FR": {
+        "title": "QuietPDF: Toutes les fonctions", "subtitle": "Huit flux essentiels et 20 outils PDF intégrés",
+        "tools_title": "Tous les outils PDF dans une app sereine", "tools_badge": "20 OUTILS", "essentials_title": "Lecture, fichiers et fonctions essentielles",
+        "features": ["Tous les outils PDF", "Scanner en PDF", "Lire un PDF", "Compresser un PDF", "Photos en PDF", "Fusionner et réorganiser", "Confidentialité locale", "Enregistrer et partager"],
+    },
+    "ja-JP": {
+        "title": "QuietPDF: すべての機能", "subtitle": "8つの主要ワークフローと20のPDFツール",
+        "tools_title": "すべてのPDFツールをひとつのアプリに", "tools_badge": "20ツール", "essentials_title": "リーダー、ファイル、毎日の基本機能",
+        "features": ["PDFツール", "PDFスキャン", "PDFリーダー", "PDF圧縮", "写真をPDFに", "結合・並べ替え", "端末内プライバシー", "保存・共有"],
+    },
+    "hi-IN": {
+        "title": "QuietPDF: सभी सुविधाएँ", "subtitle": "आठ मुख्य प्रक्रियाएँ और 20 बिल्ट-इन PDF टूल",
+        "tools_title": "हर PDF टूल, एक आसान ऐप में", "tools_badge": "20 टूल", "essentials_title": "रीडर, फ़ाइलें और रोज़मर्रा की सुविधाएँ",
+        "features": ["सभी PDF टूल", "PDF स्कैन", "PDF रीडर", "PDF कंप्रेस", "फोटो से PDF", "मर्ज और क्रम बदलें", "डिवाइस पर निजता", "सेव और शेयर"],
+    },
+    "ru-RU": {
+        "title":"QuietPDF: Все функции", "subtitle":"8 основных сценариев и 20 встроенных PDF-инструментов", "tools_title":"Все PDF-инструменты в одном спокойном приложении", "tools_badge":"20 ИНСТРУМЕНТОВ", "essentials_title":"Чтение, файлы и ежедневные функции",
+        "features":["Все PDF-инструменты","Сканирование в PDF","PDF-ридер","Сжатие PDF","Фото в PDF","Объединение и порядок","Конфиденциальность","Сохранение и отправка"],
+    },
+    "es-ES": {
+        "title":"QuietPDF: Todas las funciones", "subtitle":"8 flujos esenciales y 20 herramientas PDF integradas", "tools_title":"Todas las herramientas PDF en una app sencilla", "tools_badge":"20 HERRAMIENTAS", "essentials_title":"Lectura, archivos y funciones esenciales",
+        "features":["Todas las herramientas","Escanear a PDF","Lector PDF","Comprimir PDF","Fotos a PDF","Combinar y ordenar","Privacidad local","Guardar y compartir"],
+    },
+    "pt-PT": {
+        "title":"QuietPDF: Todas as funcionalidades", "subtitle":"8 fluxos essenciais e 20 ferramentas PDF integradas", "tools_title":"Todas as ferramentas PDF numa app simples", "tools_badge":"20 FERRAMENTAS", "essentials_title":"Leitura, ficheiros e funções essenciais",
+        "features":["Todas as ferramentas","Digitalizar para PDF","Leitor de PDF","Comprimir PDF","Fotos para PDF","Unir e ordenar","Privacidade no dispositivo","Guardar e partilhar"],
+    },
+    "pt-BR": {
+        "title":"QuietPDF: Todos os recursos", "subtitle":"8 fluxos essenciais e 20 ferramentas PDF integradas", "tools_title":"Todas as ferramentas PDF em um app simples", "tools_badge":"20 FERRAMENTAS", "essentials_title":"Leitura, arquivos e recursos essenciais",
+        "features":["Todas as ferramentas","Digitalizar para PDF","Leitor de PDF","Comprimir PDF","Fotos para PDF","Mesclar e ordenar","Privacidade no dispositivo","Salvar e compartilhar"],
+    },
+    "it-IT": {
+        "title":"QuietPDF: Tutte le funzioni", "subtitle":"8 flussi essenziali e 20 strumenti PDF integrati", "tools_title":"Tutti gli strumenti PDF in un'app semplice", "tools_badge":"20 STRUMENTI", "essentials_title":"Lettura, file e funzioni essenziali",
+        "features":["Tutti gli strumenti","Scansione in PDF","Lettore PDF","Comprimi PDF","Foto in PDF","Unisci e riordina","Privacy sul dispositivo","Salva e condividi"],
+    },
+    "id-ID": {
+        "title":"QuietPDF: Semua fitur", "subtitle":"8 alur utama dan 20 alat PDF bawaan", "tools_title":"Semua alat PDF dalam satu aplikasi sederhana", "tools_badge":"20 ALAT", "essentials_title":"Pembaca, file, dan fitur sehari-hari",
+        "features":["Semua alat PDF","Pindai ke PDF","Pembaca PDF","Kompres PDF","Foto ke PDF","Gabung dan urutkan","Privasi di perangkat","Simpan dan bagikan"],
+    },
+    "ar": {
+        "title":"QuietPDF: جميع الميزات", "subtitle":"8 مسارات أساسية و20 أداة PDF مدمجة", "tools_title":"كل أدوات PDF في تطبيق واحد بسيط", "tools_badge":"20 أداة", "essentials_title":"القراءة والملفات والميزات اليومية",
+        "features":["كل أدوات PDF","المسح إلى PDF","قارئ PDF","ضغط PDF","الصور إلى PDF","الدمج وإعادة الترتيب","الخصوصية على الجهاز","الحفظ والمشاركة"],
+    },
+    "ko-KR": {
+        "title":"QuietPDF: 모든 기능", "subtitle":"8가지 핵심 작업과 20가지 내장 PDF 도구", "tools_title":"하나의 편안한 앱에 모든 PDF 도구", "tools_badge":"도구 20개", "essentials_title":"리더, 파일 및 일상 기능",
+        "features":["모든 PDF 도구","PDF 스캔","PDF 리더","PDF 압축","사진을 PDF로","병합 및 재정렬","기기 내 개인정보 보호","저장 및 공유"],
+    },
+    "ur-PK": {
+        "title":"QuietPDF: تمام خصوصیات", "subtitle":"8 بنیادی طریقۂ کار اور 20 بلٹ اِن PDF ٹولز", "tools_title":"تمام PDF ٹولز ایک سادہ ایپ میں", "tools_badge":"20 ٹولز", "essentials_title":"ریڈر، فائلیں اور روزمرہ خصوصیات",
+        "features":["تمام PDF ٹولز","PDF اسکین","PDF ریڈر","PDF کمپریس","تصاویر سے PDF","ضم اور ترتیب","ڈیوائس پر رازداری","محفوظ اور شیئر"],
+    },
+}
+
+TOOL_GROUPS = [
+    ("smart_home_category_create", ["scan_document", "images_to_pdf"]),
+    ("smart_home_category_organize", ["merge_pdf", "split_pdf", "rearrange_pages", "extract_pages", "delete_pages", "rotate_pages", "duplicate_pages"]),
+    ("smart_home_category_optimize", ["compress_pdf", "smart_home_target_size"]),
+    ("smart_home_category_secure", ["protect_pdf", "remove_password", "change_password"]),
+    ("smart_home_category_edit", ["fill_forms", "sign_pdf", "annotate_pdf", "text_watermark", "image_watermark"]),
+    ("smart_home_category_extract", ["extract_images"]),
+]
+
+ESSENTIAL_FEATURES = [
+    "open_pdf", "zoom_in", "reader_mode", "enter_fullscreen",
+    "night_appearance", "search_document", "bookmarks", "table_of_contents",
+    "pdf_health", "smart_home_continue_reading", "recent_files", "favorite_files",
+    "history", "file_search", "file_sort", "share_pdf",
+]
+
+RESOURCE_DIRS = {
+    "en-US": "values", "de-DE": "values-de", "fr-FR": "values-fr",
+    "ja-JP": "values-ja", "hi-IN": "values-hi",
+    "ru-RU":"values-ru", "es-ES":"values-es", "pt-PT":"values-pt-rPT",
+    "pt-BR":"values-pt-rBR", "it-IT":"values-it", "id-ID":"values-in",
+    "ar":"values-ar", "ko-KR":"values-ko", "ur-PK":"values-ur-rPK",
+}
+
+CREATIVE_STRING_KEYS = [
+    "smart_home_category_create","smart_home_category_organize","smart_home_category_optimize","smart_home_category_secure","smart_home_category_edit","smart_home_category_extract",
+    "scan_document","images_to_pdf","merge_pdf","split_pdf","rearrange_pages","extract_pages","delete_pages","rotate_pages","duplicate_pages","compress_pdf","smart_home_target_size","protect_pdf","remove_password","change_password","fill_forms","sign_pdf","annotate_pdf","text_watermark","image_watermark","extract_images",
+    "open_pdf","zoom_in","reader_mode","enter_fullscreen","night_appearance","search_document","bookmarks","table_of_contents","pdf_health","smart_home_continue_reading","recent_files","favorite_files","history","file_search","file_sort","share_pdf",
+]
+
+CREATIVE_STRING_VALUES = {
+    "ru-RU": [
+        "Создать","Упорядочить","Оптимизация","Защита","Редактирование и подпись","Извлечение",
+        "Сканировать документ","Изображения в PDF","Объединить PDF","Разделить PDF","Изменить порядок страниц","Извлечь страницы","Удалить страницы","Повернуть страницы","Дублировать страницы","Сжать PDF","Целевой размер файла","Защитить PDF","Удалить пароль","Изменить пароль","Заполнить формы","Подписать PDF","Добавить аннотации","Текстовый водяной знак","Графический водяной знак","Извлечь изображения",
+        "Открыть PDF","Увеличить","Режим чтения","Полный экран","Ночной режим","Поиск в документе","Закладки","Оглавление","Проверка PDF","Продолжить чтение","Недавние файлы","Избранные файлы","История","Поиск файлов","Сортировка файлов","Поделиться",
+    ],
+    "es-ES": [
+        "Crear","Organizar","Optimizar","Proteger","Editar y firmar","Extraer",
+        "Escanear documento","Imágenes a PDF","Combinar PDF","Dividir PDF","Reordenar páginas","Extraer páginas","Eliminar páginas","Girar páginas","Duplicar páginas","Comprimir PDF","Tamaño de archivo objetivo","Proteger PDF","Quitar contraseña","Cambiar contraseña","Rellenar formularios","Firmar PDF","Anotar PDF","Marca de agua de texto","Marca de agua de imagen","Extraer imágenes",
+        "Abrir PDF","Ampliar","Opciones de lectura","Pantalla completa","Páginas nocturnas","Buscar en el documento","Marcadores","Índice","Estado del PDF","Continuar leyendo","Archivos recientes","Archivos favoritos","Historial","Buscar archivos","Ordenar archivos","Compartir",
+    ],
+    "pt-PT": [
+        "Criar","Organizar","Otimizar","Proteger","Editar e assinar","Extrair",
+        "Digitalizar documento","Imagens para PDF","Unir PDFs","Dividir PDF","Reordenar páginas","Extrair páginas","Eliminar páginas","Rodar páginas","Duplicar páginas","Comprimir PDF","Tamanho de ficheiro alvo","Proteger PDF","Remover palavra-passe","Alterar palavra-passe","Preencher formulários","Assinar PDF","Anotar PDF","Marca de água de texto","Marca de água de imagem","Extrair imagens",
+        "Abrir PDF","Ampliar","Opções de leitura","Ecrã inteiro","Páginas noturnas","Pesquisar documento","Marcadores","Índice","Estado do PDF","Continuar a ler","Ficheiros recentes","Ficheiros favoritos","Histórico","Pesquisar ficheiros","Ordenar ficheiros","Partilhar",
+    ],
+    "pt-BR": [
+        "Criar","Organizar","Otimizar","Proteger","Editar e assinar","Extrair",
+        "Digitalizar documento","Imagens para PDF","Mesclar PDFs","Dividir PDF","Reordenar páginas","Extrair páginas","Excluir páginas","Girar páginas","Duplicar páginas","Comprimir PDF","Tamanho de arquivo desejado","Proteger PDF","Remover senha","Alterar senha","Preencher formulários","Assinar PDF","Anotar PDF","Marca-d'água de texto","Marca-d'água de imagem","Extrair imagens",
+        "Abrir PDF","Ampliar","Opções de leitura","Tela cheia","Páginas noturnas","Pesquisar documento","Favoritos","Sumário","Integridade do PDF","Continuar lendo","Arquivos recentes","Arquivos favoritos","Histórico","Pesquisar arquivos","Ordenar arquivos","Compartilhar",
+    ],
+    "it-IT": [
+        "Crea","Organizza","Ottimizza","Proteggi","Modifica e firma","Estrai",
+        "Scansiona documento","Immagini in PDF","Unisci PDF","Dividi PDF","Riordina pagine","Estrai pagine","Elimina pagine","Ruota pagine","Duplica pagine","Comprimi PDF","Dimensione file obiettivo","Proteggi PDF","Rimuovi password","Cambia password","Compila moduli","Firma PDF","Annota PDF","Filigrana di testo","Filigrana immagine","Estrai immagini",
+        "Apri PDF","Ingrandisci","Opzioni di lettura","Schermo intero","Pagine notturne","Cerca nel documento","Segnalibri","Indice","Stato del PDF","Continua a leggere","File recenti","File preferiti","Cronologia","Cerca file","Ordina file","Condividi",
+    ],
+    "id-ID": [
+        "Buat","Atur","Optimalkan","Amankan","Edit dan tanda tangan","Ekstrak",
+        "Pindai dokumen","Gambar ke PDF","Gabungkan PDF","Pisahkan PDF","Atur ulang halaman","Ekstrak halaman","Hapus halaman","Putar halaman","Duplikat halaman","Kompres PDF","Ukuran file target","Lindungi PDF","Hapus kata sandi","Ubah kata sandi","Isi formulir","Tanda tangani PDF","Anotasi PDF","Tanda air teks","Tanda air gambar","Ekstrak gambar",
+        "Buka PDF","Perbesar","Opsi membaca","Layar penuh","Halaman malam","Cari dalam dokumen","Markah","Daftar isi","Kondisi PDF","Lanjut membaca","File terbaru","File favorit","Riwayat","Cari file","Urutkan file","Bagikan",
+    ],
+    "ar": [
+        "إنشاء","تنظيم","تحسين","حماية","تعديل وتوقيع","استخراج",
+        "مسح مستند","الصور إلى PDF","دمج ملفات PDF","تقسيم PDF","إعادة ترتيب الصفحات","استخراج الصفحات","حذف الصفحات","تدوير الصفحات","تكرار الصفحات","ضغط PDF","حجم الملف المستهدف","حماية PDF","إزالة كلمة المرور","تغيير كلمة المرور","تعبئة النماذج","توقيع PDF","إضافة تعليق إلى PDF","علامة مائية نصية","علامة مائية صورية","استخراج الصور",
+        "فتح PDF","تكبير","خيارات القراءة","ملء الشاشة","صفحات ليلية","البحث في المستند","الإشارات المرجعية","جدول المحتويات","سلامة PDF","متابعة القراءة","الملفات الأخيرة","الملفات المفضلة","السجل","البحث عن ملفات","فرز الملفات","مشاركة",
+    ],
+    "ko-KR": [
+        "만들기","정리","최적화","보안","편집 및 서명","추출",
+        "문서 스캔","이미지를 PDF로","PDF 병합","PDF 분할","페이지 재정렬","페이지 추출","페이지 삭제","페이지 회전","페이지 복제","PDF 압축","목표 파일 크기","PDF 보호","암호 제거","암호 변경","양식 작성","PDF 서명","PDF 주석","텍스트 워터마크","이미지 워터마크","이미지 추출",
+        "PDF 열기","확대","읽기 옵션","전체 화면","야간 페이지","문서 검색","북마크","목차","PDF 상태","계속 읽기","최근 파일","즐겨찾는 파일","기록","파일 검색","파일 정렬","공유",
+    ],
+    "ur-PK": [
+        "بنائیں","منظم کریں","بہتر بنائیں","محفوظ کریں","ترمیم اور دستخط","نکالیں",
+        "دستاویز اسکین کریں","تصاویر سے PDF","PDF ضم کریں","PDF تقسیم کریں","صفحات دوبارہ ترتیب دیں","صفحات نکالیں","صفحات حذف کریں","صفحات گھمائیں","صفحات کی نقل بنائیں","PDF کمپریس کریں","مطلوبہ فائل سائز","PDF محفوظ کریں","پاس ورڈ ہٹائیں","پاس ورڈ بدلیں","فارم پُر کریں","PDF پر دستخط کریں","PDF پر نوٹ لگائیں","متنی واٹرمارک","تصویری واٹرمارک","تصاویر نکالیں",
+        "PDF کھولیں","زوم اِن","پڑھنے کے اختیارات","مکمل اسکرین","رات کے صفحات","دستاویز میں تلاش","بک مارکس","فہرستِ مضامین","PDF کی صحت","پڑھنا جاری رکھیں","حالیہ فائلیں","پسندیدہ فائلیں","تاریخ","فائلیں تلاش کریں","فائلیں ترتیب دیں","شیئر کریں",
+    ],
+}
+
+CREATIVE_STRINGS = {locale: dict(zip(CREATIVE_STRING_KEYS, values)) for locale, values in CREATIVE_STRING_VALUES.items()}
+
+
+def app_strings(locale: str) -> dict[str, str]:
+    """Read the same localized labels used by the production Android tool registry."""
+    path = ROOT.parents[1] / "app/src/main/res" / RESOURCE_DIRS.get(locale, "") / "strings.xml"
+    if not path.is_file():
+        return CREATIVE_STRINGS[locale]
+    values = {}
+    for node in ET.parse(path).getroot().findall("string"):
+        if node.get("name"):
+            values[node.get("name")] = "".join(node.itertext()).replace("\\'", "'")
+    return values
 
 
 def ensure_dirs() -> None:
@@ -72,6 +381,88 @@ def font(size: int, weight: int = 400) -> ImageFont.FreeTypeFont:
     except (OSError, ValueError):
         pass
     return f
+
+
+def locale_font(locale: str, size: int, weight: int = 400) -> ImageFont.FreeTypeFont:
+    path, bold_index = LOCALE_FONTS[locale]
+    if not path.exists():
+        raise FileNotFoundError(f"Localized rendering font is unavailable: {path}")
+    if path == FONT_PATH:
+        return font(size, weight)
+    index = bold_index if weight >= 600 else 0
+    return ImageFont.truetype(str(path), size=size, index=index)
+
+
+def _is_arabic(value: str) -> bool:
+    return any("ARABIC" in unicodedata.name(ch, "") for ch in value)
+
+
+def _arabic_forms(ch: str) -> dict[str, str]:
+    name=unicodedata.name(ch, "")
+    if not name.startswith("ARABIC LETTER ") or " FORM" in name:
+        return {}
+    forms={}
+    for kind in ("ISOLATED", "FINAL", "INITIAL", "MEDIAL"):
+        try: forms[kind]=unicodedata.lookup(f"{name} {kind} FORM")
+        except KeyError: pass
+    return forms
+
+
+def _shape_rtl_word(word: str) -> str:
+    chars=list(word); shaped=[]
+    for i,ch in enumerate(chars):
+        forms=_arabic_forms(ch)
+        if not forms:
+            shaped.append(ch); continue
+        prev=next((chars[j] for j in range(i-1,-1,-1) if not unicodedata.combining(chars[j])),None)
+        nxt=next((chars[j] for j in range(i+1,len(chars)) if not unicodedata.combining(chars[j])),None)
+        prev_forms=_arabic_forms(prev) if prev else {}; next_forms=_arabic_forms(nxt) if nxt else {}
+        join_prev=bool(prev_forms.get("INITIAL") or prev_forms.get("MEDIAL")) and bool(forms.get("FINAL") or forms.get("MEDIAL"))
+        join_next=bool(forms.get("INITIAL") or forms.get("MEDIAL")) and bool(next_forms.get("FINAL") or next_forms.get("MEDIAL"))
+        kind="MEDIAL" if join_prev and join_next else "FINAL" if join_prev else "INITIAL" if join_next else "ISOLATED"
+        shaped.append(forms.get(kind,forms.get("ISOLATED",ch)))
+    clusters=[]
+    for ch in shaped:
+        if unicodedata.combining(ch) and clusters: clusters[-1]+=ch
+        else: clusters.append(ch)
+    return "".join(reversed(clusters))
+
+
+def locale_display(value: str, locale: str) -> str:
+    if locale not in RTL_LOCALES: return value
+    lines=[]
+    for line in value.split("\n"):
+        words=line.split(" ")
+        rendered=[_shape_rtl_word(word) if _is_arabic(word) else word for word in reversed(words)]
+        lines.append(" ".join(rendered))
+    return "\n".join(lines)
+
+
+def locale_text(draw, xy, value, locale, size, fill=TEXT, weight=400, anchor=None, spacing=8, align="left"):
+    value=locale_display(value,locale)
+    draw.multiline_text(
+        xy, value, font=locale_font(locale, size, weight), fill=fill,
+        anchor=anchor, spacing=spacing, align=align,
+    )
+
+
+def locale_badge(draw, x, y, label, locale, bg, fg, width=136):
+    rounded(draw,(x,y,x+width,y+48),24,bg)
+    locale_text(draw,(x+width/2,y+24),label,locale,15,fg,700,anchor="mm")
+
+
+def locale_fit_multiline(draw, xy, value, locale, max_width, max_size, min_size=28, fill=TEXT, weight=700, spacing=6):
+    value=locale_display(value,locale)
+    for size in range(max_size, min_size - 1, -1):
+        f=locale_font(locale,size,weight)
+        box=draw.multiline_textbbox((0,0),value,font=f,spacing=spacing)
+        if box[2]-box[0] <= max_width:
+            draw_xy=(xy[0]+max_width,xy[1]) if locale in RTL_LOCALES else xy
+            draw.multiline_text(draw_xy,value,font=f,fill=fill,spacing=spacing,anchor="ra" if locale in RTL_LOCALES else None)
+            return size
+    draw_xy=(xy[0]+max_width,xy[1]) if locale in RTL_LOCALES else xy
+    draw.multiline_text(draw_xy,value,font=locale_font(locale,min_size,weight),fill=fill,spacing=spacing,anchor="ra" if locale in RTL_LOCALES else None)
+    return min_size
 
 
 def canvas(size: tuple[int, int], color: str = BG) -> Image.Image:
@@ -400,6 +791,58 @@ def real_ui(filename: str, crop: tuple[int, int, int, int] | None = None) -> Ima
     return image.crop(crop) if crop else image
 
 
+def localized_real_ui(locale: str, filename: str, crop=None) -> Image.Image:
+    path = ROOT / "source/real-ui-captures-no-ads/localized" / locale / filename
+    if not path.exists():
+        raise FileNotFoundError(f"Missing localized no-ad UI capture: {path}")
+    image = Image.open(path).convert("RGB")
+    return image.crop(crop) if crop else image
+
+
+def localized_document_card(im, box, locale, key, meta, theme=BLUE, variant=0):
+    x0,y0,x1,y1=map(int,box); w=x1-x0; h=y1-y0
+    card=canvas((w,h),WHITE); shadow_card(card,(4,4,w-5,h-5),24,WHITE,10,4,25)
+    d=ImageDraw.Draw(card); rounded(d,(22,20,90,88),18,SOFT_BLUE); icon(d,(56,54),"doc",.65,theme,3)
+    locale_fit_multiline(d,(112,28),CONTENT_COPY[locale][key],locale,w-132,23,12,TEXT,700,4)
+    locale_text(d,(112,62),meta,locale,14,MUTED,500)
+    ph=max(110,h-120); rounded(d,(22,102,w-22,102+ph),10,WHITE,LINE,1); d.rectangle((22,102,w-22,110),fill=theme)
+    for j,ww in enumerate((.72,.52,.81)): d.rounded_rectangle((40,132+j*18,40+(w-80)*ww,139+j*18),4,fill="#CBD5E1")
+    if variant % 2:
+        for j,hh in enumerate((34,58,46)): d.rounded_rectangle((42+j*(w-92)/3,102+ph-30-hh,66+j*(w-92)/3,102+ph-30),4,fill=theme if j==1 else SOFT_BLUE)
+    else:
+        d.line([(42,102+ph-42),(w*.35,102+ph-62),(w*.58,102+ph-52),(w-42,102+ph-88)],fill=theme,width=4)
+    im.paste(card,(x0,y0))
+
+
+def localized_page_art(locale, key, size=(520,730), theme=BLUE, variant=0):
+    im=canvas(size,WHITE); d=ImageDraw.Draw(im); w,h=size
+    d.rectangle((0,0,w,16),fill=theme)
+    locale_fit_multiline(d,(42,46),CONTENT_COPY[locale][key],locale,w-84,30,16,TEXT,700,5)
+    d.line((42,126,w-42,126),fill=LINE,width=2)
+    for i,ww in enumerate((.88,.76,.92,.62,.81)): d.rounded_rectangle((42,170+i*28,42+(w-84)*ww,182+i*28),6,fill="#CBD5E1")
+    if variant % 2:
+        for i,hh in enumerate((90,150,118,190)): d.rounded_rectangle((62+i*(w-124)/4,610-hh,110+i*(w-124)/4,610),8,fill=theme if i==2 else SOFT_BLUE)
+    else:
+        pts=[(54,520),(w*.28,475),(w*.48,500),(w*.7,405),(w-54,438)]; d.line(pts,fill=theme,width=7,joint="curve")
+        for p in pts:d.ellipse((p[0]-6,p[1]-6,p[0]+6,p[1]+6),fill=theme)
+    return im
+
+
+def localized_receipt(locale: str, clean=False, size=(700,980)) -> Image.Image:
+    im=canvas(size,WHITE if clean else "#D8D4CC"); d=ImageDraw.Draw(im); w,h=size
+    shadow_card(im,(80,50,w-65,h-45),12,WHITE,10,6,32)
+    d.rectangle((120,96,w-105,122),fill=BLUE)
+    titles={"de-DE":"NORTHSTAR BELEG","fr-FR":"REÇU NORTHSTAR","ja-JP":"NORTHSTAR レシート","hi-IN":"नॉर्थस्टार रसीद"}
+    totals={"de-DE":"SUMME  84,60","fr-FR":"TOTAL  84,60","ja-JP":"合計  84.60","hi-IN":"कुल  84.60"}
+    receipt_title=titles[locale] if locale in titles else CONTENT_COPY[locale]["receipt_title"]
+    receipt_total=totals[locale] if locale in totals else CONTENT_COPY[locale]["receipt_total"]
+    locale_fit_multiline(d,(120,165),receipt_title,locale,w-240,28,17,TEXT,700,4)
+    for i in range(10): d.rounded_rectangle((120,230+i*48,w-(170 if i%3==0 else 110),242+i*48),6,fill="#94A3B8")
+    locale_text(d,(w-118,h-130),receipt_total,locale,24,TEXT,700,anchor="ra")
+    if not clean: im=im.rotate(-5,Image.Resampling.BICUBIC,expand=False,fillcolor="#D8D4CC")
+    return im
+
+
 def phone_base(headline, support, number):
     im=canvas((1080,1920),BG); d=ImageDraw.Draw(im)
     d.ellipse((760,-220,1220,240),fill="#EFF6FF"); d.ellipse((-260,1500,280,2040),fill="#F1F5F9")
@@ -508,7 +951,9 @@ def creative_7():
     text(d,(785,875),"Processing locally",22,BLUE,650,anchor="ma")
     rounded(d,(660,960,910,1040),30,"#F0FDF4"); icon(d,(700,1000),"check",.55,SUCCESS,3); text(d,(746,983),"Stays on device",17,SUCCESS,700)
     d.line((500,850,600,850),fill=BLUE,width=10); d.polygon([(600,850),(566,826),(566,874)],fill=BLUE)
-    shadow_card(im,(110,1360,970,1498),34,WHITE,22,12,26); paste_fit(im,real_ui("07-privacy-ui.png"),(126,1376,954,1482),24)
+    shadow_card(im,(110,1360,970,1498),34,WHITE,22,12,26)
+    rounded(d,(126,1376,954,1482),24,"#EDE9FE")
+    text(d,(540,1429),"Files stay on your device",22,TEXT,700,anchor="mm")
     shadow_card(im,(110,1510,970,1818),34,WHITE,22,12,26); text(d,(150,1550),"OFFLINE WORKFLOW",18,BLUE,700)
     steps=[("Open","doc"),("Process","compress"),("Save","check")]
     for i,(lab,k) in enumerate(steps):
@@ -638,6 +1083,246 @@ def contact_sheet(paths, out, cols=4, cell=(300,520), bg=BG, labels=True):
     im.save(out,optimize=True)
 
 
+def all_features_contact_sheet(paths, out: Path, locale="en-US"):
+    """Present the eight product narratives and every production SmartTool in one image."""
+    im=canvas((2400,3600),BG); d=ImageDraw.Draw(im); copy=OVERVIEW_COPY[locale]
+    if locale == "en-US":
+        text(d,(100,62),copy["title"],64,TEXT,750)
+        text(d,(100,144),copy["subtitle"],30,MUTED,500)
+    elif locale in RTL_LOCALES:
+        locale_fit_multiline(d,(100,92),copy["title"],locale,2200,50,34,TEXT,700,5)
+        locale_fit_multiline(d,(100,164),copy["subtitle"],locale,2200,22,16,MUTED,500,4)
+    else:
+        locale_fit_multiline(d,(100,62),copy["title"],locale,2200,62,38,TEXT,700,6)
+        locale_fit_multiline(d,(100,144),copy["subtitle"],locale,2200,29,20,MUTED,500,5)
+    d.rounded_rectangle((100,204,2300,212),radius=4,fill=SOFT_BLUE)
+    card_w,card_h,gap=500,710,44
+    start_x,start_y=134,252
+    for i,(path,label) in enumerate(zip(paths,copy["features"]),1):
+        row,col=divmod(i-1,4); x=start_x+col*(card_w+gap); y=start_y+row*(card_h+36)
+        shadow_card(im,(x,y,x+card_w,y+card_h),34,WHITE,18,10,28)
+        src=Image.open(path).convert("RGB"); fitted=ImageOps.contain(src,(414,552),Image.Resampling.LANCZOS)
+        im.paste(fitted,(x+(card_w-fitted.width)//2,y+28))
+        rounded(d,(x+28,y+612,x+86,y+670),18,SOFT_BLUE)
+        if locale == "en-US":
+            text(d,(x+57,y+641),str(i),21,BLUE,700,anchor="mm")
+            fit_text(d,(x+108,y+620),label,card_w-140,25,15,TEXT,700)
+        else:
+            locale_text(d,(x+57,y+641),str(i),locale,20,BLUE,700,anchor="mm")
+            locale_fit_multiline(d,(x+108,y+618),label,locale,card_w-140,23,13,TEXT,700,4)
+
+    # The source of truth below is the app's 20-entry SmartTool registry and localized resources.
+    strings=app_strings(locale); section_y=1765
+    if locale == "en-US":
+        text(d,(100,section_y),copy["tools_title"],44,TEXT,750)
+    else:
+        locale_fit_multiline(d,(100,section_y),copy["tools_title"],locale,2200,42,28,TEXT,700,5)
+    if locale == "en-US":
+        badge(d,2085,section_y+2,copy["tools_badge"],BLUE,WHITE,210)
+    elif locale in RTL_LOCALES:
+        rounded(d,(100,section_y+2,350,section_y+48),18,BLUE)
+        locale_text(d,(225,section_y+25),copy["tools_badge"],locale,18,WHITE,700,anchor="mm")
+    else:
+        rounded(d,(2050,section_y+2,2300,section_y+48),18,BLUE)
+        locale_text(d,(2175,section_y+25),copy["tools_badge"],locale,18,WHITE,700,anchor="mm")
+    d.rounded_rectangle((100,section_y+66,2300,section_y+72),radius=3,fill=SOFT_BLUE)
+
+    group_w,group_h,group_gap=704,500,44
+    group_x,group_y=100,1875
+    category_colors=[BLUE,"#7C3AED",WARNING,SUCCESS,"#DB2777","#0891B2"]
+    for gi,(category_key,tool_keys) in enumerate(TOOL_GROUPS):
+        row,col=divmod(gi,3); x=group_x+col*(group_w+group_gap); y=group_y+row*(group_h+38)
+        shadow_card(im,(x,y,x+group_w,y+group_h),30,WHITE,16,8,24)
+        color=category_colors[gi]
+        rounded(d,(x+28,y+28,x+76,y+76),15,color)
+        text(d,(x+52,y+52),str(gi+1),18,WHITE,700,anchor="mm")
+        category=strings[category_key]
+        if locale == "en-US": fit_text(d,(x+94,y+34),category,group_w-124,28,18,TEXT,700)
+        else: locale_fit_multiline(d,(x+94,y+32),category,locale,group_w-124,25,11,TEXT,700,3)
+        d.line((x+28,y+96,x+group_w-28,y+96),fill=SLATE,width=2)
+        cols=2 if locale == "en-US" and len(tool_keys)>3 else 1
+        cell_w=(group_w-76)//cols
+        for ti,key in enumerate(tool_keys):
+            tr,tc=divmod(ti,cols); tx=x+38+tc*cell_w; ty=y+122+tr*(82 if cols == 2 else 50)
+            d.ellipse((tx,ty+7,tx+22,ty+29),fill=SOFT_BLUE)
+            d.ellipse((tx+7,ty+14,tx+15,ty+22),fill=color)
+            label=strings[key]
+            if locale == "en-US": fit_text(d,(tx+34,ty),label,cell_w-46,22,14,TEXT,600)
+            else: locale_fit_multiline(d,(tx+34,ty-2),label,locale,cell_w-46,19,10,TEXT,600,3)
+
+    essential_y=2970
+    shadow_card(im,(100,essential_y,2300,3500),32,WHITE,18,10,24)
+    if locale == "en-US":
+        text(d,(140,essential_y+38),copy["essentials_title"],38,TEXT,750)
+    else:
+        locale_fit_multiline(d,(140,essential_y+36),copy["essentials_title"],locale,2050,36,24,TEXT,700,4)
+    d.line((140,essential_y+100,2260,essential_y+100),fill=SLATE,width=2)
+    chip_w,chip_h=500,78
+    for i,key in enumerate(ESSENTIAL_FEATURES):
+        row,col=divmod(i,4); x=140+col*535; y=essential_y+130+row*88
+        rounded(d,(x,y,x+chip_w,y+chip_h),20,"#EFF6FF")
+        d.ellipse((x+18,y+27,x+42,y+51),fill=BLUE)
+        label=strings[key]
+        if locale == "en-US": fit_text(d,(x+58,y+23),label,chip_w-78,22,14,TEXT,600)
+        else: locale_fit_multiline(d,(x+58,y+19),label,locale,chip_w-78,18,10,TEXT,600,3)
+    im.save(out,optimize=True)
+
+
+def localized_phone(source: Path, locale: str, index: int) -> Image.Image:
+    im=canvas((1080,1920),BG); d=ImageDraw.Draw(im); photos=crop_photo_panels(); c=CONTENT_COPY[locale]
+    d.ellipse((760,-220,1220,240),fill="#EFF6FF"); d.ellipse((-260,1500,280,2040),fill="#F1F5F9")
+    locale_badge(d,76,72,f"{index:02d}  QUIETPDF",locale,SOFT_BLUE,BLUE,184)
+    headline,support=LOCALIZED_COPY[locale]["phone"][index-1]
+    locale_fit_multiline(d,(76,150),headline,locale,928,54 if locale in {"de-DE","fr-FR"} else 50,30,TEXT,700,7)
+    support_y=292 if "\n" in headline else 232
+    locale_fit_multiline(d,(76,support_y),support,locale,928,27,19,MUTED,500,5)
+    before=LOCALIZED_COPY[locale]["before"]; after=LOCALIZED_COPY[locale]["after"]
+    if index == 1:
+        home=localized_real_ui(locale,"01-home-ui.png"); shadow_card(im,(210,470,870,1810),42,WHITE,30,20,34); paste_fit(im,home,(210,470,870,1810),38)
+        localized_document_card(im,(58,620,360,898),locale,"quarterly",c["pages"].format(n=8),BLUE,0)
+        localized_document_card(im,(718,490,1024,770),locale,"travel",c["pages"].format(n=4),SUCCESS,2)
+        localized_document_card(im,(720,1450,1024,1730),locale,"notes",c["pages"].format(n=12),WARNING,1)
+    elif index == 2:
+        locale_badge(d,76,420,before,locale,WARNING,WHITE,150); locale_badge(d,610,420,after,locale,SUCCESS,WHITE,150)
+        src=localized_receipt(locale,False); aft=localized_receipt(locale,True)
+        shadow_card(im,(70,482,508,1235),34,WHITE,24,14,36); paste_fit(im,src,(82,494,496,1223),28)
+        shadow_card(im,(572,482,1010,1235),34,WHITE,24,14,36); paste_fit(im,aft,(584,494,998,1223),28)
+        panel=localized_real_ui(locale,"02-scanner-review-ui.png"); shadow_card(im,(90,1330,990,1790),34,WHITE,24,12,30); paste_fit(im,panel,(90,1330,990,1790),32)
+    elif index == 3:
+        reader=localized_real_ui(locale,"03-reader-search-ui.png"); shadow_card(im,(130,430,950,1740),44,WHITE,30,18,34); paste_fit(im,reader,(130,430,950,1740),40)
+        shadow_card(im,(62,820,430,1090),28,WHITE,18,10,30); locale_text(d,(92,850),c["contents"],locale,16,BLUE,700)
+        locale_text(d,(92,900),f"01  {c['context']}\n02  {c['findings']}\n03  {c['methods']}",locale,19,TEXT,650,spacing=16)
+        shadow_card(im,(650,650,1016,850),28,WHITE,18,10,30); icon(d,(704,706),"search",.55,BLUE,3)
+        locale_text(d,(752,684),c["search"],locale,15,MUTED,600); locale_fit_multiline(d,(752,716),c["privacy_query"],locale,220,20,13,TEXT,700,4)
+        locale_badge(d,680,776,c["result_count"],locale,SOFT_BLUE,BLUE,118)
+    elif index == 4:
+        locale_badge(d,76,390,before,locale,WARNING,WHITE,150); locale_badge(d,600,390,after,locale,SUCCESS,WHITE,150)
+        localized_document_card(im,(70,460,480,1150),locale,"catalogue",c["original"],WARNING,0)
+        localized_document_card(im,(600,460,1010,1150),locale,"catalogue",c["smaller"],SUCCESS,2)
+        d.line((495,790,585,790),fill=BLUE,width=10); d.polygon([(585,790),(552,768),(552,812)],fill=BLUE)
+        panel=localized_real_ui(locale,"04-compression-ui.png"); shadow_card(im,(90,1270,990,1740),36,WHITE,24,12,32); paste_contain(im,panel,(90,1270,990,1740),34,"#F0EAF3")
+        locale_fit_multiline(d,(240,1190),c["output_note"],locale,650,18,13,MUTED,500,4)
+    elif index == 5:
+        locale_badge(d,76,420,before,locale,WARNING,WHITE,150); locale_badge(d,780,420,after,locale,SUCCESS,WHITE,150)
+        boxes=[(58,500,340,760),(300,550,570,850),(82,790,360,1070),(330,870,600,1140)]
+        for b,p in zip(boxes,photos): shadow_card(im,b,26,WHITE,18,10,28); paste_fit(im,p,b,24)
+        for i in range(3,-1,-1):
+            x=680+i*12; y=520+i*22; shadow_card(im,(x,y,x+300,y+420),26,WHITE,16,8,30); paste_fit(im,photos[i],(x+14,y+14,x+286,y+330),18); locale_badge(d,x+92,y+350,c["page"].format(n=i+1),locale,SOFT_BLUE,BLUE,116)
+        panel=localized_real_ui(locale,"05-images-to-pdf-ui.png"); shadow_card(im,(90,1255,990,1790),34,WHITE,22,12,28); paste_fit(im,panel,(90,1255,990,1790),32)
+    elif index == 6:
+        locale_badge(d,76,420,before,locale,WARNING,WHITE,150); locale_badge(d,796,420,after,locale,SUCCESS,WHITE,150)
+        docs=[("brief",2,BLUE),("budget",3,WARNING),("timeline",2,SUCCESS)]
+        for i,(key,var,col) in enumerate(docs): localized_document_card(im,(54,500+i*236,420,710+i*236),locale,key,f"PDF · {i+1}",col,var)
+        d.line((450,810,610,810),fill=BLUE,width=10); d.polygon([(610,810),(576,786),(576,834)],fill=BLUE)
+        shadow_card(im,(640,500,1015,1145),32,WHITE,24,12,32)
+        for i,(key,var,col) in enumerate(docs):
+            x=690+i*16; y=560+i*78; rounded(d,(x,y,x+245,y+340),16,WHITE,LINE,2); d.rectangle((x,y,x+245,y+18),fill=col)
+            locale_fit_multiline(d,(x+24,y+52),c[key],locale,196,18,11,TEXT,700,4); locale_badge(d,900,572+i*80,str(i+1),locale,col,WHITE,54)
+        panel=localized_real_ui(locale,"06b-rearrange-ui.png"); shadow_card(im,(90,1275,990,1788),34,WHITE,22,12,28); paste_fit(im,panel,(90,1275,990,1788),32)
+    elif index == 7:
+        shadow_card(im,(80,500,500,1220),34,WHITE,24,14,34); paste_fit(im,localized_page_art(locale,"contract",(390,650),BLUE,1),(95,515,485,1175),24); locale_badge(d,160,1140,c["contract"],locale,SOFT_BLUE,BLUE,270)
+        d.rounded_rectangle((570,480,1000,1300),radius=70,fill="#EFF6FF",outline=BLUE,width=8); d.rounded_rectangle((620,560,950,1220),radius=42,fill=WHITE,outline="#93C5FD",width=4)
+        icon(d,(785,680),"device",1.3,BLUE,5); locale_text(d,(785,810),c["processing"],locale,24,TEXT,750,anchor="ma")
+        rounded(d,(650,930,920,1040),30,"#F0FDF4"); locale_fit_multiline(d,(685,958),c["stays"],locale,205,17,12,SUCCESS,700,4)
+        d.line((500,850,600,850),fill=BLUE,width=10); d.polygon([(600,850),(566,826),(566,874)],fill=BLUE)
+        shadow_card(im,(110,1360,970,1498),34,WHITE,22,12,26); paste_fit(im,localized_real_ui(locale,"07-privacy-ui.png"),(126,1376,954,1482),24)
+        shadow_card(im,(110,1510,970,1818),34,WHITE,22,12,26); locale_text(d,(150,1550),c["workflow"],locale,17,BLUE,700)
+        for i,(key,k) in enumerate([("open","doc"),("process","compress"),("save","check")]):
+            x=230+i*300; rounded(d,(x-56,1615,x+56,1727),30,SOFT_BLUE); icon(d,(x,1671),k,.68,BLUE if i<2 else SUCCESS,4); locale_text(d,(x,1756),c[key],locale,15,TEXT,650,anchor="ma")
+            if i<2:d.line((x+70,1671,x+230,1671),fill=LINE,width=6)
+    else:
+        shadow_card(im,(72,470,450,1050),32,WHITE,24,12,34); paste_fit(im,localized_page_art(locale,"itinerary",(330,470),SUCCESS,2),(96,494,426,964),24); locale_badge(d,125,980,c["itinerary"],locale,SOFT_BLUE,BLUE,280)
+        result=localized_real_ui(locale,"08-result-ui.png"); shadow_card(im,(130,1040,990,1650),40,WHITE,28,15,34); paste_fit(im,result,(130,1040,990,1518),38)
+        rounded(d,(450,520,1000,920),38,"#EFF6FF"); icon(d,(536,614),"check",.9,SUCCESS,4); locale_fit_multiline(d,(600,575),c["ready"],locale,350,25,15,TEXT,750,5); locale_text(d,(600,638),c["stored"],locale,17,MUTED,500)
+        rounded(d,(500,730,930,810),32,BLUE); icon(d,(560,770),"share",.55,WHITE,3); locale_fit_multiline(d,(610,748),c["share"],locale,280,18,13,WHITE,700,4)
+    return im
+
+
+def localized_tablet(source: Path, locale: str, index: int) -> Image.Image:
+    im=canvas((1920,1080),BG); d=ImageDraw.Draw(im); c=CONTENT_COPY[locale]; photos=crop_photo_panels()
+    locale_badge(d,78,62,f"{index:02d}  QUIETPDF",locale,SOFT_BLUE,BLUE,184)
+    headline,support=LOCALIZED_COPY[locale]["phone"][index-1]
+    one_line=headline.replace("\n"," ")
+    locale_fit_multiline(d,(78,140),one_line,locale,1700,46 if locale in {"de-DE","fr-FR"} else 42,27,TEXT,700,5)
+    locale_fit_multiline(d,(78,214),support,locale,1700,24,17,MUTED,500,4)
+    shadow_card(im,(72,330,1848,1010),42,WHITE,28,18,30); rounded(d,(92,350,238,990),32,"#EFF6FF")
+    for j,(key,k) in enumerate([("home","doc"),("files","search"),("tools","merge"),("history","bookmark")]):
+        y=420+j*136; selected=j==0 and index==1; rounded(d,(112,y,218,y+92),28,BLUE if selected else WHITE); icon(d,(165,y+34),k,.48,WHITE if selected else BLUE,3); locale_fit_multiline(d,(126,y+62),c[key],locale,78,12,9,WHITE if selected else MUTED,600,3)
+    before=LOCALIZED_COPY[locale]["before"]; after=LOCALIZED_COPY[locale]["after"]
+    if index==1:
+        paste_fit(im,localized_real_ui(locale,"01-home-ui.png"),(280,370,1040,970),28)
+        localized_document_card(im,(1100,390,1450,690),locale,"quarterly",c["pages"].format(n=8),BLUE,0); localized_document_card(im,(1470,390,1820,690),locale,"travel",c["pages"].format(n=4),SUCCESS,2); localized_document_card(im,(1285,710,1635,970),locale,"notes",c["pages"].format(n=12),WARNING,1)
+    elif index==2:
+        paste_fit(im,localized_receipt(locale,False),(280,370,840,970),28); paste_fit(im,localized_receipt(locale,True),(900,370,1460,970),28); paste_fit(im,localized_real_ui(locale,"02-scanner-review-ui.png"),(1490,370,1820,970),28); locale_badge(d,300,390,before,locale,WARNING,WHITE,150); locale_badge(d,920,390,after,locale,SUCCESS,WHITE,150)
+    elif index==3:
+        paste_fit(im,localized_real_ui(locale,"03-reader-search-ui.png"),(280,370,1330,970),28); shadow_card(im,(1370,390,1810,650),26,WHITE,18,10,28); locale_text(d,(1402,420),c["contents"],locale,15,BLUE,700); locale_text(d,(1402,466),f"01 {c['context']}\n02 {c['findings']}\n03 {c['methods']}",locale,18,TEXT,650,spacing=14); shadow_card(im,(1370,690,1810,940),26,WHITE,18,10,28); locale_fit_multiline(d,(1402,722),f"{c['search']} · {c['privacy_query']}",locale,360,18,12,TEXT,700,4); locale_badge(d,1402,790,c["result_count"],locale,SOFT_BLUE,BLUE,118)
+    elif index==4:
+        localized_document_card(im,(280,380,760,930),locale,"catalogue",c["original"],WARNING,0); localized_document_card(im,(820,380,1300,930),locale,"catalogue",c["smaller"],SUCCESS,2); paste_contain(im,localized_real_ui(locale,"04-compression-ui.png"),(1340,390,1810,940),28,"#F0EAF3"); locale_badge(d,300,400,before,locale,WARNING,WHITE,150); locale_badge(d,840,400,after,locale,SUCCESS,WHITE,150)
+    elif index==5:
+        for j,p in enumerate(photos): paste_fit(im,p,(280+(j%2)*300,390+(j//2)*270,550+(j%2)*300,630+(j//2)*270),24)
+        paste_fit(im,localized_real_ui(locale,"05-images-to-pdf-ui.png"),(900,390,1800,960),28)
+    elif index==6:
+        for j,(key,var,col) in enumerate([("brief",2,BLUE),("budget",3,WARNING),("timeline",2,SUCCESS)]): localized_document_card(im,(280,390+j*185,680,550+j*185),locale,key,f"PDF {j+1}",col,var)
+        paste_fit(im,localized_real_ui(locale,"06b-rearrange-ui.png"),(760,390,1800,960),28)
+    elif index==7:
+        localized_document_card(im,(280,390,820,950),locale,"contract",c["local_pdf"],BLUE,1); rounded(d,(920,390,1780,950),48,"#EFF6FF",BLUE,5); paste_fit(im,localized_real_ui(locale,"07-privacy-ui.png"),(980,438,1720,552),24); icon(d,(1130,680),"device",1.5,BLUE,5); locale_fit_multiline(d,(1240,628),c["processing"],locale,450,30,18,TEXT,750,5); locale_text(d,(1240,700),f"{c['open']} → {c['process']} → {c['save']}",locale,20,BLUE,650); locale_text(d,(1240,760),c["no_upload"],locale,18,MUTED,500)
+    else:
+        localized_document_card(im,(280,390,780,950),locale,"itinerary",c["completed"],SUCCESS,2); paste_fit(im,localized_real_ui(locale,"08-result-ui.png"),(860,390,1800,960),28)
+    return im
+
+
+def localized_feature(source: Path, locale: str, privacy: bool) -> Image.Image:
+    im=canvas((1024,500),BG); d=ImageDraw.Draw(im); c=CONTENT_COPY[locale]
+    d.ellipse((-180,330,220,730),fill="#EFF6FF"); d.ellipse((810,-190,1160,160),fill=SOFT_BLUE)
+    locale_text(d,(62,66),"QuietPDF",locale,44,BLUE,700)
+    copy=LOCALIZED_COPY[locale]["privacy" if privacy else "utility"]
+    locale_fit_multiline(d,(62,134),copy,locale,360,38 if locale in {"de-DE","fr-FR"} else 35,24,TEXT,700,7)
+    if privacy:
+        page=localized_page_art(locale,"contract",(210,300),BLUE,1); paste_fit(im,page,(500,130,710,430),18)
+        d.line((714,282,764,282),fill=BLUE,width=6); d.polygon([(764,282),(744,269),(744,295)],fill=BLUE)
+        d.rounded_rectangle((770,92,966,448),radius=38,fill="#EFF6FF",outline=BLUE,width=5)
+        d.rounded_rectangle((790,122,946,418),radius=28,fill=WHITE,outline="#93C5FD",width=2)
+        icon(d,(868,205),"device",.75,BLUE,4)
+        locale_fit_multiline(d,(810,270),c["processing"],locale,118,17,11,TEXT,700,4)
+        locale_fit_multiline(d,(810,330),c["stays"],locale,118,13,9,BLUE,600,3)
+    else:
+        home=localized_real_ui(locale,"01-home-ui.png"); shadow_card(im,(454,56,708,454),24,WHITE,16,8,24); paste_fit(im,home,(454,56,708,454),22)
+        before=localized_receipt(locale,False); after=localized_receipt(locale,True)
+        paste_fit(im,before,(730,78,858,292),18); paste_fit(im,after,(842,210,974,438),18)
+        locale_badge(d,714,72,LOCALIZED_COPY[locale]["scan"],locale,WARNING,WHITE,112)
+        locale_badge(d,866,408,LOCALIZED_COPY[locale]["clean"],locale,SUCCESS,WHITE,118)
+    return im
+
+
+def build_localized_families(phone_paths, tablet7, tablet10, slugs):
+    outputs={}
+    for locale in LOCALIZED_COPY:
+        root=ROOT/f"localized/upload-ready/{locale}"
+        for folder in ["phone","tablet-7","tablet-10","feature-graphic/utility","feature-graphic/privacy"]:
+            (root/folder).mkdir(parents=True,exist_ok=True)
+        locale_paths=[]; locale_t7=[]; locale_t10=[]
+        for i,(phone,t7,t10,slug) in enumerate(zip(phone_paths,tablet7,tablet10,slugs),1):
+            pp=root/f"phone/{i:02d}-{slug}.png"
+            p7=root/f"tablet-7/{i:02d}-{slug}-tablet7.png"
+            p10=root/f"tablet-10/{i:02d}-{slug}-tablet10.png"
+            localized_phone(phone,locale,i).save(pp,optimize=True)
+            localized_tablet(t7,locale,i).save(p7,optimize=True)
+            localized_tablet(t10,locale,i).save(p10,optimize=True)
+            locale_paths.append(pp); locale_t7.append(p7); locale_t10.append(p10)
+        utility=root/"feature-graphic/utility/quietpdf-feature-utility.png"
+        privacy=root/"feature-graphic/privacy/quietpdf-feature-privacy.png"
+        localized_feature(ROOT/"feature-graphic/utility/quietpdf-feature-utility.png",locale,False).save(utility,optimize=True)
+        localized_feature(ROOT/"feature-graphic/privacy/quietpdf-feature-privacy.png",locale,True).save(privacy,optimize=True)
+        contact_sheet(locale_paths,ROOT/f"contact-sheets/phone-creatives-{locale}-contact-sheet.png",4,(250,450))
+        contact_sheet(locale_t7,ROOT/f"contact-sheets/tablet7-creatives-{locale}-contact-sheet.png",2,(560,330))
+        contact_sheet(locale_t10,ROOT/f"contact-sheets/tablet10-creatives-{locale}-contact-sheet.png",2,(560,330))
+        outputs[locale]={"phone":locale_paths,"utility":utility,"privacy":privacy}
+    feature_paths=[]
+    for data in outputs.values(): feature_paths.extend([data["utility"],data["privacy"]])
+    contact_sheet(feature_paths,ROOT/"contact-sheets/localized-feature-graphics-contact-sheet.png",2,(520,300))
+    return outputs
+
+
 def main():
     ensure_dirs(); photos=crop_photo_panels(); build_fixtures(photos)
     # Retain the older reconstructed panels only as a documented fallback. Final
@@ -678,6 +1363,7 @@ def main():
         a.save(pa,optimize=True); b.save(pb,optimize=True); tablet7.append(pa); tablet10.append(pb)
         # Foldable unfolded maps to tablet experience; folded maps to phone.
         a.save(ROOT/f"qa/foldable/{i:02d}-{slug}-unfolded-qa.png",optimize=True)
+    localized=build_localized_families(phone_paths,tablet7,tablet10,slugs)
     # Branding exports.
     selected=icon_concept(1).convert("RGB"); selected.save(ROOT/"branding/selected/quietpdf-play-icon-512.png",optimize=True)
     selected.resize((432,432),Image.Resampling.LANCZOS).save(ROOT/"branding/adaptive/ic_launcher_foreground-432.png",optimize=True)
@@ -709,18 +1395,63 @@ def main():
     # Marketing and contacts.
     mkt=marketing_assets(phone_assets,[Image.open(tablet7[0])])
     contact_sheet(phone_paths,ROOT/"contact-sheets/phone-creatives-contact-sheet.png",4,(250,450))
+    all_features_contact_sheet(
+        phone_paths,
+        ROOT/"contact-sheets/quietpdf-all-features-contact-sheet.png",
+        "en-US",
+    )
+    for locale,data in localized.items():
+        all_features_contact_sheet(
+            data["phone"],
+            ROOT/f"contact-sheets/quietpdf-all-features-{locale}-contact-sheet.png",
+            locale,
+        )
+    for locale in OVERVIEW_COPY:
+        if locale == "en-US" or locale in localized: continue
+        all_features_contact_sheet(
+            phone_paths,
+            ROOT/f"contact-sheets/quietpdf-all-features-{locale}-contact-sheet.png",
+            locale,
+        )
+    additional_locale_paths=[
+        ROOT/f"contact-sheets/quietpdf-all-features-{locale}-contact-sheet.png"
+        for locale in CREATIVE_STRING_VALUES
+    ]
+    contact_sheet(
+        additional_locale_paths,
+        ROOT/"contact-sheets/additional-language-all-features-contact-sheet.png",
+        3,(500,750),
+    )
+    additional_phone_paths=[
+        ROOT/f"contact-sheets/phone-creatives-{locale}-contact-sheet.png"
+        for locale in CREATIVE_STRING_VALUES
+    ]
+    contact_sheet(
+        additional_phone_paths,
+        ROOT/"contact-sheets/additional-language-phone-creatives-contact-sheet.png",
+        3,(500,700),
+    )
     contact_sheet(tablet7,ROOT/"contact-sheets/tablet-creatives-contact-sheet.png",2,(560,330))
     contact_sheet([ROOT/"feature-graphic/utility/quietpdf-feature-utility.png",ROOT/"feature-graphic/privacy/quietpdf-feature-privacy.png"],ROOT/"contact-sheets/feature-graphics-contact-sheet.png",2,(520,300))
     contact_sheet(concept_paths+[ROOT/"branding/selected/quietpdf-play-icon-512.png"],ROOT/"contact-sheets/icon-concepts-contact-sheet.png",4,(260,320))
     contact_sheet(mkt,ROOT/"contact-sheets/marketing-assets-contact-sheet.png",3,(360,360))
     compose_capture_paths=sorted(REAL_UI_DIR.glob("*.png"))
     contact_sheet(compose_capture_paths,ROOT/"contact-sheets/real-compose-ui-captures-contact-sheet.png",3,(340,600))
-    # Draft localization examples are regenerated from source layouts, clearly quarantined.
-    drafts=[("de-DE","Alle PDF-Werkzeuge.\nEine ruhige App.","Öffnen, scannen, ordnen und komprimieren."),("fr-FR","Tous vos outils PDF.\nUne seule app.","Ouvrez, scannez, organisez et compressez."),("ja-JP","PDFツールを、\nひとつの静かなアプリに。","開く、スキャン、整理、圧縮。"),("ar-AE","كل أدوات PDF.\nفي تطبيق هادئ واحد.","افتح وامسح ونظّم واضغط الملفات.")]
-    for loc,h,s in drafts:
-        base=creative_1(False); dr=ImageDraw.Draw(base); rounded(dr,(44,44,1036,390),34,BG); badge(dr,70,62,"DRAFT–NOT FOR UPLOAD",WARNING,WHITE,312); text(dr,(70,132),h,46,TEXT,750,spacing=6); text(dr,(70,260 if "\n" in h else 210),s,24,MUTED,500); base.save(ROOT/f"localized/draft-not-for-upload/01-product-hero-{loc}-DRAFT.png",optimize=True)
+    all_localized_homes=sorted((ROOT/"source/real-ui-captures-no-ads/localized").glob("*/01-home-ui.png"))
+    contact_sheet(all_localized_homes,ROOT/"contact-sheets/localized-app-home-captures-all-languages-contact-sheet.png",4,(300,600))
+    localized_settings=[]
+    for capture_dir in sorted((ROOT/"source/real-ui-captures-no-ads/localized").glob("*")):
+        localized_settings.extend([
+            capture_dir/"09-settings-ui.png",
+            capture_dir/"10-language-chooser-ui.png",
+        ])
+    contact_sheet(
+        localized_settings,
+        ROOT/"contact-sheets/localized-settings-language-captures-contact-sheet.png",
+        4,(300,600),
+    )
     # Editable layout manifest.
-    layout={"system":"Quiet Confidence","version":2,"canvas":{"phone":[1080,1920],"tablet":[1920,1080],"feature":[1024,500]},"safe_margin_phone":76,"spacing_unit":8,"palette":{"primary":BLUE,"soft_blue":SOFT_BLUE,"background":BG,"text":TEXT,"success":SUCCESS},"renderer":"tools/generate_assets.py","ui_capture":{"source":"production Compose UI via PlayStoreUiCaptureTest","device":"Pixel_7a emulator","directory":"source/real-ui-captures-no-ads/compose-pixel-7a"},"selected_icon":"concept-1-document-q","ad_capture":{"requests_enabled":False,"containers_rendered":False}}
+    layout={"system":"Quiet Confidence","version":2,"canvas":{"phone":[1080,1920],"tablet":[1920,1080],"feature":[1024,500]},"safe_margin_phone":76,"spacing_unit":8,"palette":{"primary":BLUE,"soft_blue":SOFT_BLUE,"background":BG,"text":TEXT,"success":SUCCESS},"renderer":"tools/generate_assets.py","ui_capture":{"source":"production Compose UI via PlayStoreUiCaptureTest","english_device":"Pixel_7a emulator","localized_device":"Samsung SM-S928B","english_directory":"source/real-ui-captures-no-ads/compose-pixel-7a","localized_directory":"source/real-ui-captures-no-ads/localized"},"selected_icon":"concept-1-document-q","ad_capture":{"requests_enabled":False,"containers_rendered":False}}
     (ROOT/"source/editable-layouts/layout-spec.json").write_text(json.dumps(layout,indent=2)+"\n",encoding="utf-8")
     # Machine-readable inventories are regenerated from the source of truth.
     pdf_rows=[
@@ -751,10 +1482,23 @@ def main():
     ]
     with (ROOT/"manifests/copy-deck.csv").open("w",newline="",encoding="utf-8") as f:
         w=csv.writer(f); w.writerow(["display_order","headline","supporting_copy"]); w.writerows(copy_rows)
+    with (ROOT/"manifests/localized-copy-deck.csv").open("w",newline="",encoding="utf-8") as f:
+        w=csv.writer(f); w.writerow(["locale","display_order","headline","supporting_copy","before_label","after_label"])
+        for locale,data in LOCALIZED_COPY.items():
+            for i,(headline,support) in enumerate(data["phone"],1):
+                w.writerow([locale,i,headline.replace("\n"," / "),support,data["before"],data["after"]])
     with (ROOT/"manifests/play-upload-map.csv").open("w",newline="",encoding="utf-8") as f:
         w=csv.writer(f); w.writerow(["device_set","locale","display_order","file"])
         for device,paths in [("phone",phone_paths),("tablet-7",tablet7),("tablet-10",tablet10)]:
             for i,p in enumerate(paths,1):w.writerow([device,"en-US",i,p.relative_to(ROOT)])
+        for locale,data in localized.items():
+            base=ROOT/f"localized/upload-ready/{locale}"
+            for i,slug in enumerate(slugs,1):
+                w.writerow(["phone",locale,i,f"localized/upload-ready/{locale}/phone/{i:02d}-{slug}.png"])
+                w.writerow(["tablet-7",locale,i,f"localized/upload-ready/{locale}/tablet-7/{i:02d}-{slug}-tablet7.png"])
+                w.writerow(["tablet-10",locale,i,f"localized/upload-ready/{locale}/tablet-10/{i:02d}-{slug}-tablet10.png"])
+            w.writerow(["feature-graphic",locale,1,data["utility"].relative_to(ROOT)])
+            w.writerow(["feature-graphic",locale,2,data["privacy"].relative_to(ROOT)])
         w.writerow(["feature-graphic","global",1,"feature-graphic/utility/quietpdf-feature-utility.png"])
         w.writerow(["feature-graphic","global",2,"feature-graphic/privacy/quietpdf-feature-privacy.png"])
         w.writerow(["app-icon","global",1,"branding/selected/quietpdf-play-icon-512.png"])
@@ -771,7 +1515,7 @@ def main():
     no_ads.extend(f"- [x] `{r[0]}` — **NO ADS: VERIFIED**" for r in inventory_rows)
     (ROOT/"qa/no-ads-review.md").write_text("\n".join(no_ads)+"\n",encoding="utf-8")
     icon_bytes=(ROOT/"branding/selected/quietpdf-play-icon-512.png").stat().st_size
-    dims=["# Dimension report","","Generated and validated at source resolution.","",f"- Raster assets inventoried: {len(inventory_rows)}", "- Phone masters: 8 × 1080×1920 RGB PNG", "- 7-inch tablet masters: 8 × 1920×1080 RGB PNG", "- 10-inch tablet masters: 8 × 1920×1080 RGB PNG", "- Feature graphics: 2 × 1024×500 RGB PNG", "- Selected Play icon: 512×512 RGB PNG; validator enforces ≤1024 KB", "- Marketing: 1080×1080, 1200×628, 1080×1920, 1400×900, and 1200×1200 outputs", "", "Validation command:", "", "`python3 play-store-assets/v2-creative/tools/validate_assets.py`", "", f"Result: **PASS** — {len(inventory_rows)} raster assets inventoried; all required upload families passed dimension, RGB/decode, naming, inventory, licensing, draft-quarantine, placeholder, and no-ad checks. The Play icon is {icon_bytes:,} bytes, below the 1,024 KB limit."]
+    dims=["# Dimension report","","Generated and validated at source resolution.","",f"- Raster assets inventoried: {len(inventory_rows)}", "- Phone masters: 8 × 1080×1920 RGB PNG", "- 7-inch tablet masters: 8 × 1920×1080 RGB PNG", "- 10-inch tablet masters: 8 × 1920×1080 RGB PNG", "- Feature graphics: 2 × 1024×500 RGB PNG", f"- Localized upload-ready families: {len(localized)} locales × 26 RGB assets", "- Selected Play icon: 512×512 RGB PNG; validator enforces ≤1024 KB", "- Marketing: 1080×1080, 1200×628, 1080×1920, 1400×900, and 1200×1200 outputs", "", "Validation command:", "", "`python3 play-store-assets/v2-creative/tools/validate_assets.py`", "", f"Result: **PASS** — {len(inventory_rows)} raster assets inventoried; all required upload families passed dimension, RGB/decode, naming, inventory, licensing, draft-quarantine, placeholder, and no-ad checks. The Play icon is {icon_bytes:,} bytes, below the 1,024 KB limit."]
     (ROOT/"qa/dimension-report.md").write_text("\n".join(dims)+"\n",encoding="utf-8")
 
 

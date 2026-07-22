@@ -6,12 +6,17 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.rameshta.quietpdf.pdf.ContinueReadingPdf
 import com.rameshta.quietpdf.pdf.FavoriteToolStore
@@ -86,6 +91,43 @@ class SmartHomeUiTest {
     }
 
     @Test
+    fun settingsIconOpensInAppCardsWithoutTopOfflineTag() {
+        val selectedLanguage = AtomicReference<String>()
+        val advertisingClicks = AtomicInteger()
+        setSmartHome(
+            onChangeLanguage = selectedLanguage::set,
+            adPrivacyOptionsRequired = true,
+            onOpenAdvertisingPrivacy = { advertisingClicks.incrementAndGet() },
+        )
+
+        composeRule.onAllNodesWithText("Offline", substring = true).assertCountEquals(0)
+        composeRule.onNodeWithTag("smart_home_settings_action").assertIsDisplayed().performClick()
+        composeRule.onNodeWithTag("settings_content").assertIsDisplayed()
+        composeRule.onAllNodesWithTag("smart_home_nav_Home").assertCountEquals(0)
+        composeRule.onNodeWithTag("settings_language_card").assertIsDisplayed()
+        composeRule.onNodeWithTag("settings_privacy_card").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("settings_advertising_card").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("settings_about_card").performScrollTo().assertIsDisplayed()
+
+        composeRule.onNodeWithTag("settings_language_card").performScrollTo().performClick()
+        composeRule.onNodeWithTag("settings_language_dialog").assertIsDisplayed()
+        composeRule.onNodeWithTag("settings_language_system").assertIsDisplayed()
+        composeRule.onNodeWithTag("settings_language_hi").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("settings_language_search").performTextInput("German")
+        composeRule.onNodeWithTag("settings_language_de").performClick()
+        assertEquals("de", selectedLanguage.get())
+
+        composeRule.onNodeWithTag("settings_privacy_policy").performScrollTo().performClick()
+        composeRule.onNodeWithTag("settings_privacy_policy_dialog").assertIsDisplayed()
+        composeRule.onNodeWithText("Close").performClick()
+
+        composeRule.onNodeWithTag("settings_advertising_manage").performScrollTo().performClick()
+        assertEquals(1, advertisingClicks.get())
+        composeRule.onNodeWithTag("settings_back_action").performClick()
+        composeRule.onNodeWithTag("smart_home_settings_action").assertIsDisplayed()
+    }
+
+    @Test
     fun toolFavoriteIconReflectsStateAndTogglesImmediately() {
         composeRule.setContent {
             var favorites by remember { mutableStateOf(listOf(SmartTool.ImagesToPdf)) }
@@ -132,6 +174,9 @@ class SmartHomeUiTest {
         onOpenPdf: () -> Unit = {},
         onScanDocument: () -> Unit = {},
         onOpenRecentPdf: (Uri) -> Unit = {},
+        onChangeLanguage: (String) -> Unit = {},
+        adPrivacyOptionsRequired: Boolean = false,
+        onOpenAdvertisingPrivacy: () -> Unit = {},
     ) {
         composeRule.setContent {
             QuietPDFTheme(dynamicColor = false) {
@@ -143,6 +188,11 @@ class SmartHomeUiTest {
                     onOpenPdf = onOpenPdf,
                     onScanDocument = onScanDocument,
                     onOpenRecentPdf = onOpenRecentPdf,
+                    settings = QuietPdfSettings(
+                        onChangeLanguage = onChangeLanguage,
+                        adPrivacyOptionsRequired = adPrivacyOptionsRequired,
+                        onOpenAdvertisingPrivacy = onOpenAdvertisingPrivacy,
+                    ),
                     renderPage = { _, _ ->
                         PageRenderResult.Failed(PageRenderFailure.UnableToRender)
                     },

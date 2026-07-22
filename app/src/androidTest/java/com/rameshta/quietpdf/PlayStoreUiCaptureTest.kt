@@ -54,12 +54,12 @@ class PlayStoreUiCaptureTest {
     fun captureHome() {
         setApp(
             recentPdfs = listOf(
-                RecentPdf(Uri.parse("content://capture/quarterly"), "Quarterly Summary.pdf", 8, 1_784_313_000_000L),
-                RecentPdf(Uri.parse("content://capture/travel"), "Travel Plan.pdf", 4, 1_784_226_600_000L),
-                RecentPdf(Uri.parse("content://capture/notes"), "Project Notes.pdf", 12, 1_784_140_200_000L),
+                RecentPdf(Uri.parse("content://capture/quarterly"), fixtureText("quarterly"), 8, 1_784_313_000_000L),
+                RecentPdf(Uri.parse("content://capture/travel"), fixtureText("travel"), 4, 1_784_226_600_000L),
+                RecentPdf(Uri.parse("content://capture/notes"), fixtureText("notes"), 12, 1_784_140_200_000L),
             ),
             favoritePdfs = listOf(
-                FavoritePdf(Uri.parse("content://capture/travel"), "Travel Plan.pdf", 4, 1_784_226_600_000L),
+                FavoritePdf(Uri.parse("content://capture/travel"), fixtureText("travel"), 4, 1_784_226_600_000L),
             ),
         )
         capture("01-home-ui.png")
@@ -97,7 +97,7 @@ class PlayStoreUiCaptureTest {
         setApp(
             state = PdfOpenState.Opened(
                 uri = Uri.parse("content://capture/research"),
-                displayName = "Research Report.pdf",
+                displayName = fixtureText("research"),
                 pageCount = 18,
                 initialPageIndex = 6,
                 bookmarkedPages = setOf(1, 6, 11),
@@ -116,7 +116,7 @@ class PlayStoreUiCaptureTest {
         )
         composeRule.onNodeWithTag("reader_mode_button").performClick()
         composeRule.onNodeWithTag("search_button").performClick()
-        composeRule.onNodeWithTag("search_query").performTextInput("privacy")
+        composeRule.onNodeWithTag("search_query").performTextInput(fixtureText("privacy_query"))
         composeRule.onNodeWithTag("search_submit").performClick()
         capture("03-reader-search-ui.png")
     }
@@ -126,7 +126,7 @@ class PlayStoreUiCaptureTest {
         setApp(
             compressPdfState = CompressPdfState.Configuring(
                 sourceUri = Uri.parse("content://capture/catalogue"),
-                displayName = "Product Catalogue.pdf",
+                displayName = fixtureText("catalogue"),
                 analysis = CompressPdfAnalysis(
                     pageCount = 12,
                     originalSizeBytes = 8_400_000,
@@ -150,9 +150,9 @@ class PlayStoreUiCaptureTest {
         setApp(
             mergePdfState = MergePdfState.Configuring(
                 listOf(
-                    MergePdfItem(Uri.parse("content://capture/brief"), "Project Brief.pdf"),
-                    MergePdfItem(Uri.parse("content://capture/budget"), "Budget Overview.pdf"),
-                    MergePdfItem(Uri.parse("content://capture/timeline"), "Delivery Timeline.pdf"),
+                    MergePdfItem(Uri.parse("content://capture/brief"), fixtureText("brief")),
+                    MergePdfItem(Uri.parse("content://capture/budget"), fixtureText("budget")),
+                    MergePdfItem(Uri.parse("content://capture/timeline"), fixtureText("timeline")),
                 ),
             ),
         )
@@ -164,7 +164,7 @@ class PlayStoreUiCaptureTest {
         setApp(
             rearrangePagesState = RearrangePagesState.Configuring(
                 sourceUri = Uri.parse("content://capture/project"),
-                displayName = "Combined Project.pdf",
+                displayName = fixtureText("combined"),
                 pageCount = 4,
                 pageOrder = listOf(2, 0, 3, 1),
             ),
@@ -189,6 +189,24 @@ class PlayStoreUiCaptureTest {
             ),
         )
         capture("08-result-ui.png")
+    }
+
+    @Test
+    fun captureSettings() {
+        setApp()
+        composeRule.onNodeWithTag("smart_home_settings_action").performClick()
+        capture("09-settings-ui.png")
+    }
+
+    @Test
+    fun captureLanguageChooser() {
+        setApp()
+        composeRule.onNodeWithTag("smart_home_settings_action").performClick()
+        composeRule.onNodeWithTag("settings_language_card").performClick()
+        capture(
+            "10-language-chooser-ui.png",
+            composeRule.onNodeWithTag("settings_language_dialog_container"),
+        )
     }
 
     private fun setApp(
@@ -247,7 +265,7 @@ class PlayStoreUiCaptureTest {
         paint.color = Color.rgb(15, 23, 42)
         paint.textSize = 58f
         paint.isFakeBoldText = true
-        canvas.drawText("Research Report", 72f, 112f, paint)
+        canvas.drawText(fixtureText("research_title"), 72f, 112f, paint)
         paint.color = Color.rgb(71, 85, 105)
         paint.textSize = 26f
         paint.isFakeBoldText = false
@@ -255,7 +273,7 @@ class PlayStoreUiCaptureTest {
         paint.color = Color.rgb(15, 23, 42)
         paint.textSize = 32f
         paint.isFakeBoldText = true
-        canvas.drawText("Privacy-first document workflows", 72f, 246f, paint)
+        canvas.drawText(fixtureText("research_heading"), 72f, 246f, paint)
         paint.isFakeBoldText = false
         val lineWidths = listOf(690f, 610f, 730f, 540f)
         paint.color = Color.rgb(203, 213, 225)
@@ -289,7 +307,7 @@ class PlayStoreUiCaptureTest {
         paint.color = Color.rgb(71, 85, 105)
         paint.textSize = 34f
         paint.isFakeBoldText = true
-        canvas.drawText("NORTHSTAR RECEIPT", 150f, 214f, paint)
+        canvas.drawText(fixtureText("receipt_title"), 150f, 214f, paint)
         paint.isFakeBoldText = false
         paint.color = Color.rgb(148, 163, 184)
         for (index in 0 until 10) {
@@ -299,7 +317,39 @@ class PlayStoreUiCaptureTest {
         paint.color = Color.rgb(15, 23, 42)
         paint.textSize = 30f
         paint.isFakeBoldText = true
-        canvas.drawText("TOTAL  84.60", 400f, 900f, paint)
+        canvas.drawText(fixtureText("receipt_total"), 400f, 900f, paint)
         return bitmap
+    }
+
+    private fun fixtureText(key: String): String {
+        val locale = InstrumentationRegistry.getInstrumentation()
+            .targetContext.resources.configuration.locales[0]
+        fun t(
+            en: String, de: String, fr: String, ja: String, hi: String,
+            ru: String, es: String, ptPt: String, ptBr: String, it: String,
+            id: String, ar: String, ko: String, ur: String,
+        ) = mapOf(
+            "en" to en, "de" to de, "fr" to fr, "ja" to ja, "hi" to hi,
+            "ru" to ru, "es" to es, "pt-PT" to ptPt, "pt-BR" to ptBr,
+            "it" to it, "id" to id, "ar" to ar, "ko" to ko, "ur" to ur,
+        )
+        val translations = mapOf(
+            "quarterly" to t("Quarterly Summary.pdf","Quartalsübersicht.pdf","Synthèse trimestrielle.pdf","四半期サマリー.pdf","तिमाही सारांश.pdf","Квартальный обзор.pdf","Resumen trimestral.pdf","Resumo trimestral.pdf","Resumo trimestral.pdf","Riepilogo trimestrale.pdf","Ringkasan Triwulanan.pdf","الملخص ربع السنوي.pdf","분기 요약.pdf","سہ ماہی خلاصہ.pdf"),
+            "travel" to t("Travel Plan.pdf","Reiseplan.pdf","Plan de voyage.pdf","旅行プラン.pdf","यात्रा योजना.pdf","План путешествия.pdf","Plan de viaje.pdf","Plano de viagem.pdf","Plano de viagem.pdf","Piano di viaggio.pdf","Rencana Perjalanan.pdf","خطة السفر.pdf","여행 계획.pdf","سفری منصوبہ.pdf"),
+            "notes" to t("Project Notes.pdf","Projektnotizen.pdf","Notes de projet.pdf","プロジェクトノート.pdf","प्रोजेक्ट नोट्स.pdf","Заметки проекта.pdf","Notas del proyecto.pdf","Notas do projeto.pdf","Notas do projeto.pdf","Note del progetto.pdf","Catatan Proyek.pdf","ملاحظات المشروع.pdf","프로젝트 노트.pdf","پروجیکٹ نوٹس.pdf"),
+            "research" to t("Research Report.pdf","Forschungsbericht.pdf","Rapport de recherche.pdf","調査レポート.pdf","शोध रिपोर्ट.pdf","Исследовательский отчет.pdf","Informe de investigación.pdf","Relatório de investigação.pdf","Relatório de pesquisa.pdf","Rapporto di ricerca.pdf","Laporan Riset.pdf","تقرير البحث.pdf","연구 보고서.pdf","تحقیقی رپورٹ.pdf"),
+            "research_title" to t("Research Report","Forschungsbericht","Rapport de recherche","調査レポート","शोध रिपोर्ट","Исследовательский отчет","Informe de investigación","Relatório de investigação","Relatório de pesquisa","Rapporto di ricerca","Laporan Riset","تقرير البحث","연구 보고서","تحقیقی رپورٹ"),
+            "research_heading" to t("Privacy-first document workflows","Datenschutzorientierte Abläufe","Flux de documents confidentiels","プライバシー重視の文書処理","निजता-केंद्रित दस्तावेज़ प्रक्रिया","Конфиденциальная обработка документов","Flujos de documentos privados","Fluxos de documentos privados","Fluxos de documentos privados","Flussi di documenti privati","Alur dokumen yang mengutamakan privasi","مسارات مستندات تراعي الخصوصية","개인정보 보호 중심 문서 작업","رازداری پر مبنی دستاویزی طریقۂ کار"),
+            "privacy_query" to t("privacy","Datenschutz","confidentialité","プライバシー","निजता","конфиденциальность","privacidad","privacidade","privacidade","privacy","privasi","الخصوصية","개인정보 보호","رازداری"),
+            "catalogue" to t("Product Catalogue.pdf","Produktkatalog.pdf","Catalogue produits.pdf","製品カタログ.pdf","उत्पाद कैटलॉग.pdf","Каталог продукции.pdf","Catálogo de productos.pdf","Catálogo de produtos.pdf","Catálogo de produtos.pdf","Catalogo prodotti.pdf","Katalog Produk.pdf","كتالوج المنتجات.pdf","제품 카탈로그.pdf","مصنوعات کی فہرست.pdf"),
+            "brief" to t("Project Brief.pdf","Projektübersicht.pdf","Brief projet.pdf","プロジェクト概要.pdf","प्रोजेक्ट ब्रीफ़.pdf","Описание проекта.pdf","Resumen del proyecto.pdf","Resumo do projeto.pdf","Resumo do projeto.pdf","Sintesi del progetto.pdf","Ringkasan Proyek.pdf","ملخص المشروع.pdf","프로젝트 개요.pdf","پروجیکٹ بریف.pdf"),
+            "budget" to t("Budget Overview.pdf","Budgetübersicht.pdf","Aperçu du budget.pdf","予算概要.pdf","बजट अवलोकन.pdf","Обзор бюджета.pdf","Resumen del presupuesto.pdf","Visão geral do orçamento.pdf","Visão geral do orçamento.pdf","Panoramica del budget.pdf","Ringkasan Anggaran.pdf","نظرة عامة على الميزانية.pdf","예산 개요.pdf","بجٹ کا جائزہ.pdf"),
+            "timeline" to t("Delivery Timeline.pdf","Lieferzeitplan.pdf","Calendrier de livraison.pdf","納品スケジュール.pdf","डिलीवरी समयरेखा.pdf","График поставки.pdf","Calendario de entrega.pdf","Calendário de entrega.pdf","Cronograma de entrega.pdf","Tempistica di consegna.pdf","Jadwal Pengiriman.pdf","الجدول الزمني للتسليم.pdf","배송 일정.pdf","ترسیل کا شیڈول.pdf"),
+            "combined" to t("Combined Project.pdf","Kombiniertes Projekt.pdf","Projet combiné.pdf","統合プロジェクト.pdf","संयुक्त प्रोजेक्ट.pdf","Объединенный проект.pdf","Proyecto combinado.pdf","Projeto combinado.pdf","Projeto combinado.pdf","Progetto combinato.pdf","Proyek Gabungan.pdf","المشروع المدمج.pdf","통합 프로젝트.pdf","مشترکہ پروجیکٹ.pdf"),
+            "receipt_title" to t("NORTHSTAR RECEIPT","NORTHSTAR BELEG","REÇU NORTHSTAR","NORTHSTAR レシート","नॉर्थस्टार रसीद","ЧЕК NORTHSTAR","RECIBO NORTHSTAR","RECIBO NORTHSTAR","RECIBO NORTHSTAR","RICEVUTA NORTHSTAR","STRUK NORTHSTAR","إيصال NORTHSTAR","NORTHSTAR 영수증","NORTHSTAR رسید"),
+            "receipt_total" to t("TOTAL  84.60","SUMME  84,60","TOTAL  84,60","合計  84.60","कुल  84.60","ИТОГО  84,60","TOTAL  84,60","TOTAL  84,60","TOTAL  84,60","TOTALE  84,60","TOTAL  84,60","الإجمالي  84.60","합계  84.60","کل  84.60"),
+        )
+        val values = translations.getValue(key)
+        return values[locale.toLanguageTag()] ?: values[locale.language] ?: values.getValue("en")
     }
 }
