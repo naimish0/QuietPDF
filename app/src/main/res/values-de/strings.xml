@@ -632,6 +632,12 @@
     <string name="smart_home_settings_unavailable">Android-Einstellungen sind auf diesem Gerät nicht verfügbar.</string>
     <string name="settings_back">Zurück</string>
     <string name="settings_page_description">Wählen Sie, wie QuietPDF aussieht und mit den Datenschutzeinstellungen umgeht.</string>
+    <string name="settings_appearance_title">Erscheinungsbild</string>
+    <string name="settings_appearance_current">Aktuell: %1$s</string>
+    <string name="settings_theme_light">Hell</string>
+    <string name="settings_theme_dark">Dunkel</string>
+    <string name="settings_dark_theme_toggle">Dunkles Design</string>
+    <string name="settings_theme_icon_note">Das Startsymbol passt sich diesem Design an. Bei manchen Launchern kann die Aktualisierung einen Moment dauern.</string>
     <string name="settings_language_title">Sprache</string>
     <string name="settings_language_description">Ändern Sie die in QuietPDF verwendete Sprache.</string>
     <string name="settings_language_current">Aktuell: %1$s</string>

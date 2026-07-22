@@ -2,5 +2,6 @@
 <resources>
     <color name="quietpdf_start_background">#FFF9FF</color>
     <color name="quietpdf_start_background_dark">#111318</color>
-    <color name="quietpdf_icon_background">#26378C</color>
+    <color name="quietpdf_icon_background">#2563EB</color>
+    <color name="quietpdf_icon_dark_background">#0F172A</color>
 </resources>

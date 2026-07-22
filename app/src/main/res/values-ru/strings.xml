@@ -635,6 +635,12 @@
     <string name="smart_home_settings_unavailable">Настройки Android недоступны на этом устройстве.</string>
     <string name="settings_back">Назад</string>
     <string name="settings_page_description">Выберите, как QuietPDF будет выглядеть и управлять настройками конфиденциальности.</string>
+    <string name="settings_appearance_title">Оформление</string>
+    <string name="settings_appearance_current">Текущая тема: %1$s</string>
+    <string name="settings_theme_light">Светлая</string>
+    <string name="settings_theme_dark">Тёмная</string>
+    <string name="settings_dark_theme_toggle">Тёмная тема</string>
+    <string name="settings_theme_icon_note">Значок приложения меняется в соответствии с темой. Некоторым лаунчерам требуется время для обновления.</string>
     <string name="settings_language_title">Язык</string>
     <string name="settings_language_description">Измените язык, используемый в QuietPDF.</string>
     <string name="settings_language_current">Текущий: %1$s</string>

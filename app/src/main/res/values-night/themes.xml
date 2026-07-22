@@ -8,4 +8,13 @@
         <item name="android:windowLightStatusBar">false</item>
         <item name="android:windowLightNavigationBar">false</item>
     </style>
+    <style name="Theme.QuietPDF.Launcher.Light" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:windowActionModeOverlay">true</item>
+        <item name="android:windowBackground">@color/quietpdf_start_background</item>
+        <item name="android:navigationBarColor">@color/quietpdf_start_background</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
+    </style>
+    <style name="Theme.QuietPDF.Launcher.Dark" parent="Theme.QuietPDF" />
 </resources>

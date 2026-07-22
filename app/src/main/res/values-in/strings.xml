@@ -631,6 +631,12 @@
     <string name="smart_home_settings_unavailable">Pengaturan Android tidak tersedia di perangkat ini.</string>
     <string name="settings_back">Kembali</string>
     <string name="settings_page_description">Pilih tampilan QuietPDF dan menangani preferensi privasi.</string>
+    <string name="settings_appearance_title">Tampilan</string>
+    <string name="settings_appearance_current">Saat ini: %1$s</string>
+    <string name="settings_theme_light">Terang</string>
+    <string name="settings_theme_dark">Gelap</string>
+    <string name="settings_dark_theme_toggle">Tema gelap</string>
+    <string name="settings_theme_icon_note">Ikon peluncur berubah agar sesuai dengan tema ini. Beberapa peluncur mungkin memerlukan waktu untuk diperbarui.</string>
     <string name="settings_language_title">Bahasa</string>
     <string name="settings_language_description">Ubah bahasa yang digunakan di seluruh QuietPDF.</string>
     <string name="settings_language_current">Saat ini: %1$s</string>

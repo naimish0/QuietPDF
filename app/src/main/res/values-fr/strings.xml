@@ -632,6 +632,12 @@
     <string name="smart_home_settings_unavailable">Les paramètres Android ne sont pas disponibles sur cet appareil.</string>
     <string name="settings_back">Dos</string>
     <string name="settings_page_description">Choisissez l\'apparence de QuietPDF et la gestion des préférences de confidentialité.</string>
+    <string name="settings_appearance_title">Apparence</string>
+    <string name="settings_appearance_current">Actuel : %1$s</string>
+    <string name="settings_theme_light">Clair</string>
+    <string name="settings_theme_dark">Sombre</string>
+    <string name="settings_dark_theme_toggle">Thème sombre</string>
+    <string name="settings_theme_icon_note">L’icône de lancement change pour correspondre à ce thème. Certains lanceurs peuvent mettre un moment à l’actualiser.</string>
     <string name="settings_language_title">Langue</string>
     <string name="settings_language_description">Changez la langue utilisée dans QuietPDF.</string>
     <string name="settings_language_current">Actuel : %1$s</string>

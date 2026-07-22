@@ -1,10 +1,13 @@
 package com.rameshta.quietpdf
 
 import android.os.Bundle
+import android.content.res.Configuration
+import android.graphics.Color as AndroidColor
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -26,13 +29,25 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.viewinterop.AndroidView
 import com.rameshta.quietpdf.ui.theme.QuietPDFTheme
+import com.rameshta.quietpdf.ui.theme.AppThemeMode
+import com.rameshta.quietpdf.ui.theme.AppThemePreferences
 
 class PrivacyPolicyActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        val systemFallback = if (
+            resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK ==
+            Configuration.UI_MODE_NIGHT_YES
+        ) AppThemeMode.Dark else AppThemeMode.Light
+        val themeMode = AppThemePreferences(this).read(systemFallback)
+        val systemBarStyle = if (themeMode == AppThemeMode.Dark) {
+            SystemBarStyle.dark(AndroidColor.TRANSPARENT)
+        } else {
+            SystemBarStyle.light(AndroidColor.TRANSPARENT, AndroidColor.TRANSPARENT)
+        }
+        enableEdgeToEdge(statusBarStyle = systemBarStyle, navigationBarStyle = systemBarStyle)
         setContent {
-            QuietPDFTheme {
+            QuietPDFTheme(darkTheme = themeMode == AppThemeMode.Dark) {
                 PrivacyPolicyScreen(onClose = ::finish)
             }
         }
