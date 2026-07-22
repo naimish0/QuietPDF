@@ -46,7 +46,7 @@ fun HomeBannerAd(session: HomeBannerAdSession, modifier: Modifier = Modifier) {
     if (session.status == BannerStatus.Failed) return
     val context = LocalContext.current
 
-    BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
+    BoxWithConstraints(modifier = modifier.fillMaxWidth().padding(top = 12.dp)) {
         val widthDp = maxWidth.value.toInt().coerceAtLeast(1)
         val adSize = remember(context, widthDp) {
             AdSize.getInlineAdaptiveBannerAdSize(widthDp, 60)

@@ -20,6 +20,8 @@ interface FullScreenAdPersistence {
     var lastFullScreenWallMillis: Long
     var fullScreenDayKey: Int
     var fullScreenDayCount: Int
+    var appOpenDayKey: Int
+    var appOpenDayCount: Int
 }
 
 enum class FullScreenAdFormat { Interstitial, AppOpen }
@@ -75,9 +77,10 @@ class FullScreenAdPolicy(
         adAvailableAndFresh: Boolean,
         safeHomeTransition: Boolean,
         homeAlreadyInteractive: Boolean,
+        qualifiedForegroundTransition: Boolean = true,
     ): Boolean {
         if (!consentAllowsAds || !adAvailableAndFresh || !safeHomeTransition ||
-            homeAlreadyInteractive || isFullScreenAdActive
+            homeAlreadyInteractive || !qualifiedForegroundTransition || isFullScreenAdActive
         ) return false
         if (persistence.completedSessionCount < REQUIRED_PRIOR_SESSIONS) return false
         if (!sharedCooldownPassed()) return false
@@ -86,6 +89,8 @@ class FullScreenAdPolicy(
         if (lastAppOpen != Long.MIN_VALUE && now - lastAppOpen < APP_OPEN_INTERVAL_MILLIS) {
             return false
         }
+        refreshAppOpenDailyCount(now)
+        if (persistence.appOpenDayCount >= MAX_APP_OPEN_ADS_PER_DAY) return false
         if (!dailyFullScreenLimitAllowsAd(now)) return false
         activeFormat = FullScreenAdFormat.AppOpen
         return true
@@ -106,6 +111,8 @@ class FullScreenAdPolicy(
             }
             FullScreenAdFormat.AppOpen -> {
                 persistence.lastAppOpenWallMillis = now
+                refreshAppOpenDailyCount(now)
+                persistence.appOpenDayCount++
             }
         }
     }
@@ -137,6 +144,14 @@ class FullScreenAdPolicy(
         }
     }
 
+    private fun refreshAppOpenDailyCount(now: Long) {
+        val dayKey = calendarDayKey(now)
+        if (persistence.appOpenDayKey != dayKey) {
+            persistence.appOpenDayKey = dayKey
+            persistence.appOpenDayCount = 0
+        }
+    }
+
     private fun calendarDayKey(now: Long): Int = Calendar.getInstance().run {
         timeInMillis = now
         get(Calendar.YEAR) * 1000 + get(Calendar.DAY_OF_YEAR)
@@ -146,8 +161,10 @@ class FullScreenAdPolicy(
         const val WORKFLOWS_PER_INTERSTITIAL = 2
         const val MAX_INTERSTITIALS_PER_SESSION = 3
         const val REQUIRED_PRIOR_SESSIONS = 2
+        const val MAX_APP_OPEN_ADS_PER_DAY = 2
         const val MAX_FULL_SCREEN_ADS_PER_DAY = 12
         const val SHARED_COOLDOWN_MILLIS = 3 * 60 * 1000L
+        const val MIN_BACKGROUND_MILLIS = 5 * 60 * 1000L
         const val APP_OPEN_INTERVAL_MILLIS = 4 * 60 * 60 * 1000L
         const val APP_OPEN_EXPIRY_MILLIS = 4 * 60 * 60 * 1000L
         private const val MAX_PENDING_WORKFLOWS = 100
