@@ -1,0 +1,105 @@
+locale,display_order,headline,supporting_copy,before_label,after_label
+de-DE,1,Alle PDF-Werkzeuge. / Eine ruhige App.,"Öffnen, scannen, organisieren und komprimieren.",VORHER,NACHHER
+de-DE,2,Vom schiefen Foto / zum sauberen PDF.,"Zuschneiden, korrigieren und optimieren.",VORHER,NACHHER
+de-DE,3,Ungestört lesen.,"Flüssig zoomen, suchen und Lesezeichen setzen.",VORHER,NACHHER
+de-DE,4,Kleinere Datei. Klare Seiten.,Größe vor dem Speichern vergleichen.,VORHER,NACHHER
+de-DE,5,Fotos in professionelle / PDFs verwandeln.,"Anordnen, drehen und Layout wählen.",VORHER,NACHHER
+de-DE,6,Sicher zusammenführen / und sortieren.,Jede Seite vor dem Speichern prüfen.,VORHER,NACHHER
+de-DE,7,Deine Dokumente bleiben / auf deinem Gerät.,Die PDF-Verarbeitung erfolgt lokal.,VORHER,NACHHER
+de-DE,8,Gespeichert. Geteilt. / Leicht zu finden.,"Öffnen, umbenennen, teilen oder Ordner anzeigen.",VORHER,NACHHER
+fr-FR,1,Tous vos outils PDF. / Une app sereine.,"Ouvrez, scannez, organisez et compressez.",AVANT,APRÈS
+fr-FR,2,De la photo inclinée / au PDF net.,"Recadrez, corrigez et améliorez.",AVANT,APRÈS
+fr-FR,3,Lisez sans distractions.,"Zoom fluide, recherche et favoris.",AVANT,APRÈS
+fr-FR,4,Fichier réduit. Pages nettes.,Comparez la taille avant d’enregistrer.,AVANT,APRÈS
+fr-FR,5,Transformez vos photos / en PDF soignés.,"Organisez, pivotez et choisissez la mise en page.",AVANT,APRÈS
+fr-FR,6,Fusionnez et réorganisez / sereinement.,Prévisualisez chaque page avant d’enregistrer.,AVANT,APRÈS
+fr-FR,7,Vos documents restent / sur votre appareil.,Le traitement PDF s’effectue localement.,AVANT,APRÈS
+fr-FR,8,Enregistré. Partagé. / Facile à retrouver.,"Ouvrez, renommez, partagez ou affichez le dossier.",AVANT,APRÈS
+ja-JP,1,PDFツールを、 / ひとつの快適なアプリに。,開く、スキャン、整理、圧縮。,変更前,変更後
+ja-JP,2,傾いた写真を、 / きれいなPDFに。,切り抜き、補正、鮮明化。,変更前,変更後
+ja-JP,3,集中できるPDFリーダー。,スムーズな拡大、検索、ブックマーク。,変更前,変更後
+ja-JP,4,小さなファイル。 / 読みやすいページ。,保存前にサイズを比較。,変更前,変更後
+ja-JP,5,写真を美しいPDFに。,並べ替え、回転、レイアウト選択。,変更前,変更後
+ja-JP,6,安心して結合・並べ替え。,保存前に全ページを確認。,変更前,変更後
+ja-JP,7,書類は端末から出ません。,PDF処理は端末内で完結。,変更前,変更後
+ja-JP,8,保存、共有、 / すぐ見つかる。,開く、名前変更、共有、フォルダ表示。,変更前,変更後
+hi-IN,1,आपके सभी PDF टूल। / एक आसान ऐप।,"खोलें, स्कैन करें, व्यवस्थित करें और कंप्रेस करें।",पहले,बाद में
+hi-IN,2,टेढ़ी फोटो से / साफ़ PDF।,"क्रॉप करें, सुधारें और बेहतर बनाएँ।",पहले,बाद में
+hi-IN,3,बिना रुकावट पढ़ें।,"आसान ज़ूम, खोज और बुकमार्क।",पहले,बाद में
+hi-IN,4,छोटी फ़ाइल। साफ़ पेज।,सेव करने से पहले आकार देखें।,पहले,बाद में
+hi-IN,5,फोटो से सुंदर / PDF बनाएँ।,"क्रम बदलें, घुमाएँ और लेआउट चुनें।",पहले,बाद में
+hi-IN,6,भरोसे से मर्ज और / क्रम बदलें।,सेव करने से पहले हर पेज देखें।,पहले,बाद में
+hi-IN,7,आपके दस्तावेज़ आपके / डिवाइस पर रहते हैं।,PDF प्रोसेसिंग डिवाइस पर होती है।,पहले,बाद में
+hi-IN,8,सेव। शेयर। / आसानी से खोजें।,"खोलें, नाम बदलें, शेयर करें या फ़ोल्डर देखें।",पहले,बाद में
+ru-RU,1,Все ваши инструменты PDF. / Одно спокойное приложение.,"Открывайте, сканируйте, систематизируйте и сжимайте.",ДО,ПОСЛЕ
+ru-RU,2,Из кривого фото / очистить PDF.,"Обрезать, исправлять и улучшать.",ДО,ПОСЛЕ
+ru-RU,3,"Читайте, не отвлекаясь.","Плавное масштабирование, поиск и закладки.",ДО,ПОСЛЕ
+ru-RU,4,Меньший файл. Очистить страницы.,Сравните размер перед сохранением.,ДО,ПОСЛЕ
+ru-RU,5,Превратите фотографии в / полированные PDFs.,"Располагайте, вращайте и выбирайте макет.",ДО,ПОСЛЕ
+ru-RU,6,Объединить и изменить порядок / с уверенностью.,Предварительный просмотр каждой страницы перед сохранением.,ДО,ПОСЛЕ
+ru-RU,7,Ваши документы остаются / на вашем устройстве.,Обработка PDF происходит локально.,ДО,ПОСЛЕ
+ru-RU,8,Сохранено. Поделился. / Легко найти.,"Откройте, переименуйте, поделитесь или просмотрите папку.",ДО,ПОСЛЕ
+es-ES,1,Todas tus herramientas PDF. / Una aplicación tranquila.,"Abra, escanee, organice y comprima.",ANTES,DESPUÉS
+es-ES,2,De foto torcida / para limpiar PDF.,"Recortar, corregir y potenciar.",ANTES,DESPUÉS
+es-ES,3,Lee sin distracciones.,"Zoom, búsqueda y marcadores fluidos.",ANTES,DESPUÉS
+es-ES,4,Archivo más pequeño. Borrar páginas.,Compara el tamaño antes de guardar.,ANTES,DESPUÉS
+es-ES,5,Convertir fotos en / PDF pulidos.,"Organice, gire y elija su diseño.",ANTES,DESPUÉS
+es-ES,6,Fusionar y reordenar / con confianza.,Obtenga una vista previa de cada página antes de guardar.,ANTES,DESPUÉS
+es-ES,7,Tus documentos se quedan / en tu dispositivo.,El procesamiento PDF ocurre localmente.,ANTES,DESPUÉS
+es-ES,8,Guardado. Compartido. / Fácil de encontrar.,"Abra, cambie el nombre, comparta o vea la carpeta.",ANTES,DESPUÉS
+pt-PT,1,Todas as suas ferramentas PDF. / Um aplicativo calmo.,"Abra, digitalize, organize e comprima.",ANTES,DEPOIS
+pt-PT,2,Da foto torta / para limpar PDF.,"Cortar, corrigir e melhorar.",ANTES,DEPOIS
+pt-PT,3,Leia sem distrações.,"Zoom suave, pesquisa e marcadores.",ANTES,DEPOIS
+pt-PT,4,Ficheiro menor. Limpar páginas.,Compare o tamanho antes de guardar.,ANTES,DEPOIS
+pt-PT,5,Transforme fotos em / PDFs polidos.,"Organize, rode e escolha o seu layout.",ANTES,DEPOIS
+pt-PT,6,Mesclar e reordenar / com confiança.,Visualize cada página antes de guardar.,ANTES,DEPOIS
+pt-PT,7,Os seus documentos ficam / no seu dispositivo.,O processamento de PDF acontece localmente.,ANTES,DEPOIS
+pt-PT,8,Salvo. Compartilhado. / Fácil de encontrar.,"Abra, renomeie, partilhe ou visualize a pasta.",ANTES,DEPOIS
+pt-BR,1,Todas as suas ferramentas PDF. / Um aplicativo calmo.,"Abra, digitalize, organize e compacte.",ANTES,DEPOIS
+pt-BR,2,Da foto torta / para limpar PDF.,"Cortar, corrigir e aprimorar.",ANTES,DEPOIS
+pt-BR,3,Leia sem distrações.,"Zoom suave, pesquisa e marcadores.",ANTES,DEPOIS
+pt-BR,4,Arquivo menor. Limpar páginas.,Compare o tamanho antes de salvar.,ANTES,DEPOIS
+pt-BR,5,Transforme fotos em / PDFs polidos.,"Organize, gire e escolha seu layout.",ANTES,DEPOIS
+pt-BR,6,Mesclar e reordenar / com confiança.,Visualize cada página antes de salvar.,ANTES,DEPOIS
+pt-BR,7,Seus documentos ficam / no seu dispositivo.,O processamento de PDF acontece localmente.,ANTES,DEPOIS
+pt-BR,8,Salvo. Compartilhado. / Fácil de encontrar.,"Abra, renomeie, compartilhe ou visualize a pasta.",ANTES,DEPOIS
+it-IT,1,Tutti i tuoi strumenti PDF. / Un\'app tranquilla.,"Apri, scansiona, organizza e comprimi.",PRIMA,DOPO
+it-IT,2,Dalla foto storta / per pulire PDF.,"Ritaglia, correggi e migliora.",PRIMA,DOPO
+it-IT,3,Leggi senza distrazioni.,"Zoom, ricerca e segnalibri fluidi.",PRIMA,DOPO
+it-IT,4,File più piccolo. Pagine chiare.,Confronta le dimensioni prima di salvare.,PRIMA,DOPO
+it-IT,5,Trasforma le foto in / lucido PDFs.,"Disponi, ruota e scegli il layout.",PRIMA,DOPO
+it-IT,6,Unisci e riordina / con fiducia.,Visualizza l\'anteprima di ogni pagina prima di salvare.,PRIMA,DOPO
+it-IT,7,I tuoi documenti restano / sul tuo dispositivo.,L\'elaborazione PDF avviene localmente.,PRIMA,DOPO
+it-IT,8,Salvato. Condiviso. / Facile da trovare.,"Apri, rinomina, condividi o visualizza la cartella.",PRIMA,DOPO
+id-ID,1,Semua alat PDF Anda. / Satu aplikasi yang tenang.,"Buka, pindai, atur, dan kompres.",SEBELUM,SETELAH
+id-ID,2,Dari foto yang bengkok / untuk membersihkan PDF.,"Pangkas, perbaiki, dan tingkatkan.",SEBELUM,SETELAH
+id-ID,3,Membaca tanpa gangguan.,"Zoom halus, pencarian dan bookmark.",SEBELUM,SETELAH
+id-ID,4,Berkas lebih kecil. Hapus halaman.,Bandingkan ukuran sebelum menyimpan.,SEBELUM,SETELAH
+id-ID,5,Ubah foto menjadi / PDF yang dipoles.,"Atur, putar, dan pilih tata letak Anda.",SEBELUM,SETELAH
+id-ID,6,Gabungkan dan susun ulang / dengan percaya diri.,Pratinjau setiap halaman sebelum menyimpan.,SEBELUM,SETELAH
+id-ID,7,Dokumen Anda tetap ada / di perangkat Anda.,Pemrosesan PDF terjadi secara lokal.,SEBELUM,SETELAH
+id-ID,8,Disimpan. Dibagikan. / Mudah ditemukan.,"Buka, ganti nama, bagikan, atau lihat folder.",SEBELUM,SETELAH
+ar,1,جميع أدوات PDF الخاصة بك. / تطبيق واحد هادئ.,فتح ومسح وتنظيم وضغط.,قبل,بعد
+ar,2,من الصورة ملتوية / لتنظيف PDF.,المحاصيل وتصحيح وتعزيز.,قبل,بعد
+ar,3,اقرأ دون تشتيت الانتباه.,التكبير السلس والبحث والإشارات المرجعية.,قبل,بعد
+ar,4,ملف أصغر. مسح الصفحات.,قارن الحجم قبل الحفظ.,قبل,بعد
+ar,5,تحويل الصور إلى / مصقول PDFs.,ترتيب وتدوير واختيار التخطيط الخاص بك.,قبل,بعد
+ar,6,دمج وإعادة ترتيب / بثقة.,معاينة كل صفحة قبل الحفظ.,قبل,بعد
+ar,7,تبقى مستنداتك / على جهازك.,تتم معالجة PDF محليًا.,قبل,بعد
+ar,8,تم الحفظ. مشترك. / من السهل العثور عليها.,فتح المجلد أو إعادة تسميته أو مشاركته أو عرضه.,قبل,بعد
+ko-KR,1,모든 PDF 도구. / 차분한 앱 하나.,"열고, 스캔하고, 정리하고, 압축하세요.",이전,이후
+ko-KR,2,비뚤어진 사진에서 / PDF를 청소합니다.,"자르기, 수정 및 향상.",이전,이후
+ko-KR,3,방해받지 않고 읽으세요.,"부드러운 확대/축소, 검색 및 북마크.",이전,이후
+ko-KR,4,더 작은 파일. 페이지를 지웁니다.,저장하기 전에 크기를 비교하세요.,이전,이후
+ko-KR,5,사진을 다음으로 변환 / 세련된 PDF.,레이아웃을 정렬하고 회전하고 선택하세요.,이전,이후
+ko-KR,6,병합 및 재정렬 / 자신감을 가지고.,저장하기 전에 모든 페이지를 미리 봅니다.,이전,이후
+ko-KR,7,귀하의 문서는 그대로 유지됩니다 / 귀하의 장치에서.,PDF 처리는 로컬에서 발생합니다.,이전,이후
+ko-KR,8,저장되었습니다. 공유됨. / 쉽게 찾을 수 있습니다.,"폴더 열기, 이름 바꾸기, 공유 또는 보기.",이전,이후
+ur-PK,1,آپ کے تمام PDF ٹولز۔ / ایک پرسکون ایپ۔,کھولیں، اسکین کریں، منظم کریں اور سکیڑیں۔,پہلے,بعد
+ur-PK,2,ٹیڑھی تصویر سے / PDF صاف کرنے کے لیے۔,کٹائیں، درست کریں اور اضافہ کریں۔,پہلے,بعد
+ur-PK,3,خلفشار کے بغیر پڑھیں۔,ہموار زوم، تلاش اور بُک مارکس۔,پہلے,بعد
+ur-PK,4,چھوٹی فائل۔ صفحات صاف کریں۔,محفوظ کرنے سے پہلے سائز کا موازنہ کریں۔,پہلے,بعد
+ur-PK,5,تصاویر میں تبدیل کریں۔ / پالش PDFs۔,ترتیب دیں، گھمائیں اور اپنا لے آؤٹ منتخب کریں۔,پہلے,بعد
+ur-PK,6,ضم کریں اور دوبارہ ترتیب دیں۔ / اعتماد کے ساتھ.,محفوظ کرنے سے پہلے ہر صفحہ کا جائزہ لیں۔,پہلے,بعد
+ur-PK,7,آپ کے کاغذات باقی ہیں۔ / آپ کے آلے پر۔,PDF پروسیسنگ مقامی طور پر ہوتی ہے۔,پہلے,بعد
+ur-PK,8,محفوظ کیا گیا۔ مشترکہ / تلاش کرنا آسان ہے۔,فولڈر کھولیں، نام بدلیں، شیئر کریں یا دیکھیں۔,پہلے,بعد

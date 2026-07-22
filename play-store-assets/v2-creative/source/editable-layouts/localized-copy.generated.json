@@ -1,0 +1,825 @@
+{
+  "localized_copy": {
+    "ru-RU": {
+      "phone": [
+        [
+          "Все ваши инструменты PDF.\nОдно спокойное приложение.",
+          "Открывайте, сканируйте, систематизируйте и сжимайте."
+        ],
+        [
+          "Из кривого фото\nочистить PDF.",
+          "Обрезать, исправлять и улучшать."
+        ],
+        [
+          "Читайте, не отвлекаясь.",
+          "Плавное масштабирование, поиск и закладки."
+        ],
+        [
+          "Меньший файл. Очистить страницы.",
+          "Сравните размер перед сохранением."
+        ],
+        [
+          "Превратите фотографии в\nполированные PDFs.",
+          "Располагайте, вращайте и выбирайте макет."
+        ],
+        [
+          "Объединить и изменить порядок\nс уверенностью.",
+          "Предварительный просмотр каждой страницы перед сохранением."
+        ],
+        [
+          "Ваши документы остаются\nна вашем устройстве.",
+          "Обработка PDF происходит локально."
+        ],
+        [
+          "Сохранено. Поделился.\nЛегко найти.",
+          "Откройте, переименуйте, поделитесь или просмотрите папку."
+        ]
+      ],
+      "before": "ДО",
+      "after": "ПОСЛЕ",
+      "utility": "Повседневные инструменты PDF.\nКрасиво просто.",
+      "privacy": "Ваши PDF остаются\nна вашем устройстве.",
+      "scan": "СКАНИРОВАНИЕ",
+      "clean": "ЧИСТЫЙ",
+      "local": "МЕСТНЫЙ",
+      "processing": "Локальная обработка"
+    },
+    "es-ES": {
+      "phone": [
+        [
+          "Todas tus herramientas PDF.\nUna aplicación tranquila.",
+          "Abra, escanee, organice y comprima."
+        ],
+        [
+          "De foto torcida\npara limpiar PDF.",
+          "Recortar, corregir y potenciar."
+        ],
+        [
+          "Lee sin distracciones.",
+          "Zoom, búsqueda y marcadores fluidos."
+        ],
+        [
+          "Archivo más pequeño. Borrar páginas.",
+          "Compara el tamaño antes de guardar."
+        ],
+        [
+          "Convertir fotos en\nPDF pulidos.",
+          "Organice, gire y elija su diseño."
+        ],
+        [
+          "Fusionar y reordenar\ncon confianza.",
+          "Obtenga una vista previa de cada página antes de guardar."
+        ],
+        [
+          "Tus documentos se quedan\nen tu dispositivo.",
+          "El procesamiento PDF ocurre localmente."
+        ],
+        [
+          "Guardado. Compartido.\nFácil de encontrar.",
+          "Abra, cambie el nombre, comparta o vea la carpeta."
+        ]
+      ],
+      "before": "ANTES",
+      "after": "DESPUÉS",
+      "utility": "Herramientas cotidianas PDF.\nBellamente simple.",
+      "privacy": "Tus PDF se quedan\nen tu dispositivo.",
+      "scan": "ESCANEAR",
+      "clean": "LIMPIO",
+      "local": "LOCALES",
+      "processing": "Procesamiento local"
+    },
+    "pt-PT": {
+      "phone": [
+        [
+          "Todas as suas ferramentas PDF.\nUm aplicativo calmo.",
+          "Abra, digitalize, organize e comprima."
+        ],
+        [
+          "Da foto torta\npara limpar PDF.",
+          "Cortar, corrigir e melhorar."
+        ],
+        [
+          "Leia sem distrações.",
+          "Zoom suave, pesquisa e marcadores."
+        ],
+        [
+          "Ficheiro menor. Limpar páginas.",
+          "Compare o tamanho antes de guardar."
+        ],
+        [
+          "Transforme fotos em\nPDFs polidos.",
+          "Organize, rode e escolha o seu layout."
+        ],
+        [
+          "Mesclar e reordenar\ncom confiança.",
+          "Visualize cada página antes de guardar."
+        ],
+        [
+          "Os seus documentos ficam\nno seu dispositivo.",
+          "O processamento de PDF acontece localmente."
+        ],
+        [
+          "Salvo. Compartilhado.\nFácil de encontrar.",
+          "Abra, renomeie, partilhe ou visualize a pasta."
+        ]
+      ],
+      "before": "ANTES",
+      "after": "DEPOIS",
+      "utility": "Ferramentas diárias PDF.\nLindamente simples.",
+      "privacy": "Os seus PDFs ficam\nno seu dispositivo.",
+      "scan": "VERIFICAR",
+      "clean": "LIMPAR",
+      "local": "LOCAL",
+      "processing": "Processamento local"
+    },
+    "pt-BR": {
+      "phone": [
+        [
+          "Todas as suas ferramentas PDF.\nUm aplicativo calmo.",
+          "Abra, digitalize, organize e compacte."
+        ],
+        [
+          "Da foto torta\npara limpar PDF.",
+          "Cortar, corrigir e aprimorar."
+        ],
+        [
+          "Leia sem distrações.",
+          "Zoom suave, pesquisa e marcadores."
+        ],
+        [
+          "Arquivo menor. Limpar páginas.",
+          "Compare o tamanho antes de salvar."
+        ],
+        [
+          "Transforme fotos em\nPDFs polidos.",
+          "Organize, gire e escolha seu layout."
+        ],
+        [
+          "Mesclar e reordenar\ncom confiança.",
+          "Visualize cada página antes de salvar."
+        ],
+        [
+          "Seus documentos ficam\nno seu dispositivo.",
+          "O processamento de PDF acontece localmente."
+        ],
+        [
+          "Salvo. Compartilhado.\nFácil de encontrar.",
+          "Abra, renomeie, compartilhe ou visualize a pasta."
+        ]
+      ],
+      "before": "ANTES",
+      "after": "DEPOIS",
+      "utility": "Ferramentas diárias PDF.\nLindamente simples.",
+      "privacy": "Seus PDFs ficam\nno seu dispositivo.",
+      "scan": "VERIFICAR",
+      "clean": "LIMPAR",
+      "local": "LOCAL",
+      "processing": "Processamento local"
+    },
+    "it-IT": {
+      "phone": [
+        [
+          "Tutti i tuoi strumenti PDF.\nUn\\'app tranquilla.",
+          "Apri, scansiona, organizza e comprimi."
+        ],
+        [
+          "Dalla foto storta\nper pulire PDF.",
+          "Ritaglia, correggi e migliora."
+        ],
+        [
+          "Leggi senza distrazioni.",
+          "Zoom, ricerca e segnalibri fluidi."
+        ],
+        [
+          "File più piccolo. Pagine chiare.",
+          "Confronta le dimensioni prima di salvare."
+        ],
+        [
+          "Trasforma le foto in\nlucido PDFs.",
+          "Disponi, ruota e scegli il layout."
+        ],
+        [
+          "Unisci e riordina\ncon fiducia.",
+          "Visualizza l\\'anteprima di ogni pagina prima di salvare."
+        ],
+        [
+          "I tuoi documenti restano\nsul tuo dispositivo.",
+          "L\\'elaborazione PDF avviene localmente."
+        ],
+        [
+          "Salvato. Condiviso.\nFacile da trovare.",
+          "Apri, rinomina, condividi o visualizza la cartella."
+        ]
+      ],
+      "before": "PRIMA",
+      "after": "DOPO",
+      "utility": "Strumenti PDF di tutti i giorni.\nMeravigliosamente semplice.",
+      "privacy": "I tuoi PDF restano\nsul tuo dispositivo.",
+      "scan": "SCANSIONE",
+      "clean": "PULITO",
+      "local": "LOCALE",
+      "processing": "Elaborazione locale"
+    },
+    "id-ID": {
+      "phone": [
+        [
+          "Semua alat PDF Anda.\nSatu aplikasi yang tenang.",
+          "Buka, pindai, atur, dan kompres."
+        ],
+        [
+          "Dari foto yang bengkok\nuntuk membersihkan PDF.",
+          "Pangkas, perbaiki, dan tingkatkan."
+        ],
+        [
+          "Membaca tanpa gangguan.",
+          "Zoom halus, pencarian dan bookmark."
+        ],
+        [
+          "Berkas lebih kecil. Hapus halaman.",
+          "Bandingkan ukuran sebelum menyimpan."
+        ],
+        [
+          "Ubah foto menjadi\nPDF yang dipoles.",
+          "Atur, putar, dan pilih tata letak Anda."
+        ],
+        [
+          "Gabungkan dan susun ulang\ndengan percaya diri.",
+          "Pratinjau setiap halaman sebelum menyimpan."
+        ],
+        [
+          "Dokumen Anda tetap ada\ndi perangkat Anda.",
+          "Pemrosesan PDF terjadi secara lokal."
+        ],
+        [
+          "Disimpan. Dibagikan.\nMudah ditemukan.",
+          "Buka, ganti nama, bagikan, atau lihat folder."
+        ]
+      ],
+      "before": "SEBELUM",
+      "after": "SETELAH",
+      "utility": "Alat PDF sehari-hari.\nSederhana sekali.",
+      "privacy": "Masa tinggal PDF Anda\ndi perangkat Anda.",
+      "scan": "PINDAI",
+      "clean": "BERSIH",
+      "local": "LOKAL",
+      "processing": "Pemrosesan lokal"
+    },
+    "ar": {
+      "phone": [
+        [
+          "جميع أدوات PDF الخاصة بك.\nتطبيق واحد هادئ.",
+          "فتح ومسح وتنظيم وضغط."
+        ],
+        [
+          "من الصورة ملتوية\nلتنظيف PDF.",
+          "المحاصيل وتصحيح وتعزيز."
+        ],
+        [
+          "اقرأ دون تشتيت الانتباه.",
+          "التكبير السلس والبحث والإشارات المرجعية."
+        ],
+        [
+          "ملف أصغر. مسح الصفحات.",
+          "قارن الحجم قبل الحفظ."
+        ],
+        [
+          "تحويل الصور إلى\nمصقول PDFs.",
+          "ترتيب وتدوير واختيار التخطيط الخاص بك."
+        ],
+        [
+          "دمج وإعادة ترتيب\nبثقة.",
+          "معاينة كل صفحة قبل الحفظ."
+        ],
+        [
+          "تبقى مستنداتك\nعلى جهازك.",
+          "تتم معالجة PDF محليًا."
+        ],
+        [
+          "تم الحفظ. مشترك.\nمن السهل العثور عليها.",
+          "فتح المجلد أو إعادة تسميته أو مشاركته أو عرضه."
+        ]
+      ],
+      "before": "قبل",
+      "after": "بعد",
+      "utility": "أدوات PDF اليومية.\nبسيطة بشكل جميل.",
+      "privacy": "تبقى PDFs الخاصة بك\nعلى جهازك.",
+      "scan": "مسح",
+      "clean": "نظيفة",
+      "local": "محلي",
+      "processing": "المعالجة المحلية"
+    },
+    "ko-KR": {
+      "phone": [
+        [
+          "모든 PDF 도구.\n차분한 앱 하나.",
+          "열고, 스캔하고, 정리하고, 압축하세요."
+        ],
+        [
+          "비뚤어진 사진에서\nPDF를 청소합니다.",
+          "자르기, 수정 및 향상."
+        ],
+        [
+          "방해받지 않고 읽으세요.",
+          "부드러운 확대/축소, 검색 및 북마크."
+        ],
+        [
+          "더 작은 파일. 페이지를 지웁니다.",
+          "저장하기 전에 크기를 비교하세요."
+        ],
+        [
+          "사진을 다음으로 변환\n세련된 PDF.",
+          "레이아웃을 정렬하고 회전하고 선택하세요."
+        ],
+        [
+          "병합 및 재정렬\n자신감을 가지고.",
+          "저장하기 전에 모든 페이지를 미리 봅니다."
+        ],
+        [
+          "귀하의 문서는 그대로 유지됩니다\n귀하의 장치에서.",
+          "PDF 처리는 로컬에서 발생합니다."
+        ],
+        [
+          "저장되었습니다. 공유됨.\n쉽게 찾을 수 있습니다.",
+          "폴더 열기, 이름 바꾸기, 공유 또는 보기."
+        ]
+      ],
+      "before": "이전",
+      "after": "이후",
+      "utility": "일상적인 PDF 도구.\n아름답고 간단합니다.",
+      "privacy": "귀하의 PDF 숙박\n귀하의 장치에서.",
+      "scan": "스캔",
+      "clean": "깨끗하다",
+      "local": "로컬",
+      "processing": "현지 처리"
+    },
+    "ur-PK": {
+      "phone": [
+        [
+          "آپ کے تمام PDF ٹولز۔\nایک پرسکون ایپ۔",
+          "کھولیں، اسکین کریں، منظم کریں اور سکیڑیں۔"
+        ],
+        [
+          "ٹیڑھی تصویر سے\nPDF صاف کرنے کے لیے۔",
+          "کٹائیں، درست کریں اور اضافہ کریں۔"
+        ],
+        [
+          "خلفشار کے بغیر پڑھیں۔",
+          "ہموار زوم، تلاش اور بُک مارکس۔"
+        ],
+        [
+          "چھوٹی فائل۔ صفحات صاف کریں۔",
+          "محفوظ کرنے سے پہلے سائز کا موازنہ کریں۔"
+        ],
+        [
+          "تصاویر میں تبدیل کریں۔\nپالش PDFs۔",
+          "ترتیب دیں، گھمائیں اور اپنا لے آؤٹ منتخب کریں۔"
+        ],
+        [
+          "ضم کریں اور دوبارہ ترتیب دیں۔\nاعتماد کے ساتھ.",
+          "محفوظ کرنے سے پہلے ہر صفحہ کا جائزہ لیں۔"
+        ],
+        [
+          "آپ کے کاغذات باقی ہیں۔\nآپ کے آلے پر۔",
+          "PDF پروسیسنگ مقامی طور پر ہوتی ہے۔"
+        ],
+        [
+          "محفوظ کیا گیا۔ مشترکہ\nتلاش کرنا آسان ہے۔",
+          "فولڈر کھولیں، نام بدلیں، شیئر کریں یا دیکھیں۔"
+        ]
+      ],
+      "before": "پہلے",
+      "after": "بعد",
+      "utility": "روزانہ PDF ٹولز۔\nخوبصورتی سے سادہ۔",
+      "privacy": "آپ کے PDFs رہیں\nآپ کے آلے پر۔",
+      "scan": "اسکین کریں۔",
+      "clean": "صاف",
+      "local": "مقامی",
+      "processing": "مقامی پروسیسنگ"
+    }
+  },
+  "content_copy": {
+    "ru-RU": {
+      "quarterly": "Ежеквартальный обзор",
+      "travel": "План путешествия",
+      "notes": "Примечания к проекту",
+      "research": "Отчет об исследовании",
+      "catalogue": "Каталог продукции",
+      "brief": "Краткое описание проекта",
+      "budget": "Обзор бюджета",
+      "timeline": "Срок поставки",
+      "contract": "Проект контракта",
+      "itinerary": "Маршрут путешествия",
+      "pages": "Страницы {n}",
+      "original": "Оригинал",
+      "smaller": "Меньший PDF",
+      "completed": "Завершено",
+      "local_pdf": "Локальный PDF",
+      "contents": "СОДЕРЖАНИЕ",
+      "context": "Контекст",
+      "findings": "Выводы",
+      "methods": "Методы",
+      "search": "Поиск",
+      "privacy_query": "конфиденциальность",
+      "result_count": "3 из 8",
+      "output_note": "Выход измеряется в приложении при сохранении",
+      "page": "Страница {n}",
+      "project": "Проект",
+      "pavilion": "Павильон",
+      "pine": "Сосновая тропа",
+      "stairs": "Синяя лестница",
+      "lake": "Дом у озера",
+      "processing": "Локальная обработка",
+      "stays": "Остается на устройстве",
+      "workflow": "ЛОКАЛЬНЫЙ РАБОЧИЙ ПРОЦЕСС",
+      "open": "Открыть",
+      "process": "Процесс",
+      "save": "Сохранить",
+      "no_upload": "Нет загрузки документа",
+      "ready": "Готов поделиться",
+      "stored": "Хранится локально",
+      "share": "Поделиться",
+      "home": "Главная",
+      "files": "Файлы",
+      "tools": "Инструменты",
+      "history": "История",
+      "receipt_title": "ПОЛУЧЕНИЕ СЕВЕРНОЙ ЗВЕЗДЫ",
+      "receipt_total": "ИТОГО 84,60"
+    },
+    "es-ES": {
+      "quarterly": "Resumen trimestral",
+      "travel": "Plan de viaje",
+      "notes": "Notas del proyecto",
+      "research": "Informe de investigación",
+      "catalogue": "Catálogo de productos",
+      "brief": "Resumen del proyecto",
+      "budget": "Resumen del presupuesto",
+      "timeline": "Cronograma de entrega",
+      "contract": "Borrador de contrato",
+      "itinerary": "Itinerario de viaje",
+      "pages": "Páginas {n}",
+      "original": "Originales",
+      "smaller": "Más pequeño PDF",
+      "completed": "Completado",
+      "local_pdf": "Local PDF",
+      "contents": "CONTENIDOS",
+      "context": "Contexto",
+      "findings": "Hallazgos",
+      "methods": "Métodos",
+      "search": "Buscar",
+      "privacy_query": "privacidad",
+      "result_count": "3 de 8",
+      "output_note": "Salida medida en la aplicación al guardar",
+      "page": "Página {n}",
+      "project": "Proyecto",
+      "pavilion": "Pabellón",
+      "pine": "Sendero de pinos",
+      "stairs": "escaleras azules",
+      "lake": "casa del lago",
+      "processing": "Procesamiento local",
+      "stays": "Permanece en el dispositivo",
+      "workflow": "FLUJO DE TRABAJO LOCAL",
+      "open": "Abierto",
+      "process": "Proceso",
+      "save": "Guardar",
+      "no_upload": "No se carga ningún documento",
+      "ready": "Listo para compartir",
+      "stored": "Almacenado localmente",
+      "share": "Compartir PDF",
+      "home": "Inicio",
+      "files": "Archivos",
+      "tools": "Herramientas",
+      "history": "Historia",
+      "receipt_title": "RECIBO DE NORTE ESTRELLA",
+      "receipt_total": "TOTAL 84,60"
+    },
+    "pt-PT": {
+      "quarterly": "Resumo Trimestral",
+      "travel": "Plano de viagem",
+      "notes": "Notas do Projeto",
+      "research": "Relatório de pesquisa",
+      "catalogue": "Catálogo de Produtos",
+      "brief": "Resumo do projeto",
+      "budget": "Visão geral do orçamento",
+      "timeline": "Cronograma de entrega",
+      "contract": "Minuta do Contrato",
+      "itinerary": "Itinerário de viagem",
+      "pages": "Páginas {n}",
+      "original": "Originais",
+      "smaller": "PDF mais pequeno",
+      "completed": "Concluído",
+      "local_pdf": "Localização PDF",
+      "contents": "CONTEÚDO",
+      "context": "Contexto",
+      "findings": "Descobertas",
+      "methods": "Métodos",
+      "search": "Pesquisar",
+      "privacy_query": "privacidade",
+      "result_count": "3 de 8",
+      "output_note": "Saída medida na aplicação ao guardar",
+      "page": "Página {n}",
+      "project": "Projeto",
+      "pavilion": "Pavilhão",
+      "pine": "Trilho de pinheiros",
+      "stairs": "Escadas azuis",
+      "lake": "Casa no lago",
+      "processing": "Processamento local",
+      "stays": "Permanece no dispositivo",
+      "workflow": "FLUXO DE TRABALHO LOCAL",
+      "open": "Abrir",
+      "process": "Processo",
+      "save": "Salvar",
+      "no_upload": "Sem upload de documento",
+      "ready": "Pronto para partilhar",
+      "stored": "Armazenado localmente",
+      "share": "Partilhar PDF",
+      "home": "Página inicial",
+      "files": "Arquivos",
+      "tools": "Ferramentas",
+      "history": "História",
+      "receipt_title": "RECIBO ESTRELA NORTE",
+      "receipt_total": "TOTAL 84,60"
+    },
+    "pt-BR": {
+      "quarterly": "Resumo Trimestral",
+      "travel": "Plano de viagem",
+      "notes": "Notas do Projeto",
+      "research": "Relatório de pesquisa",
+      "catalogue": "Catálogo de Produtos",
+      "brief": "Resumo do projeto",
+      "budget": "Visão geral do orçamento",
+      "timeline": "Cronograma de entrega",
+      "contract": "Minuta do Contrato",
+      "itinerary": "Itinerário de viagem",
+      "pages": "Páginas {n}",
+      "original": "Originais",
+      "smaller": "PDF menor",
+      "completed": "Concluído",
+      "local_pdf": "Local PDF",
+      "contents": "CONTEÚDO",
+      "context": "Contexto",
+      "findings": "Descobertas",
+      "methods": "Métodos",
+      "search": "Pesquisar",
+      "privacy_query": "privacidade",
+      "result_count": "3 de 8",
+      "output_note": "Saída medida no aplicativo ao salvar",
+      "page": "Página {n}",
+      "project": "Projeto",
+      "pavilion": "Pavilhão",
+      "pine": "Trilha de pinheiros",
+      "stairs": "Escadas azuis",
+      "lake": "Casa no lago",
+      "processing": "Processamento local",
+      "stays": "Permanece no dispositivo",
+      "workflow": "FLUXO DE TRABALHO LOCAL",
+      "open": "Abrir",
+      "process": "Processo",
+      "save": "Salvar",
+      "no_upload": "Nenhum upload de documento",
+      "ready": "Pronto para compartilhar",
+      "stored": "Armazenado localmente",
+      "share": "Compartilhar PDF",
+      "home": "Página inicial",
+      "files": "Arquivos",
+      "tools": "Ferramentas",
+      "history": "História",
+      "receipt_title": "RECIBO ESTRELA NORTE",
+      "receipt_total": "TOTAL 84,60"
+    },
+    "it-IT": {
+      "quarterly": "Riepilogo trimestrale",
+      "travel": "Piano di viaggio",
+      "notes": "Note sul progetto",
+      "research": "Rapporto di ricerca",
+      "catalogue": "Catalogo prodotti",
+      "brief": "Breve progetto",
+      "budget": "Panoramica del budget",
+      "timeline": "Cronologia di consegna",
+      "contract": "Bozza di contratto",
+      "itinerary": "Itinerario di viaggio",
+      "pages": "{n} pagine",
+      "original": "Originale",
+      "smaller": "Più piccolo PDF",
+      "completed": "Completato",
+      "local_pdf": "Locale PDF",
+      "contents": "CONTENUTO",
+      "context": "Contesto",
+      "findings": "Risultati",
+      "methods": "Metodi",
+      "search": "Cerca",
+      "privacy_query": "privacy",
+      "result_count": "3 di 8",
+      "output_note": "Output misurato nell\\'app durante il salvataggio",
+      "page": "Pagina {n}",
+      "project": "Progetto",
+      "pavilion": "Padiglione",
+      "pine": "Sentiero dei pini",
+      "stairs": "Scale blu",
+      "lake": "Casa sul lago",
+      "processing": "Elaborazione locale",
+      "stays": "Rimane sul dispositivo",
+      "workflow": "FLUSSO DI LAVORO LOCALE",
+      "open": "Aperto",
+      "process": "Processo",
+      "save": "Salva",
+      "no_upload": "Nessun caricamento di documenti",
+      "ready": "Pronto per essere condiviso",
+      "stored": "Memorizzato localmente",
+      "share": "Condividi PDF",
+      "home": "Casa",
+      "files": "File",
+      "tools": "Strumenti",
+      "history": "Storia",
+      "receipt_title": "RICEVUTA NORTHSTAR",
+      "receipt_total": "TOTALE 84,60"
+    },
+    "id-ID": {
+      "quarterly": "Ringkasan Triwulanan",
+      "travel": "Rencana Perjalanan",
+      "notes": "Catatan Proyek",
+      "research": "Laporan Penelitian",
+      "catalogue": "Katalog Produk",
+      "brief": "Ringkasan Proyek",
+      "budget": "Ikhtisar Anggaran",
+      "timeline": "Garis Waktu Pengiriman",
+      "contract": "Draf Kontrak",
+      "itinerary": "Rencana Perjalanan",
+      "pages": "{n} halaman",
+      "original": "Asli",
+      "smaller": "PDF lebih kecil",
+      "completed": "Selesai",
+      "local_pdf": "PDF lokal",
+      "contents": "ISI",
+      "context": "Konteks",
+      "findings": "Temuan",
+      "methods": "Metode",
+      "search": "Cari",
+      "privacy_query": "privasi",
+      "result_count": "3 dari 8",
+      "output_note": "Output diukur dalam aplikasi saat menyimpan",
+      "page": "Halaman {n}",
+      "project": "Proyek",
+      "pavilion": "Paviliun",
+      "pine": "Jejak pinus",
+      "stairs": "Tangga biru",
+      "lake": "Rumah danau",
+      "processing": "Pemrosesan lokal",
+      "stays": "Tetap di perangkat",
+      "workflow": "ALUR KERJA LOKAL",
+      "open": "Buka",
+      "process": "Proses",
+      "save": "Simpan",
+      "no_upload": "Tidak ada unggahan dokumen",
+      "ready": "Siap untuk berbagi",
+      "stored": "Disimpan secara lokal",
+      "share": "Bagikan PDF",
+      "home": "Rumah",
+      "files": "File",
+      "tools": "Alat",
+      "history": "Sejarah",
+      "receipt_title": "PENERIMAAN BINTANG UTARA",
+      "receipt_total": "JUMLAH 84,60"
+    },
+    "ar": {
+      "quarterly": "ملخص ربع سنوي",
+      "travel": "خطة السفر",
+      "notes": "ملاحظات المشروع",
+      "research": "تقرير بحثي",
+      "catalogue": "كتالوج المنتجات",
+      "brief": "ملخص المشروع",
+      "budget": "نظرة عامة على الميزانية",
+      "timeline": "الجدول الزمني للتسليم",
+      "contract": "مسودة العقد",
+      "itinerary": "خط سير الرحلة",
+      "pages": "صفحات {n}",
+      "original": "أصلي",
+      "smaller": "أصغر PDF",
+      "completed": "مكتمل",
+      "local_pdf": "PDF المحلي",
+      "contents": "المحتويات",
+      "context": "السياق",
+      "findings": "النتائج",
+      "methods": "طرق",
+      "search": "بحث",
+      "privacy_query": "الخصوصية",
+      "result_count": "3 من 8",
+      "output_note": "يتم قياس الإخراج في التطبيق عند الحفظ",
+      "page": "صفحة {n}",
+      "project": "مشروع",
+      "pavilion": "جناح",
+      "pine": "درب الصنوبر",
+      "stairs": "السلالم الزرقاء",
+      "lake": "منزل البحيرة",
+      "processing": "المعالجة المحلية",
+      "stays": "يبقى على الجهاز",
+      "workflow": "سير العمل المحلي",
+      "open": "مفتوح",
+      "process": "عملية",
+      "save": "حفظ",
+      "no_upload": "لا يوجد تحميل الوثيقة",
+      "ready": "جاهز للمشاركة",
+      "stored": "مخزنة محليا",
+      "share": "مشاركة PDF",
+      "home": "الصفحة الرئيسية",
+      "files": "ملفات",
+      "tools": "أدوات",
+      "history": "التاريخ",
+      "receipt_title": "استلام نورث ستار",
+      "receipt_total": "المجموع 84.60"
+    },
+    "ko-KR": {
+      "quarterly": "분기별 요약",
+      "travel": "여행 계획",
+      "notes": "프로젝트 노트",
+      "research": "연구 보고서",
+      "catalogue": "제품 카탈로그",
+      "brief": "프로젝트 개요",
+      "budget": "예산 개요",
+      "timeline": "배송 일정",
+      "contract": "계약 초안",
+      "itinerary": "여행일정",
+      "pages": "{n} 페이지",
+      "original": "원본",
+      "smaller": "더 작은 PDF",
+      "completed": "완료됨",
+      "local_pdf": "로컬 PDF",
+      "contents": "목차",
+      "context": "맥락",
+      "findings": "조사 결과",
+      "methods": "방법",
+      "search": "검색",
+      "privacy_query": "프라이버시",
+      "result_count": "8개 중 3개",
+      "output_note": "저장 시 앱에서 측정된 출력",
+      "page": "페이지 {n}",
+      "project": "프로젝트",
+      "pavilion": "파빌리온",
+      "pine": "소나무길",
+      "stairs": "파란 계단",
+      "lake": "레이크 하우스",
+      "processing": "현지 처리",
+      "stays": "기기에 유지됨",
+      "workflow": "로컬 워크플로",
+      "open": "열기",
+      "process": "프로세스",
+      "save": "저장",
+      "no_upload": "문서 업로드 없음",
+      "ready": "공유 준비 완료",
+      "stored": "로컬에 저장됨",
+      "share": "PDF 공유",
+      "home": "홈",
+      "files": "파일",
+      "tools": "도구",
+      "history": "역사",
+      "receipt_title": "노스스타 영수증",
+      "receipt_total": "총계 84.60"
+    },
+    "ur-PK": {
+      "quarterly": "سہ ماہی خلاصہ",
+      "travel": "سفر کا منصوبہ",
+      "notes": "پروجیکٹ نوٹس",
+      "research": "تحقیقی رپورٹ",
+      "catalogue": "پروڈکٹ کیٹلاگ",
+      "brief": "پروجیکٹ بریف",
+      "budget": "بجٹ کا جائزہ",
+      "timeline": "ڈیلیوری ٹائم لائن",
+      "contract": "معاہدہ کا مسودہ",
+      "itinerary": "سفر کا پروگرام",
+      "pages": "{n} صفحات",
+      "original": "اصل",
+      "smaller": "چھوٹا PDF",
+      "completed": "مکمل",
+      "local_pdf": "مقامی PDF",
+      "contents": "مواد",
+      "context": "سیاق و سباق",
+      "findings": "نتائج",
+      "methods": "طریقے",
+      "search": "تلاش کریں۔",
+      "privacy_query": "رازداری",
+      "result_count": "3 میں سے 8",
+      "output_note": "بچت کرتے وقت ایپ میں آؤٹ پٹ کی پیمائش کی جاتی ہے۔",
+      "page": "صفحہ {n}",
+      "project": "پروجیکٹ",
+      "pavilion": "پویلین",
+      "pine": "پائن ٹریل",
+      "stairs": "نیلی سیڑھیاں",
+      "lake": "جھیل گھر",
+      "processing": "مقامی پروسیسنگ",
+      "stays": "ڈیوائس پر رہتا ہے۔",
+      "workflow": "مقامی ورک فلو",
+      "open": "کھولیں۔",
+      "process": "عمل",
+      "save": "محفوظ کریں۔",
+      "no_upload": "کوئی دستاویز اپ لوڈ نہیں۔",
+      "ready": "اشتراک کے لیے تیار ہیں۔",
+      "stored": "مقامی طور پر ذخیرہ شدہ",
+      "share": "PDF شیئر کریں۔",
+      "home": "گھر",
+      "files": "فائلیں",
+      "tools": "اوزار",
+      "history": "تاریخ",
+      "receipt_title": "نارتھ اسٹار رسید",
+      "receipt_total": "کل 84.60"
+    }
+  }
+}

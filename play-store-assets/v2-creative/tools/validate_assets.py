@@ -21,6 +21,14 @@ PHONE_NAMES = [
     "06-merge-rearrange.png", "07-offline-privacy.png", "08-result-sharing.png",
 ]
 SLUGS = [p[3:-4] for p in PHONE_NAMES]
+LOCALES = ["de-DE","fr-FR","ja-JP","hi-IN","ru-RU","es-ES","pt-PT","pt-BR","it-IT","id-ID","ar","ko-KR","ur-PK"]
+CONTACT_LOCALES = LOCALES
+LOCALIZED_UI_CAPTURES = [
+    "01-home-ui.png", "02-scanner-review-ui.png", "03-reader-search-ui.png",
+    "04-compression-ui.png", "05-images-to-pdf-ui.png", "06-merge-ui.png",
+    "06b-rearrange-ui.png", "07-privacy-ui.png", "08-result-ui.png",
+    "09-settings-ui.png", "10-language-chooser-ui.png",
+]
 
 
 def fail(errors: list[str], message: str) -> None:
@@ -51,6 +59,21 @@ def main() -> int:
             image_check(errors,base/f"{i:02d}-{slug}-{label}.png",(1920,1080),True)
     image_check(errors,ROOT/"feature-graphic/utility/quietpdf-feature-utility.png",(1024,500),True)
     image_check(errors,ROOT/"feature-graphic/privacy/quietpdf-feature-privacy.png",(1024,500),True)
+    for locale in LOCALES:
+        base=ROOT/f"localized/upload-ready/{locale}"
+        capture_base=ROOT/f"source/real-ui-captures-no-ads/localized/{locale}"
+        for name in LOCALIZED_UI_CAPTURES:
+            image_check(errors,capture_base/name)
+        for name in PHONE_NAMES:
+            image_check(errors,base/"phone"/name,(1080,1920),True)
+        for folder,label in [("tablet-7","tablet7"),("tablet-10","tablet10")]:
+            for i,slug in enumerate(SLUGS,1):
+                image_check(errors,base/folder/f"{i:02d}-{slug}-{label}.png",(1920,1080),True)
+        image_check(errors,base/"feature-graphic/utility/quietpdf-feature-utility.png",(1024,500),True)
+        image_check(errors,base/"feature-graphic/privacy/quietpdf-feature-privacy.png",(1024,500),True)
+    image_check(errors,ROOT/"contact-sheets/quietpdf-all-features-contact-sheet.png",(2400,3600),True)
+    for locale in CONTACT_LOCALES:
+        image_check(errors,ROOT/f"contact-sheets/quietpdf-all-features-{locale}-contact-sheet.png",(2400,3600),True)
     icon=ROOT/"branding/selected/quietpdf-play-icon-512.png"
     image_check(errors,icon,(512,512),True)
     if icon.is_file() and icon.stat().st_size > 1024*1024:
@@ -66,7 +89,7 @@ def main() -> int:
     }
     for rel,size in marketing.items():image_check(errors,ROOT/rel,size,True)
     # Quarantine and naming checks.
-    prod_roots=[ROOT/"play-upload",ROOT/"feature-graphic",ROOT/"branding/selected",ROOT/"marketing-not-for-play"]
+    prod_roots=[ROOT/"play-upload",ROOT/"feature-graphic",ROOT/"branding/selected",ROOT/"marketing-not-for-play",ROOT/"localized/upload-ready"]
     for base in prod_roots:
         for p in base.rglob("*"):
             if p.is_file() and "DRAFT" in p.name.upper():fail(errors,f"DRAFT in production path: {p.relative_to(ROOT)}")
@@ -110,6 +133,7 @@ def main() -> int:
     print("Tablet 7-inch: 8/8 RGB 1920x1080")
     print("Tablet 10-inch: 8/8 RGB 1920x1080")
     print("Feature graphics: 2/2 RGB 1024x500")
+    print(f"Localized upload-ready sets: {len(LOCALES)} locales × 26 RGB assets")
     print(f"Play icon: 512x512 RGB, {icon.stat().st_size} bytes")
     print("NO ADS: VERIFIED for every inventoried raster asset")
     return 0
