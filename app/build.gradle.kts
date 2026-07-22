@@ -3,6 +3,26 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
+abstract class GeneratePrivacyPolicyAsset : org.gradle.api.DefaultTask() {
+    @get:org.gradle.api.tasks.InputFile
+    abstract val sourceFile: org.gradle.api.file.RegularFileProperty
+
+    @get:org.gradle.api.tasks.OutputDirectory
+    abstract val outputDirectory: org.gradle.api.file.DirectoryProperty
+
+    @org.gradle.api.tasks.TaskAction
+    fun generate() {
+        val output = outputDirectory.file("index.html").get().asFile
+        output.parentFile.mkdirs()
+        sourceFile.get().asFile.copyTo(output, overwrite = true)
+    }
+}
+
+val generatePrivacyPolicyAsset by tasks.registering(GeneratePrivacyPolicyAsset::class) {
+    sourceFile.set(rootProject.layout.projectDirectory.file("docs/index.html"))
+    outputDirectory.set(layout.buildDirectory.dir("generated/privacyPolicyAssets"))
+}
+
 android {
     namespace = "com.rameshta.quietpdf"
     compileSdk = 37
@@ -89,6 +109,15 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+    }
+}
+
+androidComponents {
+    onVariants { variant ->
+        variant.sources.assets?.addGeneratedSourceDirectory(
+            generatePrivacyPolicyAsset,
+            GeneratePrivacyPolicyAsset::outputDirectory,
+        )
     }
 }
 

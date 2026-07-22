@@ -3,6 +3,9 @@ package com.rameshta.quietpdf
 import android.content.pm.PackageManager
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.google.android.gms.ads.AgeRestrictedTreatment
+import com.google.android.gms.ads.MobileAds
+import com.rameshta.quietpdf.ads.configureStandardAgeTreatment
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -10,6 +13,16 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class AdMobConfigurationTest {
+    @Test
+    fun adRequestsDoNotForceAgeRestrictedTreatment() {
+        configureStandardAgeTreatment()
+
+        assertEquals(
+            AgeRestrictedTreatment.UNSPECIFIED,
+            MobileAds.getRequestConfiguration().ageRestrictedTreatment,
+        )
+    }
+
     @Test
     fun debugBuildUsesOnlyOfficialGoogleTestIdentifiers() {
         assertTrue(BuildConfig.ADMOB_ENABLED)
