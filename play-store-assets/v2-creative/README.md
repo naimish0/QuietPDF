@@ -6,15 +6,16 @@ Material 3 workflows. All store screenshots and feature graphics are flattened R
 
 ## Final upload sets
 
-- Phone: `play-upload/phone/en-US/` — eight 1080×1920 PNGs in display order.
-- 7-inch tablet: `play-upload/tablet-7/en-US/` — eight purpose-built 1920×1080 PNGs.
-- 10-inch tablet: `play-upload/tablet-10/en-US/` — eight purpose-built 1920×1080 PNGs.
+- Phone: `play-upload/phone/en-US/` — eight 1080×1920 PNGs in display order, with `en-US` in every filename.
+- 7-inch tablet: `play-upload/tablet-7/en-US/` — eight purpose-built 1920×1080 PNGs, with `en-US` in every filename.
+- 10-inch tablet: `play-upload/tablet-10/en-US/` — eight purpose-built 1920×1080 PNGs, with `en-US` in every filename.
 - Feature graphics: `feature-graphic/utility/` and `feature-graphic/privacy/` — 1024×500 PNGs.
 - Play icon: `branding/selected/quietpdf-play-icon-512.png`.
 - All-features overview: `contact-sheets/quietpdf-all-features-contact-sheet.png` — one polished
   2400×3600 image presenting eight visual workflows, all 20 production PDF tools, and 16 reader/file essentials.
 - Localized upload-ready families: `localized/upload-ready/{de-DE,fr-FR,ja-JP,hi-IN,ru-RU,es-ES,pt-PT,pt-BR,it-IT,id-ID,ar,ko-KR,ur-PK}/` — eight
-  phone, eight 7-inch tablet, eight 10-inch tablet, and two feature-graphic files per locale.
+  phone, eight 7-inch tablet, eight 10-inch tablet, and two feature-graphic files per locale. Every
+  screenshot filename includes its corresponding locale code immediately after the display order.
 - Localized all-features overviews: `contact-sheets/quietpdf-all-features-{locale}-contact-sheet.png`
   for all thirteen localized listing languages.
 - Russian, Spanish, European Portuguese, Brazilian Portuguese, Italian, Indonesian, Arabic,

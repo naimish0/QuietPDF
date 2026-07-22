@@ -1302,9 +1302,9 @@ def build_localized_families(phone_paths, tablet7, tablet10, slugs):
             (root/folder).mkdir(parents=True,exist_ok=True)
         locale_paths=[]; locale_t7=[]; locale_t10=[]
         for i,(phone,t7,t10,slug) in enumerate(zip(phone_paths,tablet7,tablet10,slugs),1):
-            pp=root/f"phone/{i:02d}-{slug}.png"
-            p7=root/f"tablet-7/{i:02d}-{slug}-tablet7.png"
-            p10=root/f"tablet-10/{i:02d}-{slug}-tablet10.png"
+            pp=root/f"phone/{i:02d}-{locale}-{slug}.png"
+            p7=root/f"tablet-7/{i:02d}-{locale}-{slug}-tablet7.png"
+            p10=root/f"tablet-10/{i:02d}-{locale}-{slug}-tablet10.png"
             localized_phone(phone,locale,i).save(pp,optimize=True)
             localized_tablet(t7,locale,i).save(p7,optimize=True)
             localized_tablet(t10,locale,i).save(p10,optimize=True)
@@ -1354,12 +1354,12 @@ def main():
     slugs=["all-tools","scanner-transform","pdf-reader","compression-transform","images-to-pdf","merge-rearrange","offline-privacy","result-sharing"]
     phone_paths=[]; phone_assets=[]
     for i,(mk,slug) in enumerate(zip(makers,slugs),1):
-        im=mk().convert("RGB"); p=ROOT/f"play-upload/phone/en-US/{i:02d}-{slug}.png"; im.save(p,optimize=True); phone_paths.append(p); phone_assets.append(im)
+        im=mk().convert("RGB"); p=ROOT/f"play-upload/phone/en-US/{i:02d}-en-US-{slug}.png"; im.save(p,optimize=True); phone_paths.append(p); phone_assets.append(im)
     # True wide tablet sets plus foldable QA.
     tablet7=[]; tablet10=[]
     for i,(p,slug) in enumerate(zip(phone_assets,slugs),1):
         a=tablet_creative(p,i,ten=False).convert("RGB"); b=tablet_creative(p,i,ten=True).convert("RGB")
-        pa=ROOT/f"play-upload/tablet-7/en-US/{i:02d}-{slug}-tablet7.png"; pb=ROOT/f"play-upload/tablet-10/en-US/{i:02d}-{slug}-tablet10.png"
+        pa=ROOT/f"play-upload/tablet-7/en-US/{i:02d}-en-US-{slug}-tablet7.png"; pb=ROOT/f"play-upload/tablet-10/en-US/{i:02d}-en-US-{slug}-tablet10.png"
         a.save(pa,optimize=True); b.save(pb,optimize=True); tablet7.append(pa); tablet10.append(pb)
         # Foldable unfolded maps to tablet experience; folded maps to phone.
         a.save(ROOT/f"qa/foldable/{i:02d}-{slug}-unfolded-qa.png",optimize=True)
@@ -1494,9 +1494,9 @@ def main():
         for locale,data in localized.items():
             base=ROOT/f"localized/upload-ready/{locale}"
             for i,slug in enumerate(slugs,1):
-                w.writerow(["phone",locale,i,f"localized/upload-ready/{locale}/phone/{i:02d}-{slug}.png"])
-                w.writerow(["tablet-7",locale,i,f"localized/upload-ready/{locale}/tablet-7/{i:02d}-{slug}-tablet7.png"])
-                w.writerow(["tablet-10",locale,i,f"localized/upload-ready/{locale}/tablet-10/{i:02d}-{slug}-tablet10.png"])
+                w.writerow(["phone",locale,i,f"localized/upload-ready/{locale}/phone/{i:02d}-{locale}-{slug}.png"])
+                w.writerow(["tablet-7",locale,i,f"localized/upload-ready/{locale}/tablet-7/{i:02d}-{locale}-{slug}-tablet7.png"])
+                w.writerow(["tablet-10",locale,i,f"localized/upload-ready/{locale}/tablet-10/{i:02d}-{locale}-{slug}-tablet10.png"])
             w.writerow(["feature-graphic",locale,1,data["utility"].relative_to(ROOT)])
             w.writerow(["feature-graphic",locale,2,data["privacy"].relative_to(ROOT)])
         w.writerow(["feature-graphic","global",1,"feature-graphic/utility/quietpdf-feature-utility.png"])

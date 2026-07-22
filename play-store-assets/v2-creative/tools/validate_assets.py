@@ -15,12 +15,11 @@ PHONE = ROOT / "play-upload/phone/en-US"
 T7 = ROOT / "play-upload/tablet-7/en-US"
 T10 = ROOT / "play-upload/tablet-10/en-US"
 
-PHONE_NAMES = [
-    "01-all-tools.png", "02-scanner-transform.png", "03-pdf-reader.png",
-    "04-compression-transform.png", "05-images-to-pdf.png",
-    "06-merge-rearrange.png", "07-offline-privacy.png", "08-result-sharing.png",
+SLUGS = [
+    "all-tools", "scanner-transform", "pdf-reader", "compression-transform",
+    "images-to-pdf", "merge-rearrange", "offline-privacy", "result-sharing",
 ]
-SLUGS = [p[3:-4] for p in PHONE_NAMES]
+PHONE_NAMES = [f"{i:02d}-en-US-{slug}.png" for i, slug in enumerate(SLUGS, 1)]
 LOCALES = ["de-DE","fr-FR","ja-JP","hi-IN","ru-RU","es-ES","pt-PT","pt-BR","it-IT","id-ID","ar","ko-KR","ur-PK"]
 CONTACT_LOCALES = LOCALES
 LOCALIZED_UI_CAPTURES = [
@@ -52,11 +51,26 @@ def image_check(errors, path: Path, size=None, require_rgb=False):
 
 def main() -> int:
     errors=[]
+    screenshot_sets = [(PHONE, "en-US"), (T7, "en-US"), (T10, "en-US")]
+    for locale in LOCALES:
+        localized_base = ROOT / f"localized/upload-ready/{locale}"
+        screenshot_sets.extend(
+            (localized_base / device, locale)
+            for device in ("phone", "tablet-7", "tablet-10")
+        )
+    for screenshot_dir, locale in screenshot_sets:
+        screenshots = sorted(screenshot_dir.glob("*.png"))
+        if len(screenshots) != 8:
+            fail(errors, f"wrong screenshot count: {screenshot_dir.relative_to(ROOT)} has {len(screenshots)}")
+        expected_prefix = re.compile(rf"\d{{2}}-{re.escape(locale)}-")
+        for screenshot in screenshots:
+            if not expected_prefix.match(screenshot.name):
+                fail(errors, f"locale missing from screenshot filename: {screenshot.relative_to(ROOT)}")
     for name in PHONE_NAMES:
         image_check(errors,PHONE/name,(1080,1920),True)
     for base,label in [(T7,"tablet7"),(T10,"tablet10")]:
         for i,slug in enumerate(SLUGS,1):
-            image_check(errors,base/f"{i:02d}-{slug}-{label}.png",(1920,1080),True)
+            image_check(errors,base/f"{i:02d}-en-US-{slug}-{label}.png",(1920,1080),True)
     image_check(errors,ROOT/"feature-graphic/utility/quietpdf-feature-utility.png",(1024,500),True)
     image_check(errors,ROOT/"feature-graphic/privacy/quietpdf-feature-privacy.png",(1024,500),True)
     for locale in LOCALES:
@@ -64,11 +78,11 @@ def main() -> int:
         capture_base=ROOT/f"source/real-ui-captures-no-ads/localized/{locale}"
         for name in LOCALIZED_UI_CAPTURES:
             image_check(errors,capture_base/name)
-        for name in PHONE_NAMES:
-            image_check(errors,base/"phone"/name,(1080,1920),True)
+        for i,slug in enumerate(SLUGS,1):
+            image_check(errors,base/"phone"/f"{i:02d}-{locale}-{slug}.png",(1080,1920),True)
         for folder,label in [("tablet-7","tablet7"),("tablet-10","tablet10")]:
             for i,slug in enumerate(SLUGS,1):
-                image_check(errors,base/folder/f"{i:02d}-{slug}-{label}.png",(1920,1080),True)
+                image_check(errors,base/folder/f"{i:02d}-{locale}-{slug}-{label}.png",(1920,1080),True)
         image_check(errors,base/"feature-graphic/utility/quietpdf-feature-utility.png",(1024,500),True)
         image_check(errors,base/"feature-graphic/privacy/quietpdf-feature-privacy.png",(1024,500),True)
     image_check(errors,ROOT/"contact-sheets/quietpdf-all-features-contact-sheet.png",(2400,3600),True)
@@ -93,7 +107,7 @@ def main() -> int:
     for base in prod_roots:
         for p in base.rglob("*"):
             if p.is_file() and "DRAFT" in p.name.upper():fail(errors,f"DRAFT in production path: {p.relative_to(ROOT)}")
-            if p.suffix.lower() in {".png",".jpg",".jpeg"} and not re.fullmatch(r"[a-z0-9][a-z0-9._-]*",p.name):
+            if p.suffix.lower() in {".png",".jpg",".jpeg"} and not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*",p.name):
                 fail(errors,f"inconsistent filename: {p.relative_to(ROOT)}")
     # Placeholder residue check in editable/text sources.
     for p in ROOT.rglob("*"):
