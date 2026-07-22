@@ -631,6 +631,12 @@
     <string name="smart_home_settings_unavailable">As definições de Android não estão disponíveis neste dispositivo.</string>
     <string name="settings_back">Voltar</string>
     <string name="settings_page_description">Escolha o aspeto de QuietPDF e trate das preferências de privacidade.</string>
+    <string name="settings_appearance_title">Aspeto</string>
+    <string name="settings_appearance_current">Atual: %1$s</string>
+    <string name="settings_theme_light">Claro</string>
+    <string name="settings_theme_dark">Escuro</string>
+    <string name="settings_dark_theme_toggle">Tema escuro</string>
+    <string name="settings_theme_icon_note">O ícone da aplicação muda para corresponder a este tema. Alguns iniciadores podem demorar um momento a atualizar.</string>
     <string name="settings_language_title">Idioma</string>
     <string name="settings_language_description">Altere o idioma utilizado em QuietPDF.</string>
     <string name="settings_language_current">Atual: %1$s</string>

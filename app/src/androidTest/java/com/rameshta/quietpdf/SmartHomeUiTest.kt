@@ -26,6 +26,7 @@ import com.rameshta.quietpdf.pdf.PageRenderFailure
 import com.rameshta.quietpdf.pdf.PdfOpenState
 import com.rameshta.quietpdf.pdf.SmartTool
 import com.rameshta.quietpdf.ui.theme.QuietPDFTheme
+import com.rameshta.quietpdf.ui.theme.AppThemeMode
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 import org.junit.Assert.assertEquals
@@ -94,8 +95,10 @@ class SmartHomeUiTest {
     @Test
     fun everySettingsCardOpensADedicatedScreen() {
         val selectedLanguage = AtomicReference<String>()
+        val selectedTheme = AtomicReference<AppThemeMode>()
         val advertisingClicks = AtomicInteger()
         setSmartHome(
+            onChangeTheme = selectedTheme::set,
             onChangeLanguage = selectedLanguage::set,
             adPrivacyOptionsRequired = true,
             onOpenAdvertisingPrivacy = { advertisingClicks.incrementAndGet() },
@@ -105,7 +108,11 @@ class SmartHomeUiTest {
         composeRule.onNodeWithTag("smart_home_settings_action").assertIsDisplayed().performClick()
         composeRule.onNodeWithTag("settings_content").assertIsDisplayed()
         composeRule.onAllNodesWithTag("smart_home_nav_Home").assertCountEquals(0)
-        composeRule.onNodeWithTag("settings_language_card").assertIsDisplayed()
+        composeRule.onNodeWithTag("settings_theme_card").assertIsDisplayed()
+        composeRule.onNodeWithTag("settings_dark_theme_switch").performClick()
+        assertEquals(AppThemeMode.Dark, selectedTheme.get())
+        composeRule.onNodeWithText("Current: Dark").assertIsDisplayed()
+        composeRule.onNodeWithTag("settings_language_card").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithTag("settings_privacy_card").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithTag("settings_advertising_card").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithTag("settings_about_card").performScrollTo().assertIsDisplayed()
@@ -185,12 +192,17 @@ class SmartHomeUiTest {
         onOpenPdf: () -> Unit = {},
         onScanDocument: () -> Unit = {},
         onOpenRecentPdf: (Uri) -> Unit = {},
+        onChangeTheme: (AppThemeMode) -> Unit = {},
         onChangeLanguage: (String) -> Unit = {},
         adPrivacyOptionsRequired: Boolean = false,
         onOpenAdvertisingPrivacy: () -> Unit = {},
     ) {
         composeRule.setContent {
-            QuietPDFTheme(dynamicColor = false) {
+            var themeMode by remember { mutableStateOf(AppThemeMode.Light) }
+            QuietPDFTheme(
+                darkTheme = themeMode == AppThemeMode.Dark,
+                dynamicColor = false,
+            ) {
                 QuietPdfApp(
                     state = PdfOpenState.Idle,
                     continueReading = continueReading,
@@ -200,6 +212,11 @@ class SmartHomeUiTest {
                     onScanDocument = onScanDocument,
                     onOpenRecentPdf = onOpenRecentPdf,
                     settings = QuietPdfSettings(
+                        themeMode = themeMode,
+                        onChangeTheme = { mode ->
+                            themeMode = mode
+                            onChangeTheme(mode)
+                        },
                         onChangeLanguage = onChangeLanguage,
                         adPrivacyOptionsRequired = adPrivacyOptionsRequired,
                         onOpenAdvertisingPrivacy = onOpenAdvertisingPrivacy,

@@ -631,6 +631,12 @@
     <string name="smart_home_settings_unavailable">Android سیٹنگز اس ڈیوائس پر دستیاب نہیں ہیں۔</string>
     <string name="settings_back">پیچھے</string>
     <string name="settings_page_description">منتخب کریں کہ QuietPDF کیسا لگتا ہے اور رازداری کی ترجیحات کو ہینڈل کرتا ہے۔</string>
+    <string name="settings_appearance_title">ظاہری شکل</string>
+    <string name="settings_appearance_current">موجودہ: %1$s</string>
+    <string name="settings_theme_light">روشن</string>
+    <string name="settings_theme_dark">گہرا</string>
+    <string name="settings_dark_theme_toggle">گہری تھیم</string>
+    <string name="settings_theme_icon_note">لانچر آئیکن اس تھیم کے مطابق بدلتا ہے۔ کچھ لانچرز کو تازہ ہونے میں تھوڑا وقت لگ سکتا ہے۔</string>
     <string name="settings_language_title">زبان</string>
     <string name="settings_language_description">QuietPDF میں استعمال ہونے والی زبان کو تبدیل کریں۔</string>
     <string name="settings_language_current">موجودہ: %1$s</string>

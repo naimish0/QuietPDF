@@ -632,6 +632,12 @@
     <string name="smart_home_settings_unavailable">इस डिवाइस पर Android सेटिंग अनुपलब्ध हैं.</string>
     <string name="settings_back">पीछे</string>
     <string name="settings_page_description">चुनें कि QuietPDF कैसा दिखता है और गोपनीयता प्राथमिकताओं को कैसे संभालता है।</string>
+    <string name="settings_appearance_title">दिखावट</string>
+    <string name="settings_appearance_current">वर्तमान: %1$s</string>
+    <string name="settings_theme_light">हल्का</string>
+    <string name="settings_theme_dark">गहरा</string>
+    <string name="settings_dark_theme_toggle">गहरी थीम</string>
+    <string name="settings_theme_icon_note">लॉन्चर आइकन इस थीम के अनुसार बदलता है। कुछ लॉन्चर को रीफ़्रेश होने में थोड़ा समय लग सकता है।</string>
     <string name="settings_language_title">भाषा</string>
     <string name="settings_language_description">पूरे QuietPDF में उपयोग की जाने वाली भाषा बदलें।</string>
     <string name="settings_language_current">वर्तमान: %1$s</string>

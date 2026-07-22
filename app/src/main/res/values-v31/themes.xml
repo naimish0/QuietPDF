@@ -12,4 +12,17 @@
         <item name="android:windowSplashScreenAnimatedIcon">@mipmap/ic_launcher</item>
         <item name="android:windowSplashScreenIconBackgroundColor">@color/quietpdf_icon_background</item>
     </style>
+    <style name="Theme.QuietPDF.Launcher.Light" parent="Theme.QuietPDF" />
+    <style name="Theme.QuietPDF.Launcher.Dark" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:windowActionModeOverlay">true</item>
+        <item name="android:windowBackground">@color/quietpdf_start_background_dark</item>
+        <item name="android:navigationBarColor">@color/quietpdf_start_background_dark</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+        <item name="android:forceDarkAllowed">false</item>
+        <item name="android:windowSplashScreenBackground">@color/quietpdf_start_background_dark</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@mipmap/ic_launcher_dark</item>
+        <item name="android:windowSplashScreenIconBackgroundColor">@color/quietpdf_icon_dark_background</item>
+    </style>
 </resources>

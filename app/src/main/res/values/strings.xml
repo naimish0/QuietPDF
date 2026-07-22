@@ -630,6 +630,12 @@
     <string name="smart_home_settings_unavailable">Android settings are unavailable on this device.</string>
     <string name="settings_back">Back</string>
     <string name="settings_page_description">Choose how QuietPDF looks and handles privacy preferences.</string>
+    <string name="settings_appearance_title">Appearance</string>
+    <string name="settings_appearance_current">Current: %1$s</string>
+    <string name="settings_theme_light">Light</string>
+    <string name="settings_theme_dark">Dark</string>
+    <string name="settings_dark_theme_toggle">Dark theme</string>
+    <string name="settings_theme_icon_note">The launcher icon changes to match this theme. Some launchers may take a moment to refresh.</string>
     <string name="settings_language_title">Language</string>
     <string name="settings_language_description">Change the language used throughout QuietPDF.</string>
     <string name="settings_language_current">Current: %1$s</string>

@@ -632,6 +632,12 @@
     <string name="smart_home_settings_unavailable">このデバイスでは Android 設定を使用できません。</string>
     <string name="settings_back">戻る</string>
     <string name="settings_page_description">QuietPDF の外観とプライバシー設定の処理方法を選択します。</string>
+    <string name="settings_appearance_title">外観</string>
+    <string name="settings_appearance_current">現在: %1$s</string>
+    <string name="settings_theme_light">ライト</string>
+    <string name="settings_theme_dark">ダーク</string>
+    <string name="settings_dark_theme_toggle">ダークテーマ</string>
+    <string name="settings_theme_icon_note">ランチャーアイコンもこのテーマに合わせて変わります。ランチャーによっては更新に少し時間がかかる場合があります。</string>
     <string name="settings_language_title">言語</string>
     <string name="settings_language_description">QuietPDF 全体で使用される言語を変更します。</string>
     <string name="settings_language_current">現在: %1$s</string>

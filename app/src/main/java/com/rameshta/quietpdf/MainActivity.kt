@@ -3,10 +3,12 @@ package com.rameshta.quietpdf
 import android.Manifest
 import android.app.LocaleManager
 import android.content.Context
+import android.content.res.Configuration
 import android.content.pm.PackageManager
 import android.content.ClipData
 import android.content.Intent
 import android.graphics.Bitmap
+import android.graphics.Color as AndroidColor
 import android.net.Uri
 import android.os.Bundle
 import android.os.Build
@@ -14,6 +16,7 @@ import android.os.LocaleList
 import android.os.SystemClock
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -194,6 +197,9 @@ import com.rameshta.quietpdf.pdf.ScannerColorMode
 import com.rameshta.quietpdf.pdf.ScannerEnhancementSettings
 import com.rameshta.quietpdf.ui.reader.PdfReaderScreen
 import com.rameshta.quietpdf.ui.theme.QuietPDFTheme
+import com.rameshta.quietpdf.ui.theme.AppThemeMode
+import com.rameshta.quietpdf.ui.theme.AppThemePreferences
+import com.rameshta.quietpdf.ui.theme.LauncherIconController
 import com.rameshta.quietpdf.ads.AdMobController
 import com.rameshta.quietpdf.ads.AdPlacementPolicy
 import com.rameshta.quietpdf.ads.HomeBannerAd
@@ -224,6 +230,9 @@ import java.util.Locale
 class MainActivity : ComponentActivity(), DefaultLifecycleObserver {
     private val viewModel: PdfOpenViewModel by viewModels()
     private val adMobController = AdMobController()
+    private lateinit var themePreferences: AppThemePreferences
+    private lateinit var launcherIconController: LauncherIconController
+    private var selectedThemeMode by mutableStateOf(AppThemeMode.Light)
     private val fullScreenAds by lazy {
         processAdCoordinator ?: FullScreenAdCoordinator(
             applicationContext,
@@ -252,7 +261,14 @@ class MainActivity : ComponentActivity(), DefaultLifecycleObserver {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super<ComponentActivity>.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        val systemThemeFallback = if (
+            resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK ==
+            Configuration.UI_MODE_NIGHT_YES
+        ) AppThemeMode.Dark else AppThemeMode.Light
+        themePreferences = AppThemePreferences(this)
+        launcherIconController = LauncherIconController(this)
+        selectedThemeMode = themePreferences.read(systemThemeFallback)
+        applyThemeChrome(selectedThemeMode)
         ProcessLifecycleOwner.get().lifecycle.addObserver(this)
         if (savedInstanceState == null && !processSessionActive) {
             processSessionActive = true
@@ -262,7 +278,7 @@ class MainActivity : ComponentActivity(), DefaultLifecycleObserver {
         if (savedInstanceState == null) openFromIntent(intent)
 
         setContent {
-            QuietPDFTheme {
+            QuietPDFTheme(darkTheme = selectedThemeMode == AppThemeMode.Dark) {
                 val adMobState by adMobController.state.collectAsState()
                 LaunchedEffect(adMobState.canRequestAds) {
                     adsConsentAllowsRequests = adMobState.canRequestAds
@@ -697,6 +713,8 @@ class MainActivity : ComponentActivity(), DefaultLifecycleObserver {
                     onToggleFavoriteTool = viewModel::toggleFavoriteTool,
                     onSharePdf = ::sharePdf,
                     settings = QuietPdfSettings(
+                        themeMode = selectedThemeMode,
+                        onChangeTheme = ::changeAppTheme,
                         selectedLanguageTag = currentAppLanguageTag(),
                         onChangeLanguage = ::changeAppLanguage,
                         adPrivacyOptionsRequired = adMobState.privacyOptionsRequired,
@@ -1061,6 +1079,9 @@ class MainActivity : ComponentActivity(), DefaultLifecycleObserver {
     override fun onStop(owner: LifecycleOwner) {
         if (!processIsForeground) return
         processIsForeground = false
+        // Some launchers move the task to the background when its active alias changes.
+        // Apply the queued icon only after the user has naturally left QuietPDF.
+        launcherIconController.apply(selectedThemeMode)
         if (externalTransitionActive) return
         if (fullScreenAds.isFullScreenAdActive) {
             processFullScreenReturnPending = true
@@ -1198,6 +1219,22 @@ class MainActivity : ComponentActivity(), DefaultLifecycleObserver {
         }
     }
 
+    private fun applyThemeChrome(mode: AppThemeMode) {
+        val style = if (mode == AppThemeMode.Dark) {
+            SystemBarStyle.dark(AndroidColor.TRANSPARENT)
+        } else {
+            SystemBarStyle.light(AndroidColor.TRANSPARENT, AndroidColor.TRANSPARENT)
+        }
+        enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
+    }
+
+    private fun changeAppTheme(mode: AppThemeMode) {
+        if (mode == selectedThemeMode) return
+        themePreferences.write(mode)
+        applyThemeChrome(mode)
+        selectedThemeMode = mode
+    }
+
     private fun retainDirectoryPermission(uri: Uri) {
         try {
             contentResolver.takePersistableUriPermission(
@@ -1242,6 +1279,8 @@ private enum class SmartHomeDestination { Home, Files, Tools, History, Search, S
 private enum class SettingsPage { Overview, Language, Privacy, Advertising, About }
 
 data class QuietPdfSettings(
+    val themeMode: AppThemeMode = AppThemeMode.Light,
+    val onChangeTheme: (AppThemeMode) -> Unit = {},
     val selectedLanguageTag: String = "",
     val onChangeLanguage: (String) -> Unit = {},
     val adPrivacyOptionsRequired: Boolean = false,
@@ -1758,6 +1797,8 @@ fun QuietPdfApp(
                     onNavigate = navigateTo,
                     settingsPage = settingsPage,
                     onOpenSettingsPage = { settingsPage = it },
+                    themeMode = settings.themeMode,
+                    onChangeTheme = settings.onChangeTheme,
                     selectedLanguageTag = settings.selectedLanguageTag,
                     onChangeLanguage = settings.onChangeLanguage,
                     adPrivacyOptionsRequired = settings.adPrivacyOptionsRequired,
@@ -3692,6 +3733,8 @@ private fun OpenPdfContent(
     onNavigate: (SmartHomeDestination) -> Unit,
     settingsPage: SettingsPage,
     onOpenSettingsPage: (SettingsPage) -> Unit,
+    themeMode: AppThemeMode,
+    onChangeTheme: (AppThemeMode) -> Unit,
     selectedLanguageTag: String,
     onChangeLanguage: (String) -> Unit,
     adPrivacyOptionsRequired: Boolean,
@@ -4142,6 +4185,8 @@ private fun OpenPdfContent(
                 onNavigate = onNavigate,
                 settingsPage = settingsPage,
                 onOpenSettingsPage = onOpenSettingsPage,
+                themeMode = themeMode,
+                onChangeTheme = onChangeTheme,
                 selectedLanguageTag = selectedLanguageTag,
                 onChangeLanguage = onChangeLanguage,
                 adPrivacyOptionsRequired = adPrivacyOptionsRequired,
@@ -5324,6 +5369,8 @@ private fun PdfHistoryOperation.suggestedSmartTool(): SmartTool? = when (this) {
 private fun SettingsContent(
     page: SettingsPage,
     onOpenPage: (SettingsPage) -> Unit,
+    themeMode: AppThemeMode,
+    onChangeTheme: (AppThemeMode) -> Unit,
     selectedLanguageTag: String,
     onChangeLanguage: (String) -> Unit,
     adPrivacyOptionsRequired: Boolean,
@@ -5356,6 +5403,49 @@ private fun SettingsContent(
             modifier = Modifier.fillMaxWidth().testTag("settings_content"),
             verticalArrangement = Arrangement.spacedBy(20.dp),
         ) {
+            SettingsCard(
+                title = stringResource(R.string.settings_appearance_title),
+                description = stringResource(
+                    R.string.settings_appearance_current,
+                    stringResource(
+                        if (themeMode == AppThemeMode.Dark) {
+                            R.string.settings_theme_dark
+                        } else {
+                            R.string.settings_theme_light
+                        },
+                    ),
+                ),
+                testTag = "settings_theme_card",
+                action = {
+                    Column {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Text(
+                                text = stringResource(R.string.settings_dark_theme_toggle),
+                                style = MaterialTheme.typography.titleMedium,
+                            )
+                            Switch(
+                                checked = themeMode == AppThemeMode.Dark,
+                                onCheckedChange = { enabled ->
+                                    onChangeTheme(
+                                        if (enabled) AppThemeMode.Dark else AppThemeMode.Light,
+                                    )
+                                },
+                                modifier = Modifier.testTag("settings_dark_theme_switch"),
+                            )
+                        }
+                        Text(
+                            text = stringResource(R.string.settings_theme_icon_note),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 8.dp),
+                        )
+                    }
+                },
+            )
             SettingsCard(
                 title = stringResource(R.string.settings_language_title),
                 description = stringResource(
@@ -5602,6 +5692,8 @@ private fun IdleContent(
     onNavigate: (SmartHomeDestination) -> Unit,
     settingsPage: SettingsPage,
     onOpenSettingsPage: (SettingsPage) -> Unit,
+    themeMode: AppThemeMode,
+    onChangeTheme: (AppThemeMode) -> Unit,
     selectedLanguageTag: String,
     onChangeLanguage: (String) -> Unit,
     adPrivacyOptionsRequired: Boolean,
@@ -5676,6 +5768,8 @@ private fun IdleContent(
         SettingsContent(
             page = settingsPage,
             onOpenPage = onOpenSettingsPage,
+            themeMode = themeMode,
+            onChangeTheme = onChangeTheme,
             selectedLanguageTag = selectedLanguageTag,
             onChangeLanguage = onChangeLanguage,
             adPrivacyOptionsRequired = adPrivacyOptionsRequired,

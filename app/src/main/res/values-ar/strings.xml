@@ -639,6 +639,12 @@
     <string name="smart_home_settings_unavailable">إعدادات Android غير متوفرة على هذا الجهاز.</string>
     <string name="settings_back">العودة</string>
     <string name="settings_page_description">اختر كيف يبدو QuietPDF ويتعامل مع تفضيلات الخصوصية.</string>
+    <string name="settings_appearance_title">المظهر</string>
+    <string name="settings_appearance_current">الحالي: %1$s</string>
+    <string name="settings_theme_light">فاتح</string>
+    <string name="settings_theme_dark">داكن</string>
+    <string name="settings_dark_theme_toggle">المظهر الداكن</string>
+    <string name="settings_theme_icon_note">تتغير أيقونة المشغّل لتطابق هذا المظهر. قد تحتاج بعض المشغّلات إلى لحظة للتحديث.</string>
     <string name="settings_language_title">اللغة</string>
     <string name="settings_language_description">قم بتغيير اللغة المستخدمة خلال QuietPDF.</string>
     <string name="settings_language_current">الحالي: %1$s</string>
