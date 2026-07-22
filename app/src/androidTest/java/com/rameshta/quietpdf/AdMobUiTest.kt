@@ -34,7 +34,7 @@ class AdMobUiTest {
     @Test
     fun consentedBannerAppearsOnEveryNavigationScreenAndPrivacyDisclosureIsVisible() {
         setApp()
-        composeRule.onNodeWithTag("home_banner_top_spacing").assertIsDisplayed()
+        composeRule.onAllNodesWithTag("home_banner_top_spacing").assertCountEquals(0)
         composeRule.onNodeWithTag("fake_home_banner").assertIsDisplayed()
         composeRule.onNodeWithTag("ad_privacy_disclosure").assertIsDisplayed()
 
@@ -52,7 +52,6 @@ class AdMobUiTest {
     @Test
     fun bannerIsAbsentWithoutConsent() {
         setApp(adsCanLoad = false)
-        composeRule.onAllNodesWithTag("home_banner_top_spacing").assertCountEquals(0)
         composeRule.onAllNodesWithTag("fake_home_banner").assertCountEquals(0)
     }
 
@@ -62,7 +61,6 @@ class AdMobUiTest {
             adsCanLoad = true,
             imagesToPdfState = ImagesToPdfState.Configuring(imageCount = 2),
         )
-        composeRule.onAllNodesWithTag("home_banner_top_spacing").assertCountEquals(0)
         composeRule.onAllNodesWithTag("fake_home_banner").assertCountEquals(0)
     }
 

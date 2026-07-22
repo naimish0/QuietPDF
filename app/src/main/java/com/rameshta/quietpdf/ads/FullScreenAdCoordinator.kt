@@ -28,6 +28,8 @@ class FullScreenAdCoordinator(
     private var appOpenLoading = false
     private var appOpenLoadedAtMillis = 0L
 
+    val isFullScreenAdActive: Boolean get() = policy.isFullScreenAdActive
+
     fun beginSession() = policy.beginSession()
     fun completeSession() = policy.completeSession()
     fun recordSuccessfulWorkflow(completionId: String) =
@@ -80,6 +82,7 @@ class FullScreenAdCoordinator(
         consentAllowsAds: Boolean,
         safeHomeTransition: Boolean,
         homeAlreadyInteractive: Boolean,
+        backgroundDurationMillis: Long?,
     ): Boolean {
         discardExpiredAppOpen()
         val ad = appOpen
@@ -88,6 +91,9 @@ class FullScreenAdCoordinator(
                 adAvailableAndFresh = ad != null,
                 safeHomeTransition = safeHomeTransition,
                 homeAlreadyInteractive = homeAlreadyInteractive,
+                qualifiedForegroundTransition = isQualifiedAppOpenForegroundTransition(
+                    backgroundDurationMillis,
+                ),
             )
         ) {
             preload(consentAllowsAds)
@@ -163,3 +169,7 @@ class FullScreenAdCoordinator(
         ) appOpen = null
     }
 }
+
+internal fun isQualifiedAppOpenForegroundTransition(backgroundDurationMillis: Long?): Boolean =
+    backgroundDurationMillis == null ||
+        backgroundDurationMillis >= FullScreenAdPolicy.MIN_BACKGROUND_MILLIS

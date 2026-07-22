@@ -85,7 +85,7 @@ class FullScreenAdPolicyTest {
     }
 
     @Test
-    fun appOpenHonorsHomeReadinessAndFourHourIntervalWithoutItsOwnDailyLimit() {
+    fun appOpenHonorsHomeReadinessAndFourHourInterval() {
         store.completedSessionCount = 2
         assertFalse(policy.tryAppOpen(homeInteractive = true))
         assertTrue(policy.tryAppOpen())
@@ -99,9 +99,40 @@ class FullScreenAdPolicyTest {
         assertTrue(policy.tryAppOpen())
         policy.onAdShown(FullScreenAdFormat.AppOpen)
         policy.release(FullScreenAdFormat.AppOpen)
+    }
 
-        clock.elapsed += FullScreenAdPolicy.SHARED_COOLDOWN_MILLIS
-        clock.wall += FullScreenAdPolicy.APP_OPEN_INTERVAL_MILLIS
+    @Test
+    fun appOpenRequiresFiveMinuteBackgroundForResumeButAllowsColdStart() {
+        store.completedSessionCount = 2
+        assertTrue(isQualifiedAppOpenForegroundTransition(null))
+        assertFalse(
+            isQualifiedAppOpenForegroundTransition(FullScreenAdPolicy.MIN_BACKGROUND_MILLIS - 1),
+        )
+        assertTrue(
+            isQualifiedAppOpenForegroundTransition(FullScreenAdPolicy.MIN_BACKGROUND_MILLIS),
+        )
+        assertFalse(
+            policy.tryBeginAppOpen(true, true, true, false, qualifiedForegroundTransition = false),
+        )
+        assertTrue(
+            policy.tryBeginAppOpen(true, true, true, false, qualifiedForegroundTransition = true),
+        )
+    }
+
+    @Test
+    fun appOpenIsLimitedToTwoImpressionsPerCalendarDay() {
+        store.completedSessionCount = 2
+        repeat(FullScreenAdPolicy.MAX_APP_OPEN_ADS_PER_DAY) {
+            assertTrue(policy.tryAppOpen())
+            policy.onAdShown(FullScreenAdFormat.AppOpen)
+            policy.release(FullScreenAdFormat.AppOpen)
+            store.lastAppOpenWallMillis = Long.MIN_VALUE
+            clock.elapsed += FullScreenAdPolicy.SHARED_COOLDOWN_MILLIS
+            clock.wall += FullScreenAdPolicy.SHARED_COOLDOWN_MILLIS
+        }
+        assertFalse(policy.tryAppOpen())
+
+        clock.wall += 24 * 60 * 60 * 1000L
         assertTrue(policy.tryAppOpen())
     }
 
@@ -162,5 +193,7 @@ class FullScreenAdPolicyTest {
         override var lastFullScreenWallMillis = Long.MIN_VALUE
         override var fullScreenDayKey = Int.MIN_VALUE
         override var fullScreenDayCount = 0
+        override var appOpenDayKey = Int.MIN_VALUE
+        override var appOpenDayCount = 0
     }
 }

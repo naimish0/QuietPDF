@@ -6,6 +6,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.junit4.v2.createComposeRule
@@ -91,7 +92,7 @@ class SmartHomeUiTest {
     }
 
     @Test
-    fun settingsIconOpensInAppCardsWithoutTopOfflineTag() {
+    fun everySettingsCardOpensADedicatedScreen() {
         val selectedLanguage = AtomicReference<String>()
         val advertisingClicks = AtomicInteger()
         setSmartHome(
@@ -110,19 +111,28 @@ class SmartHomeUiTest {
         composeRule.onNodeWithTag("settings_about_card").performScrollTo().assertIsDisplayed()
 
         composeRule.onNodeWithTag("settings_language_card").performScrollTo().performClick()
-        composeRule.onNodeWithTag("settings_language_dialog").assertIsDisplayed()
-        composeRule.onNodeWithTag("settings_language_system").assertIsDisplayed()
+        composeRule.onNodeWithTag("settings_language_screen").assertIsDisplayed()
+        composeRule.onNodeWithTag("settings_language_system").assertIsDisplayed().assertIsSelected()
         composeRule.onNodeWithTag("settings_language_hi").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithTag("settings_language_search").performTextInput("German")
         composeRule.onNodeWithTag("settings_language_de").performClick()
         assertEquals("de", selectedLanguage.get())
 
-        composeRule.onNodeWithTag("settings_privacy_policy").performScrollTo().performClick()
-        composeRule.onNodeWithTag("settings_privacy_policy_dialog").assertIsDisplayed()
-        composeRule.onNodeWithText("Close").performClick()
+        composeRule.onNodeWithTag("settings_back_action").performClick()
+        composeRule.onNodeWithTag("settings_privacy_card").performScrollTo().performClick()
+        composeRule.onNodeWithTag("settings_privacy_screen").assertIsDisplayed()
 
+        composeRule.onNodeWithTag("settings_back_action").performClick()
+        composeRule.onNodeWithTag("settings_advertising_card").performScrollTo().performClick()
+        composeRule.onNodeWithTag("settings_advertising_screen").assertIsDisplayed()
         composeRule.onNodeWithTag("settings_advertising_manage").performScrollTo().performClick()
         assertEquals(1, advertisingClicks.get())
+
+        composeRule.onNodeWithTag("settings_back_action").performClick()
+        composeRule.onNodeWithTag("settings_about_card").performScrollTo().performClick()
+        composeRule.onNodeWithTag("settings_about_screen").assertIsDisplayed()
+
+        composeRule.onNodeWithTag("settings_back_action").performClick()
         composeRule.onNodeWithTag("settings_back_action").performClick()
         composeRule.onNodeWithTag("smart_home_settings_action").assertIsDisplayed()
     }

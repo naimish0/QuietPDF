@@ -23,6 +23,12 @@ class FullScreenAdStore(context: Context) : FullScreenAdPersistence {
     override var fullScreenDayCount: Int
         get() = preferences.getInt(FULL_SCREEN_DAY_COUNT, 0)
         set(value) { preferences.edit().putInt(FULL_SCREEN_DAY_COUNT, value).apply() }
+    override var appOpenDayKey: Int
+        get() = preferences.getInt(APP_OPEN_DAY, Int.MIN_VALUE)
+        set(value) { preferences.edit().putInt(APP_OPEN_DAY, value).apply() }
+    override var appOpenDayCount: Int
+        get() = preferences.getInt(APP_OPEN_DAY_COUNT, 0)
+        set(value) { preferences.edit().putInt(APP_OPEN_DAY_COUNT, value).apply() }
 
     private companion object {
         const val PREFERENCES_NAME = "full_screen_ad_frequency"
@@ -32,5 +38,7 @@ class FullScreenAdStore(context: Context) : FullScreenAdPersistence {
         const val LAST_FULL_SCREEN = "last_full_screen_wall_millis"
         const val FULL_SCREEN_DAY = "full_screen_day"
         const val FULL_SCREEN_DAY_COUNT = "full_screen_day_count"
+        const val APP_OPEN_DAY = "app_open_day"
+        const val APP_OPEN_DAY_COUNT = "app_open_day_count"
     }
 }
