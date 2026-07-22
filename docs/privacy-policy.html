@@ -1,0 +1,519 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="description" content="Privacy Policy for QuietPDF: Offline PDF Tools.">
+  <title>Privacy Policy — QuietPDF</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --primary: #2563eb;
+      --primary-soft: #dbeafe;
+      --background: #f8fafc;
+      --surface: #ffffff;
+      --text: #0f172a;
+      --muted: #475569;
+      --border: #dbe3ee;
+      --success: #15803d;
+      --shadow: 0 18px 48px rgba(15, 23, 42, 0.08);
+    }
+
+    * { box-sizing: border-box; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      margin: 0;
+      background: var(--background);
+      color: var(--text);
+      font-family: Inter, Roboto, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 16px;
+      line-height: 1.7;
+    }
+
+    a { color: #1d4ed8; text-underline-offset: 3px; }
+    a:hover { text-decoration-thickness: 2px; }
+
+    .page {
+      width: min(900px, calc(100% - 32px));
+      margin: 48px auto;
+    }
+
+    .hero,
+    main {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow);
+    }
+
+    .hero {
+      position: relative;
+      overflow: hidden;
+      padding: clamp(32px, 7vw, 72px);
+      border-radius: 36px 36px 0 0;
+      border-bottom: 0;
+    }
+
+    .hero::after {
+      content: "";
+      position: absolute;
+      width: 260px;
+      height: 260px;
+      right: -90px;
+      top: -110px;
+      border-radius: 50%;
+      background: var(--primary-soft);
+      pointer-events: none;
+    }
+
+    .brand {
+      position: relative;
+      z-index: 1;
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--primary);
+      font-weight: 750;
+      letter-spacing: -0.02em;
+    }
+
+    .mark {
+      display: grid;
+      place-items: center;
+      width: 38px;
+      height: 38px;
+      border-radius: 11px;
+      background: var(--primary);
+      color: white;
+      font-size: 20px;
+      font-weight: 800;
+    }
+
+    h1 {
+      position: relative;
+      z-index: 1;
+      max-width: 680px;
+      margin: 28px 0 12px;
+      font-size: clamp(2.3rem, 7vw, 4.6rem);
+      line-height: 1.02;
+      letter-spacing: -0.055em;
+    }
+
+    .summary {
+      position: relative;
+      z-index: 1;
+      max-width: 680px;
+      margin: 0;
+      color: var(--muted);
+      font-size: 1.1rem;
+    }
+
+    .updated {
+      display: inline-block;
+      margin-top: 24px;
+      padding: 7px 14px;
+      border-radius: 999px;
+      background: var(--primary-soft);
+      color: #1e40af;
+      font-size: 0.875rem;
+      font-weight: 700;
+    }
+
+    main {
+      padding: clamp(28px, 6vw, 64px);
+      border-radius: 0 0 36px 36px;
+    }
+
+    .notice {
+      margin: 0 0 44px;
+      padding: 22px 24px;
+      border-left: 5px solid var(--success);
+      border-radius: 0 18px 18px 0;
+      background: #f0fdf4;
+    }
+
+    .notice strong { color: var(--success); }
+
+    nav {
+      margin-bottom: 48px;
+      padding: 24px;
+      border: 1px solid var(--border);
+      border-radius: 22px;
+      background: #f8fafc;
+    }
+
+    nav strong { display: block; margin-bottom: 10px; }
+    nav ol { columns: 2; margin: 0; padding-left: 22px; }
+
+    section { scroll-margin-top: 24px; }
+    section + section { margin-top: 46px; }
+
+    h2 {
+      margin: 0 0 14px;
+      font-size: clamp(1.45rem, 4vw, 2rem);
+      line-height: 1.2;
+      letter-spacing: -0.025em;
+    }
+
+    h3 { margin: 28px 0 8px; font-size: 1.08rem; }
+    p { margin: 0 0 16px; }
+    ul { margin: 10px 0 18px; padding-left: 24px; }
+    li + li { margin-top: 8px; }
+
+    .table-wrap { overflow-x: auto; margin: 22px 0; }
+
+    table {
+      width: 100%;
+      min-width: 650px;
+      border-collapse: collapse;
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      overflow: hidden;
+    }
+
+    th, td {
+      padding: 15px 16px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+      text-align: left;
+    }
+
+    th { background: #eff6ff; color: #1e3a8a; }
+    tr:last-child td { border-bottom: 0; }
+
+    .contact {
+      padding: 24px;
+      border-radius: 22px;
+      background: #eff6ff;
+    }
+
+    footer {
+      padding: 28px 16px 0;
+      color: var(--muted);
+      text-align: center;
+      font-size: 0.9rem;
+    }
+
+    @media (max-width: 640px) {
+      .page { width: min(100% - 20px, 900px); margin: 10px auto 28px; }
+      .hero { border-radius: 26px 26px 0 0; }
+      main { border-radius: 0 0 26px 26px; }
+      nav ol { columns: 1; }
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        color-scheme: dark;
+        --background: #07101f;
+        --surface: #0f172a;
+        --text: #f8fafc;
+        --muted: #cbd5e1;
+        --border: #334155;
+        --primary-soft: #172554;
+        --shadow: none;
+      }
+      a { color: #93c5fd; }
+      nav { background: #111c30; }
+      .notice { background: #052e16; }
+      .updated { color: #bfdbfe; }
+      th { background: #172554; color: #dbeafe; }
+      .contact { background: #172554; }
+    }
+
+    @media print {
+      body { background: white; color: black; }
+      .page { width: 100%; margin: 0; }
+      .hero, main { border: 0; box-shadow: none; }
+      nav { display: none; }
+      a { color: black; }
+    }
+  </style>
+</head>
+<body>
+<div class="page">
+  <header class="hero">
+    <div class="brand"><span class="mark" aria-hidden="true">Q</span>QuietPDF</div>
+    <h1>Privacy Policy</h1>
+    <p class="summary">
+      QuietPDF keeps PDF processing on your Android device. This policy explains what the app
+      accesses, what stays local, and what limited data may be processed by advertising services.
+    </p>
+    <span class="updated">Effective and last updated: July 22, 2026</span>
+  </header>
+
+  <main>
+    <div class="notice">
+      <strong>The short version:</strong> QuietPDF does not upload your PDFs, document contents,
+      scans, passwords, signatures, filenames, or form data to QuietPDF servers. Core PDF tools
+      work locally. The app uses Google advertising services, which may process limited device,
+      network, interaction, and diagnostic data as described below.
+    </div>
+
+    <nav aria-label="Policy contents">
+      <strong>Contents</strong>
+      <ol>
+        <li><a href="#scope">Scope and developer</a></li>
+        <li><a href="#documents">Documents and local processing</a></li>
+        <li><a href="#local-data">Information stored locally</a></li>
+        <li><a href="#permissions">Permissions</a></li>
+        <li><a href="#ads">Advertising and consent</a></li>
+        <li><a href="#sharing">Sharing and file providers</a></li>
+        <li><a href="#retention">Retention and deletion</a></li>
+        <li><a href="#security">Security</a></li>
+        <li><a href="#children">Children</a></li>
+        <li><a href="#rights">Choices and rights</a></li>
+        <li><a href="#changes">Policy changes</a></li>
+        <li><a href="#contact">Contact</a></li>
+      </ol>
+    </nav>
+
+    <section id="scope">
+      <h2>1. Scope and developer</h2>
+      <p>
+        This Privacy Policy applies to <strong>QuietPDF: Offline PDF Tools</strong>
+        (package name <code>com.rameshta.quietpdf</code>), referred to as “QuietPDF,” “the app,”
+        “we,” or “us.” QuietPDF is developed and published by <strong>Naimish Gupta</strong>.
+      </p>
+      <p>
+        QuietPDF does not require an account, login, or subscription account. We do not operate a
+        server that receives your documents or document metadata.
+      </p>
+    </section>
+
+    <section id="documents">
+      <h2>2. Documents and local processing</h2>
+      <p>
+        PDF reading, scanning, image-to-PDF creation, merging, splitting, page organization,
+        compression, password operations, watermarking, image extraction, form filling, signing,
+        and annotation are performed locally on your device.
+      </p>
+      <p>QuietPDF does not send the following to QuietPDF or advertising servers:</p>
+      <ul>
+        <li>PDF or image contents, extracted text, scans, or page previews;</li>
+        <li>document filenames, document URIs, raw file paths, or PDF metadata;</li>
+        <li>passwords, form values, signatures, annotations, or watermark text; or</li>
+        <li>the output files created by QuietPDF.</li>
+      </ul>
+      <p>
+        Files remain in locations you select through Android or in app-controlled temporary storage
+        while an operation is being completed. Output files remain under your control until you
+        delete them.
+      </p>
+    </section>
+
+    <section id="local-data">
+      <h2>3. Information stored locally</h2>
+      <p>
+        To provide app features, QuietPDF may store the following information in private app
+        preferences on your device:
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+          <tr><th>Local information</th><th>Purpose</th><th>Shared off device?</th></tr>
+          </thead>
+          <tbody>
+          <tr>
+            <td>Recent and favorite document URI, display name, page count, and timestamps</td>
+            <td>Recents, favorites, and file navigation</td>
+            <td>No</td>
+          </tr>
+          <tr>
+            <td>Reading position and bookmarked page numbers, keyed by a hash of the document URI</td>
+            <td>Resume reading and bookmarks</td>
+            <td>No</td>
+          </tr>
+          <tr>
+            <td>Completed operation type and time</td>
+            <td>Local history</td>
+            <td>No</td>
+          </tr>
+          <tr>
+            <td>Favorite tool selections</td>
+            <td>Home-screen personalization</td>
+            <td>No</td>
+          </tr>
+          <tr>
+            <td>Session, successful-workflow, and advertisement timing counters</td>
+            <td>Limit advertisement frequency and avoid disruptive placement</td>
+            <td>No</td>
+          </tr>
+          <tr>
+            <td>Consent and privacy choices managed by Google UMP</td>
+            <td>Determine whether advertising requests are permitted</td>
+            <td>May be processed by Google</td>
+          </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        QuietPDF does not include a separate analytics service or crash-reporting service. Android,
+        Google Play, or your device manufacturer may independently provide platform-level services
+        under their own terms and privacy policies.
+      </p>
+    </section>
+
+    <section id="permissions">
+      <h2>4. Device permissions and access</h2>
+      <h3>Camera</h3>
+      <p>
+        Camera access is requested only when you use the document scanner. Captured images are used
+        to preview, correct, enhance, and create PDFs locally. QuietPDF does not upload camera images.
+        You can deny or revoke camera permission in Android Settings; non-camera PDF tools will
+        remain available.
+      </p>
+      <h3>Internet and network state</h3>
+      <p>
+        Internet and network-state access are used for Google consent and advertising services.
+        Core PDF processing does not require an internet connection.
+      </p>
+      <h3>Files selected through Android</h3>
+      <p>
+        QuietPDF uses Android’s system file and document interfaces to let you choose input and
+        output locations. It does not request broad access to all files on your device. Access is
+        limited to files and locations you select or permissions Android grants for the requested
+        operation.
+      </p>
+    </section>
+
+    <section id="ads">
+      <h2>5. Advertising and consent</h2>
+      <p>
+        QuietPDF uses the Google Mobile Ads SDK (AdMob) and Google User Messaging Platform (UMP).
+        Where required, UMP requests or presents privacy choices before QuietPDF initializes and
+        requests ads. Advertising failure or refusal does not block core PDF functionality.
+      </p>
+      <p>
+        According to Google’s current Mobile Ads SDK disclosure, the SDK may automatically collect
+        and share the following for advertising, analytics, and fraud-prevention purposes:
+      </p>
+      <ul>
+        <li>IP address, which may be used to estimate general location;</li>
+        <li>user product interactions, such as app launches, taps, and ad interactions;</li>
+        <li>diagnostic and performance information; and</li>
+        <li>device and account identifiers, including the Android advertising ID and app set ID
+          where available.</li>
+      </ul>
+      <p>
+        Google states that this SDK data is encrypted in transit. The data Google receives is
+        governed by Google’s policies and your consent or device settings. QuietPDF does not provide
+        document contents, filenames, document metadata, passwords, signatures, or form data to the
+        advertising SDK.
+      </p>
+      <p>
+        Learn more from
+        <a href="https://developers.google.com/admob/android/privacy/play-data-disclosure">Google’s Mobile Ads data disclosure</a>,
+        <a href="https://policies.google.com/privacy">Google’s Privacy Policy</a>, and
+        <a href="https://policies.google.com/technologies/partner-sites">How Google uses information from partner apps</a>.
+      </p>
+    </section>
+
+    <section id="sharing">
+      <h2>6. User-directed sharing and third parties</h2>
+      <p>
+        When you choose Share, QuietPDF sends the selected file or prepared image only to Android’s
+        Sharesheet and the destination app you choose. That destination may copy, upload, retain, or
+        process the file under its own privacy policy. QuietPDF cannot control a third-party app
+        after you intentionally share content with it.
+      </p>
+      <p>
+        Temporary share files are placed in private cache storage and exposed through a restricted
+        Android content URI with temporary read permission. QuietPDF cleans its prepared extracted-
+        image sharing cache as part of the sharing workflow.
+      </p>
+    </section>
+
+    <section id="retention">
+      <h2>7. Retention and deletion</h2>
+      <ul>
+        <li>Document outputs remain where you saved them until you delete them.</li>
+        <li>Recents, favorites, bookmarks, and history remain locally until you remove them, clear
+          the relevant list, clear the app’s storage, or uninstall QuietPDF.</li>
+        <li>Temporary processing and sharing files are removed when no longer required where the
+          workflow supports cleanup. Android may also clear cache storage.</li>
+        <li>QuietPDF disables Android cloud backup and device-to-device transfer for its private
+          files, databases, and preferences.</li>
+      </ul>
+      <p>
+        Because QuietPDF has no user accounts and does not upload document data to QuietPDF servers,
+        there is no remote QuietPDF account record to delete. To erase private app data, use the
+        in-app removal controls where available, Android’s “Clear storage” control, or uninstall the
+        app. These actions do not automatically delete PDF outputs you saved outside private app
+        storage.
+      </p>
+    </section>
+
+    <section id="security">
+      <h2>8. Security</h2>
+      <p>
+        QuietPDF uses Android app-private storage for preferences and temporary internal files,
+        Android content URIs for file access and sharing, temporary read permissions for shared
+        files, disabled cleartext network traffic, and disabled app backup/device transfer. Core
+        document processing is isolated from the advertising implementation.
+      </p>
+      <p>
+        No storage or transmission system can be guaranteed completely secure. You are responsible
+        for protecting access to your device and for choosing trustworthy destinations when sharing
+        files.
+      </p>
+    </section>
+
+    <section id="children">
+      <h2>9. Children’s privacy</h2>
+      <p>
+        QuietPDF is a general productivity utility and is not directed to children. We do not
+        knowingly collect children’s document contents or operate user accounts. Advertising and
+        consent handling may vary based on applicable law, region, Play Console configuration, and
+        Google’s policies. If you believe a child has provided personal information through a
+        channel controlled by us, contact us using the address below.
+      </p>
+    </section>
+
+    <section id="rights">
+      <h2>10. Your choices and privacy rights</h2>
+      <p>Depending on your location, you may have rights concerning personal data. QuietPDF provides:</p>
+      <ul>
+        <li>local removal and clearing controls for recent files, favorites, bookmarks, and history;</li>
+        <li>Android permission controls for camera access;</li>
+        <li>a Google privacy-options entry point when UMP indicates it is required; and</li>
+        <li>Android advertising-ID controls and
+          <a href="https://adssettings.google.com/">Google ad settings</a>.</li>
+      </ul>
+      <p>
+        You may contact us to ask a privacy question or exercise an applicable right. Because we do
+        not maintain QuietPDF accounts or receive your locally stored document data, we may not
+        possess data that can be retrieved or deleted remotely. Requests concerning data processed
+        independently by Google or another app should be directed to that provider.
+      </p>
+    </section>
+
+    <section id="changes">
+      <h2>11. Changes to this policy</h2>
+      <p>
+        We may update this Privacy Policy when QuietPDF’s features, SDKs, legal requirements, or data
+        practices change. We will update the effective date above and publish the revised policy at
+        the same public location. Material changes may also be communicated in the app or store
+        listing where appropriate.
+      </p>
+    </section>
+
+    <section id="contact">
+      <h2>12. Contact</h2>
+      <div class="contact">
+        <p><strong>Developer and privacy contact:</strong> Naimish Gupta</p>
+        <p><strong>App:</strong> QuietPDF: Offline PDF Tools</p>
+        <p><strong>Email:</strong>
+          <a href="mailto:naimishgupta983842377@gmail.com">naimish.app@gmail.com</a>
+        </p>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    © 2026 Naimish Gupta · QuietPDF: Offline PDF Tools
+  </footer>
+</div>
+</body>
+</html>
