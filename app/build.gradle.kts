@@ -1,3 +1,5 @@
+import java.io.File
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
@@ -18,9 +20,67 @@ abstract class GeneratePrivacyPolicyAsset : org.gradle.api.DefaultTask() {
     }
 }
 
+abstract class RenameApkArtifact : org.gradle.api.DefaultTask() {
+    @get:org.gradle.api.tasks.InputFiles
+    abstract val inputDirectory: org.gradle.api.file.DirectoryProperty
+
+    @get:org.gradle.api.tasks.OutputDirectory
+    abstract val outputDirectory: org.gradle.api.file.DirectoryProperty
+
+    @get:org.gradle.api.tasks.Input
+    abstract val versionName: org.gradle.api.provider.Property<String>
+
+    @get:org.gradle.api.tasks.Input
+    abstract val versionCode: org.gradle.api.provider.Property<Int>
+
+    @get:org.gradle.api.tasks.Input
+    abstract val variantName: org.gradle.api.provider.Property<String>
+
+    @get:org.gradle.api.tasks.Internal
+    abstract val transformationRequest: org.gradle.api.provider.Property<
+        com.android.build.api.artifact.ArtifactTransformationRequest<RenameApkArtifact>
+        >
+
+    @org.gradle.api.tasks.TaskAction
+    fun rename() {
+        outputDirectory.get().asFile.listFiles()
+            ?.filter { it.isFile && it.extension.equals("apk", ignoreCase = true) }
+            ?.forEach { staleApk ->
+                check(staleApk.delete()) { "Could not remove stale APK: ${staleApk.name}" }
+            }
+        transformationRequest.get().submit(this) { builtArtifact ->
+            val input = File(builtArtifact.outputFile)
+            val output = outputDirectory.file(
+                "QuietPDF-${variantName.get()}-${versionName.get()}-${versionCode.get()}.apk",
+            ).get().asFile
+            input.copyTo(output, overwrite = true)
+            output
+        }
+    }
+}
+
 val generatePrivacyPolicyAsset by tasks.registering(GeneratePrivacyPolicyAsset::class) {
     sourceFile.set(rootProject.layout.projectDirectory.file("docs/index.html"))
     outputDirectory.set(layout.buildDirectory.dir("generated/privacyPolicyAssets"))
+}
+
+val quietPdfVersionCode = providers.gradleProperty("VERSION_CODE").orNull
+    ?.toIntOrNull()
+    ?.takeIf { it in 1..2_100_000_000 }
+    ?: throw GradleException(
+        "VERSION_CODE must be an integer from 1 through 2100000000 in gradle.properties or -P.",
+    )
+val quietPdfVersionName = providers.gradleProperty("VERSION_NAME").orNull
+    ?.takeIf { Regex("^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?$").matches(it) }
+    ?: throw GradleException(
+        "VERSION_NAME must use semantic versioning, for example 1.1.0 or 1.1.0-beta.1.",
+    )
+val versionedArtifactDirectory = layout.buildDirectory.dir("outputs/versioned")
+
+val exportVersionedReleaseBundle by tasks.registering(org.gradle.api.tasks.Copy::class) {
+    from(layout.buildDirectory.file("outputs/bundle/release/app-release.aab"))
+    into(versionedArtifactDirectory)
+    rename { "QuietPDF-release-$quietPdfVersionName-$quietPdfVersionCode.aab" }
 }
 
 android {
@@ -31,8 +91,8 @@ android {
         applicationId = "com.rameshta.quietpdf"
         minSdk = 28
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = quietPdfVersionCode
+        versionName = quietPdfVersionName
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -121,6 +181,7 @@ android {
         compose = true
         buildConfig = true
     }
+
 }
 
 androidComponents {
@@ -129,6 +190,31 @@ androidComponents {
             generatePrivacyPolicyAsset,
             GeneratePrivacyPolicyAsset::outputDirectory,
         )
+
+        val renameApk = tasks.register<RenameApkArtifact>(
+            "rename${variant.name.replaceFirstChar(Char::uppercaseChar)}ApkArtifact",
+        ) {
+            versionName.set(quietPdfVersionName)
+            versionCode.set(quietPdfVersionCode)
+            variantName.set(variant.name)
+            outputDirectory.set(layout.buildDirectory.dir("outputs/apk/${variant.name}"))
+        }
+        val transformationRequest = variant.artifacts.use(renameApk)
+            .wiredWithDirectories(
+                RenameApkArtifact::inputDirectory,
+                RenameApkArtifact::outputDirectory,
+            )
+            .toTransformMany(com.android.build.api.artifact.SingleArtifact.APK)
+        renameApk.configure {
+            this.transformationRequest.set(transformationRequest)
+        }
+    }
+}
+
+// Bundles do not expose APK-style output naming, so keep a clearly named upload copy for AABs.
+tasks.configureEach {
+    when (name) {
+        "bundleRelease" -> finalizedBy(exportVersionedReleaseBundle)
     }
 }
 
