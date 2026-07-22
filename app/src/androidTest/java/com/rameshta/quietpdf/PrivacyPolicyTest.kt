@@ -19,6 +19,7 @@ class PrivacyPolicyTest {
         assertFalse(policy.contains("mailto:naimishgupta983842377@gmail.com"))
         assertTrue(policy.contains("intended for users aged 13 and older"))
         assertTrue(policy.contains("Selected app language"))
+        assertTrue(policy.contains("banner, native, interstitial, and app-open advertisements"))
         assertTrue(policy.contains("does not force an\n        age-restricted advertising treatment"))
         assertFalse(policy.contains("teen age-restricted treatment"))
     }

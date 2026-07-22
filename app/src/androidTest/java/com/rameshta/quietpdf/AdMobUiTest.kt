@@ -13,6 +13,7 @@ import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.rameshta.quietpdf.pdf.ImagesToPdfState
 import com.rameshta.quietpdf.pdf.PageRenderFailure
@@ -32,11 +33,12 @@ class AdMobUiTest {
     val composeRule = createComposeRule()
 
     @Test
-    fun consentedBannerAppearsOnEveryNavigationScreenAndPrivacyDisclosureIsVisible() {
+    fun nativeReplacesBannerOnHomeWhileBannerRemainsOnOtherNavigationScreens() {
         setApp()
         composeRule.onAllNodesWithTag("home_banner_top_spacing").assertCountEquals(0)
-        composeRule.onNodeWithTag("fake_home_banner").assertIsDisplayed()
         composeRule.onNodeWithTag("ad_privacy_disclosure").assertIsDisplayed()
+        composeRule.onNodeWithTag("fake_home_native").performScrollTo().assertIsDisplayed()
+        composeRule.onAllNodesWithTag("fake_home_banner").assertCountEquals(0)
 
         composeRule.onNodeWithTag("smart_home_nav_Files").performClick()
         composeRule.onNodeWithTag("fake_home_banner").assertIsDisplayed()
@@ -45,6 +47,8 @@ class AdMobUiTest {
         composeRule.onNodeWithTag("smart_home_nav_History").performClick()
         composeRule.onNodeWithTag("fake_home_banner").assertIsDisplayed()
         composeRule.onNodeWithTag("smart_home_nav_Home").performClick()
+        composeRule.onNodeWithTag("fake_home_native").performScrollTo().assertIsDisplayed()
+        composeRule.onAllNodesWithTag("fake_home_banner").assertCountEquals(0)
         composeRule.onNodeWithTag("smart_home_search_action").performClick()
         composeRule.onNodeWithTag("fake_home_banner").assertIsDisplayed()
     }
@@ -53,6 +57,7 @@ class AdMobUiTest {
     fun bannerIsAbsentWithoutConsent() {
         setApp(adsCanLoad = false)
         composeRule.onAllNodesWithTag("fake_home_banner").assertCountEquals(0)
+        composeRule.onAllNodesWithTag("fake_home_native").assertCountEquals(0)
     }
 
     @Test
@@ -62,6 +67,7 @@ class AdMobUiTest {
             imagesToPdfState = ImagesToPdfState.Configuring(imageCount = 2),
         )
         composeRule.onAllNodesWithTag("fake_home_banner").assertCountEquals(0)
+        composeRule.onAllNodesWithTag("fake_home_native").assertCountEquals(0)
     }
 
     @Test
@@ -100,8 +106,6 @@ class AdMobUiTest {
         composeRule.onNodeWithTag("smart_home_nav_Files").performClick()
         composeRule.onNodeWithTag("smart_home_nav_Tools").performClick()
         composeRule.onNodeWithTag("smart_home_nav_History").performClick()
-        composeRule.onNodeWithTag("smart_home_nav_Home").performClick()
-        composeRule.onNodeWithTag("smart_home_search_action").performClick()
         composeRule.runOnIdle {
             assertEquals(1, compositions)
             assertEquals(0, disposals)
@@ -124,6 +128,11 @@ class AdMobUiTest {
                     legacyHomeSections = false,
                     history = history,
                     adsCanLoad = adsCanLoad,
+                    homeNativeContent = {
+                        Box(
+                            Modifier.fillMaxWidth().height(10.dp).testTag("fake_home_native"),
+                        )
+                    },
                     homeBannerContent = {
                         DisposableEffect(Unit) {
                             onBannerComposed()

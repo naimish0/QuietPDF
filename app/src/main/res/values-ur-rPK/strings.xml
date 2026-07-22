@@ -659,7 +659,7 @@
     <string name="settings_close">بند</string>
     <string name="settings_advertising_title">ایڈورٹائزنگ</string>
     <string name="settings_advertising_card_description">اشتہاری رازداری کی معلومات دیکھیں اور دستیاب اختیارات منظم کریں۔</string>
-    <string name="settings_advertising_description">QuietPDF Google AdMob بینر، انٹرسٹیشل اور ایپ اوپن اشتہارات دکھا سکتا ہے۔ اشتہارات دستاویز کی کارروائی سے الگ ہوتے ہیں اور کبھی بھی آپ کے PDF مواد یا فائل نام وصول نہیں کرتے ہیں۔</string>
+    <string name="settings_advertising_description">QuietPDF Google AdMob بینر، نیٹو، انٹرسٹیشل اور ایپ اوپن اشتہارات دکھا سکتا ہے۔ اشتہارات دستاویز کی کارروائی سے الگ ہوتے ہیں اور کبھی بھی آپ کے PDF مواد یا فائل نام وصول نہیں کرتے ہیں۔</string>
     <string name="settings_advertising_not_required">QuietPDF Google AdMob اشتہارات دکھا سکتا ہے۔ اس ڈیوائس کے لیے فی الحال کوئی اضافی اشتہاری رازداری کے انتخاب کی ضرورت نہیں ہے۔</string>
     <string name="settings_advertising_manage">انتخاب کا نظم کریں۔</string>
     <string name="settings_advertising_unavailable">اشتہاری رازداری کے انتخاب ابھی دستیاب نہیں ہیں۔</string>

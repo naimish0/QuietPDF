@@ -660,7 +660,7 @@
     <string name="settings_close">近い</string>
     <string name="settings_advertising_title">広告</string>
     <string name="settings_advertising_card_description">広告のプライバシー情報を確認し、利用可能な設定を管理します。</string>
-    <string name="settings_advertising_description">QuietPDF では、Google AdMob バナー、インタースティシャル広告、アプリ起動時の広告が表示される場合があります。広告はドキュメント処理とは別のものであり、PDF コンテンツやファイル名を受け取ることはありません。</string>
+    <string name="settings_advertising_description">QuietPDF では、Google AdMob バナー、ネイティブ広告、インタースティシャル広告、アプリ起動時の広告が表示される場合があります。広告はドキュメント処理とは別のものであり、PDF コンテンツやファイル名を受け取ることはありません。</string>
     <string name="settings_advertising_not_required">QuietPDF では Google AdMob 広告が表示される場合があります。現在、このデバイスには追加の広告プライバシーの選択肢は必要ありません。</string>
     <string name="settings_advertising_manage">選択肢を管理する</string>
     <string name="settings_advertising_unavailable">現在、広告のプライバシーに関する選択肢は利用できません。</string>

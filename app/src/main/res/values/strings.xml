@@ -658,7 +658,7 @@
     <string name="settings_close">Close</string>
     <string name="settings_advertising_title">Advertising</string>
     <string name="settings_advertising_card_description">Review advertising privacy information and manage available choices.</string>
-    <string name="settings_advertising_description">QuietPDF may display Google AdMob banner, interstitial and app-open advertisements. Ads are separate from document processing and never receive your PDF contents or filenames.</string>
+    <string name="settings_advertising_description">QuietPDF may display Google AdMob banner, native, interstitial and app-open advertisements. Ads are separate from document processing and never receive your PDF contents or filenames.</string>
     <string name="settings_advertising_not_required">QuietPDF may display Google AdMob advertisements. No additional advertising privacy choices are currently required for this device.</string>
     <string name="settings_advertising_manage">Manage choices</string>
     <string name="settings_advertising_unavailable">Advertising privacy choices are not available right now.</string>

@@ -660,7 +660,7 @@
     <string name="settings_close">बंद करना</string>
     <string name="settings_advertising_title">विज्ञापन देना</string>
     <string name="settings_advertising_card_description">विज्ञापन गोपनीयता की जानकारी देखें और उपलब्ध विकल्प प्रबंधित करें।</string>
-    <string name="settings_advertising_description">क्वाइटपीडीएफ Google AdMob बैनर, इंटरस्टिशियल और ऐप-ओपन विज्ञापन प्रदर्शित कर सकता है। विज्ञापन दस्तावेज़ प्रसंस्करण से अलग होते हैं और कभी भी आपकी पीडीएफ सामग्री या फ़ाइल नाम प्राप्त नहीं करते हैं।</string>
+    <string name="settings_advertising_description">क्वाइटपीडीएफ Google AdMob बैनर, नेटिव, इंटरस्टिशियल और ऐप-ओपन विज्ञापन प्रदर्शित कर सकता है। विज्ञापन दस्तावेज़ प्रसंस्करण से अलग होते हैं और कभी भी आपकी पीडीएफ सामग्री या फ़ाइल नाम प्राप्त नहीं करते हैं।</string>
     <string name="settings_advertising_not_required">QuietPDF Google AdMob विज्ञापन प्रदर्शित कर सकता है। इस उपकरण के लिए वर्तमान में किसी अतिरिक्त विज्ञापन गोपनीयता विकल्प की आवश्यकता नहीं है।</string>
     <string name="settings_advertising_manage">विकल्प प्रबंधित करें</string>
     <string name="settings_advertising_unavailable">विज्ञापन गोपनीयता विकल्प अभी उपलब्ध नहीं हैं।</string>

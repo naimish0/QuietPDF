@@ -197,6 +197,7 @@ import com.rameshta.quietpdf.ui.theme.QuietPDFTheme
 import com.rameshta.quietpdf.ads.AdMobController
 import com.rameshta.quietpdf.ads.AdPlacementPolicy
 import com.rameshta.quietpdf.ads.HomeBannerAd
+import com.rameshta.quietpdf.ads.HomeNativeAd
 import com.rameshta.quietpdf.ads.rememberHomeBannerAdSession
 import com.rameshta.quietpdf.ads.FullScreenAdCoordinator
 import androidx.camera.core.CameraSelector
@@ -702,6 +703,16 @@ class MainActivity : ComponentActivity(), DefaultLifecycleObserver {
                         onOpenAdvertisingPrivacy = ::openAdvertisingPrivacy,
                     ),
                     adsCanLoad = adMobState.canRequestAds,
+                    homeNativeContent = if (
+                        adMobState.canRequestAds && BuildConfig.ADMOB_NATIVE_ID.isNotBlank()
+                    ) {
+                        {
+                            HomeNativeAd(
+                                adUnitId = BuildConfig.ADMOB_NATIVE_ID,
+                                enabled = true,
+                            )
+                        }
+                    } else null,
                     homeBannerContent = homeBannerAdSession?.let { session ->
                         { HomeBannerAd(session) }
                     },
@@ -1340,6 +1351,7 @@ fun QuietPdfApp(
     onSharePdf: (Uri) -> Unit = {},
     settings: QuietPdfSettings = QuietPdfSettings(),
     adsCanLoad: Boolean = false,
+    homeNativeContent: (@Composable () -> Unit)? = null,
     homeBannerContent: (@Composable () -> Unit)? = null,
     onOpenPdf: () -> Unit,
     onClosePdf: () -> Unit = {},
@@ -1602,10 +1614,18 @@ fun QuietPdfApp(
         annotatePdfState is AnnotatePdfState.Idle && scannerCaptureState is ScannerCaptureState.Idle
     val showBanner = AdPlacementPolicy.showBanner(
         screenAllowsBanner = destination != SmartHomeDestination.Settings &&
+            (destination != SmartHomeDestination.Home || successfulResultIsVisible) &&
             (operationsAreIdle || successfulResultIsVisible),
         documentIsClosed = state is PdfOpenState.Idle,
         consentAllowsAds = adsCanLoad,
         isConfigured = homeBannerContent != null,
+    )
+    val showHomeNative = AdPlacementPolicy.showHomeNative(
+        isHome = destination == SmartHomeDestination.Home,
+        documentIsClosed = state is PdfOpenState.Idle,
+        operationsAreIdle = operationsAreIdle,
+        consentAllowsAds = adsCanLoad,
+        isConfigured = homeNativeContent != null,
     )
     BackHandler(
         settingsPage != SettingsPage.Overview ||
@@ -1724,6 +1744,7 @@ fun QuietPdfApp(
                     history = history,
                     continueReading = continueReading,
                     favoriteTools = favoriteTools,
+                    homeNativeContent = homeNativeContent.takeIf { showHomeNative },
                     onOpenRecentPdf = onOpenRecentPdf,
                     onRemoveRecentPdf = onRemoveRecentPdf,
                     onClearRecentPdfs = onClearRecentPdfs,
@@ -3657,6 +3678,7 @@ private fun OpenPdfContent(
     history: List<PdfHistoryEntry>,
     continueReading: ContinueReadingPdf?,
     favoriteTools: List<SmartTool>,
+    homeNativeContent: (@Composable () -> Unit)?,
     onOpenRecentPdf: (Uri) -> Unit,
     onRemoveRecentPdf: (Uri) -> Unit,
     onClearRecentPdfs: () -> Unit,
@@ -4106,6 +4128,7 @@ private fun OpenPdfContent(
                 history = history,
                 continueReading = continueReading,
                 favoriteTools = favoriteTools,
+                homeNativeContent = homeNativeContent,
                 onOpenRecentPdf = onOpenRecentPdf,
                 onRemoveRecentPdf = onRemoveRecentPdf,
                 onClearRecentPdfs = onClearRecentPdfs,
@@ -4617,6 +4640,7 @@ private fun SmartHomeDashboard(
     favoritePdfs: List<FavoritePdf>,
     history: List<PdfHistoryEntry>,
     favoriteTools: List<SmartTool>,
+    homeNativeContent: (@Composable () -> Unit)?,
     tools: List<SmartToolAction>,
     onOpenPdf: () -> Unit,
     onScanDocument: () -> Unit,
@@ -4822,6 +4846,11 @@ private fun SmartHomeDashboard(
                 }
             }
         }
+    }
+
+    homeNativeContent?.let { nativeAd ->
+        Spacer(Modifier.height(20.dp))
+        nativeAd()
     }
 
     val quickTools = favoriteTools.mapNotNull { favorite ->
@@ -5559,6 +5588,7 @@ private fun IdleContent(
     history: List<PdfHistoryEntry>,
     continueReading: ContinueReadingPdf?,
     favoriteTools: List<SmartTool>,
+    homeNativeContent: (@Composable () -> Unit)?,
     onOpenRecentPdf: (Uri) -> Unit,
     onRemoveRecentPdf: (Uri) -> Unit,
     onClearRecentPdfs: () -> Unit,
@@ -5702,6 +5732,7 @@ private fun IdleContent(
             favoritePdfs = favoritePdfs,
             history = history,
             favoriteTools = favoriteTools,
+            homeNativeContent = homeNativeContent,
             tools = toolActions,
             onOpenPdf = onOpenPdf,
             onScanDocument = onScanDocument,

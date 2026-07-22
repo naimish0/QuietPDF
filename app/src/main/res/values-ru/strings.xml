@@ -663,7 +663,7 @@
     <string name="settings_close">Закрыть</string>
     <string name="settings_advertising_title">Реклама</string>
     <string name="settings_advertising_card_description">Просмотрите сведения о конфиденциальности рекламы и управляйте доступными настройками.</string>
-    <string name="settings_advertising_description">QuietPDF может отображать баннер Google AdMob, межстраничную рекламу и рекламу при открытии приложения. Реклама отделена от обработки документов и никогда не получает ваше содержимое PDF или имена файлов.</string>
+    <string name="settings_advertising_description">QuietPDF может отображать баннеры Google AdMob, нативную, межстраничную рекламу и рекламу при открытии приложения. Реклама отделена от обработки документов и никогда не получает ваше содержимое PDF или имена файлов.</string>
     <string name="settings_advertising_not_required">QuietPDF может отображать рекламу Google AdMob. Для этого устройства в настоящее время не требуется никаких дополнительных настроек конфиденциальности рекламы.</string>
     <string name="settings_advertising_manage">Управление выбором</string>
     <string name="settings_advertising_unavailable">В настоящее время параметры конфиденциальности рекламы недоступны.</string>
