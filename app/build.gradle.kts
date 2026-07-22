@@ -182,6 +182,15 @@ android {
         buildConfig = true
     }
 
+    // The in-app language picker can select a locale independently of the device locale.
+    // Keep every supported translation installed instead of letting Play deliver only the
+    // device-language split from the app bundle.
+    bundle {
+        language {
+            enableSplit = false
+        }
+    }
+
 }
 
 androidComponents {

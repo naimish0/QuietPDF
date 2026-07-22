@@ -58,6 +58,19 @@ class LocalizedResourcesTest {
         )
     }
 
+    @Test
+    fun appBundleKeepsEveryLanguageAvailableForTheInAppPicker() {
+        val buildScript = File("build.gradle.kts")
+        assertTrue("Missing app build script", buildScript.isFile)
+
+        val normalizedScript = buildScript.readText().replace(Regex("\\s+"), " ")
+        assertTrue(
+            "Play language splits must be disabled because the app changes locale independently of the device",
+            Regex("bundle \\{.*?language \\{.*?enableSplit = false.*?}.*?}")
+                .containsMatchIn(normalizedScript),
+        )
+    }
+
     private fun resourceFile(folder: String) = File("src/main/res/$folder/strings.xml")
 
     private fun readResources(file: File): Map<String, String> {
