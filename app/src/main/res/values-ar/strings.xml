@@ -667,7 +667,7 @@
     <string name="settings_close">إغلاق</string>
     <string name="settings_advertising_title">الإعلان</string>
     <string name="settings_advertising_card_description">راجع معلومات خصوصية الإعلانات وأدر الخيارات المتاحة.</string>
-    <string name="settings_advertising_description">قد يعرض QuietPDF شعار Google AdMob والإعلانات البينية والإعلانات المفتوحة للتطبيق. الإعلانات منفصلة عن معالجة المستندات ولا تتلقى مطلقًا محتويات أو أسماء ملفات PDF الخاصة بك.</string>
+    <string name="settings_advertising_description">قد يعرض QuietPDF إعلانات Google AdMob البنر والإعلانات المدمجة والبينية وإعلانات فتح التطبيق. الإعلانات منفصلة عن معالجة المستندات ولا تتلقى مطلقًا محتويات أو أسماء ملفات PDF الخاصة بك.</string>
     <string name="settings_advertising_not_required">قد يعرض QuietPDF إعلانات Google AdMob. لا توجد خيارات إضافية لخصوصية الإعلانات مطلوبة حاليًا لهذا الجهاز.</string>
     <string name="settings_advertising_manage">إدارة الاختيارات</string>
     <string name="settings_advertising_unavailable">خيارات خصوصية الإعلان غير متاحة في الوقت الحالي.</string>

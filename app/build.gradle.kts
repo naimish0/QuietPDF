@@ -48,6 +48,11 @@ android {
             )
             buildConfigField(
                 "String",
+                "ADMOB_NATIVE_ID",
+                "\"ca-app-pub-3940256099942544/2247696110\"",
+            )
+            buildConfigField(
+                "String",
                 "ADMOB_INTERSTITIAL_ID",
                 "\"ca-app-pub-3940256099942544/1033173712\"",
             )
@@ -60,6 +65,7 @@ android {
         release {
             val applicationId = providers.gradleProperty("ADMOB_APP_ID").orNull
             val homeBannerId = providers.gradleProperty("ADMOB_HOME_BANNER_ID").orNull
+            val nativeId = providers.gradleProperty("ADMOB_NATIVE_ID").orNull
             val interstitialId = providers.gradleProperty("ADMOB_INTERSTITIAL_ID").orNull
             val appOpenId = providers.gradleProperty("ADMOB_APP_OPEN_ID").orNull
             val applicationConfigured = applicationId?.matches(
@@ -77,6 +83,11 @@ android {
                 "String",
                 "ADMOB_HOME_BANNER_ID",
                 "\"${homeBannerId?.takeIf { applicationConfigured && validAdUnit.matches(it) }.orEmpty()}\"",
+            )
+            buildConfigField(
+                "String",
+                "ADMOB_NATIVE_ID",
+                "\"${nativeId?.takeIf { applicationConfigured && validAdUnit.matches(it) }.orEmpty()}\"",
             )
             buildConfigField(
                 "String",

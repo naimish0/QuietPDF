@@ -31,6 +31,10 @@ class AdMobConfigurationTest {
             BuildConfig.ADMOB_HOME_BANNER_ID,
         )
         assertEquals(
+            "ca-app-pub-3940256099942544/2247696110",
+            BuildConfig.ADMOB_NATIVE_ID,
+        )
+        assertEquals(
             "ca-app-pub-3940256099942544/1033173712",
             BuildConfig.ADMOB_INTERSTITIAL_ID,
         )

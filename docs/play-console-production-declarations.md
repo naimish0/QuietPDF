@@ -16,6 +16,8 @@ Use this file as the source of truth when completing Play Console for package
 - Ads shown to users of unknown age: **Yes**. UMP consent signals, regional requirements, and
   Google advertising settings apply.
 - App Open ads enabled: **Yes**.
+- Native ads enabled: **Yes**. One consent-gated native placement appears in the Home content feed;
+  the Home bottom banner is suppressed to avoid stacking the two formats.
 
 ## Privacy policy
 

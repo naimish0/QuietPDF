@@ -7,4 +7,12 @@ object AdPlacementPolicy {
         consentAllowsAds: Boolean,
         isConfigured: Boolean,
     ): Boolean = screenAllowsBanner && documentIsClosed && consentAllowsAds && isConfigured
+
+    fun showHomeNative(
+        isHome: Boolean,
+        documentIsClosed: Boolean,
+        operationsAreIdle: Boolean,
+        consentAllowsAds: Boolean,
+        isConfigured: Boolean,
+    ): Boolean = isHome && documentIsClosed && operationsAreIdle && consentAllowsAds && isConfigured
 }

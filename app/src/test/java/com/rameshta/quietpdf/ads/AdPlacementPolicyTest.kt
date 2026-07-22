@@ -32,4 +32,34 @@ class AdPlacementPolicyTest {
             )
         }
     }
+
+    @Test
+    fun nativeAdIsAllowedOnlyOnIdleConsentedConfiguredHome() {
+        assertTrue(
+            AdPlacementPolicy.showHomeNative(
+                isHome = true,
+                documentIsClosed = true,
+                operationsAreIdle = true,
+                consentAllowsAds = true,
+                isConfigured = true,
+            ),
+        )
+    }
+
+    @Test
+    fun everySafetyGateIndependentlySuppressesTheNativeAd() {
+        val allowed = listOf(true, true, true, true, true)
+        allowed.indices.forEach { disabledIndex ->
+            val values = allowed.toMutableList().also { it[disabledIndex] = false }
+            assertFalse(
+                AdPlacementPolicy.showHomeNative(
+                    isHome = values[0],
+                    documentIsClosed = values[1],
+                    operationsAreIdle = values[2],
+                    consentAllowsAds = values[3],
+                    isConfigured = values[4],
+                ),
+            )
+        }
+    }
 }
