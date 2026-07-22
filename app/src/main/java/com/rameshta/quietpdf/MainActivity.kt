@@ -258,7 +258,6 @@ class MainActivity : ComponentActivity(), DefaultLifecycleObserver {
             fullScreenAds.beginSession()
         }
         adMobController.start(this)
-
         if (savedInstanceState == null) openFromIntent(intent)
 
         setContent {
@@ -5401,10 +5400,25 @@ private fun SettingsContent(
             }
         }
 
-        SettingsPage.Privacy -> SettingsDetailContent(
-            text = stringResource(R.string.settings_privacy_policy_details),
-            testTag = "settings_privacy_screen",
-        )
+        SettingsPage.Privacy -> {
+            val context = LocalContext.current
+            Column(
+                modifier = Modifier.fillMaxWidth().testTag("settings_privacy_screen"),
+                verticalArrangement = Arrangement.spacedBy(20.dp),
+            ) {
+                SettingsDetailContent(
+                    text = stringResource(R.string.settings_privacy_policy_details),
+                    testTag = "settings_privacy_details",
+                )
+                SettingsOutlineAction(
+                    text = stringResource(R.string.settings_privacy_policy),
+                    onClick = {
+                        context.startActivity(Intent(context, PrivacyPolicyActivity::class.java))
+                    },
+                    testTag = "settings_privacy_policy",
+                )
+            }
+        }
 
         SettingsPage.Advertising -> Column(
             modifier = Modifier.fillMaxWidth().testTag("settings_advertising_screen"),

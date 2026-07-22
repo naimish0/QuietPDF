@@ -121,6 +121,7 @@ class SmartHomeUiTest {
         composeRule.onNodeWithTag("settings_back_action").performClick()
         composeRule.onNodeWithTag("settings_privacy_card").performScrollTo().performClick()
         composeRule.onNodeWithTag("settings_privacy_screen").assertIsDisplayed()
+        composeRule.onNodeWithTag("settings_privacy_policy").assertIsDisplayed()
 
         composeRule.onNodeWithTag("settings_back_action").performClick()
         composeRule.onNodeWithTag("settings_advertising_card").performScrollTo().performClick()

@@ -655,7 +655,7 @@
     <string name="settings_privacy_card_description">문서 처리, 공유 및 광고 데이터가 어떻게 처리되는지 알아보세요.</string>
     <string name="settings_privacy_description">QuietPDF는 선택한 PDF 및 이미지를 기기에서 처리하며 문서 처리를 위해 개발자 백엔드를 사용하지 않습니다.\n\n인터넷 액세스는 Google 광고 및 동의 서비스에서 사용됩니다. 문서 내용, 파일 이름 및 추출된 텍스트는 광고 서비스로 전송되지 않습니다.</string>
     <string name="settings_privacy_policy">개인 정보 보호 정책</string>
-    <string name="settings_privacy_policy_details">QuietPDF는 PDF 및 이미지 콘텐츠를 장치에서 로컬로 처리합니다. 핵심 PDF 도구는 QuietPDF 서버에 문서를 업로드하지 않습니다.\n\nGoogle 모바일 광고 및 동의 서비스는 귀하의 동의 선택에 따라 IP 주소에서 파생된 기기 식별자, 진단, 상호 작용 및 대략적인 위치를 처리할 수 있습니다. QuietPDF.\n\n에서 문서 내용, 파일 이름, 추출된 텍스트, 서명 또는 비밀번호를 받지 않습니다. 공유를 선택하면 선택한 수신 애플리케이션이 자체 개인 정보 보호 정책에 따라 문서를 처리합니다.</string>
+    <string name="settings_privacy_policy_details">QuietPDF는 PDF와 이미지 콘텐츠를 기기에서 로컬로 처리합니다. 주요 PDF 도구는 문서를 QuietPDF 서버에 업로드하지 않습니다.\n\nGoogle 모바일 광고 및 동의 서비스는 동의 선택에 따라 기기 식별자, 진단 정보, 상호작용 및 IP 주소에서 추정된 대략적인 위치를 처리할 수 있습니다. QuietPDF는 문서 콘텐츠, 파일 이름, 추출된 텍스트, 서명 또는 비밀번호를 이러한 서비스에 제공하지 않습니다.\n\n공유를 선택하면 수신 앱이 자체 개인정보처리방침에 따라 문서를 처리합니다.</string>
     <string name="settings_close">닫기</string>
     <string name="settings_advertising_title">광고</string>
     <string name="settings_advertising_card_description">광고 개인 정보 보호 정보를 확인하고 사용 가능한 옵션을 관리하세요.</string>

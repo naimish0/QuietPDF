@@ -1,6 +1,7 @@
 package com.rameshta.quietpdf.ads
 
 import android.app.Activity
+import com.google.android.gms.ads.AgeRestrictedTreatment
 import com.google.android.gms.ads.MobileAds
 import com.google.android.ump.ConsentInformation
 import com.google.android.ump.ConsentRequestParameters
@@ -26,6 +27,7 @@ class AdMobController {
 
     fun start(activity: Activity) {
         if (!BuildConfig.ADMOB_ENABLED || !started.compareAndSet(false, true)) return
+        configureStandardAgeTreatment()
         val consentInformation = UserMessagingPlatform.getConsentInformation(activity)
         val parameters = ConsentRequestParameters.Builder()
             .setTagForUnderAgeOfConsent(false)
@@ -77,4 +79,12 @@ class AdMobController {
         if (!consentInformation.canRequestAds() || !initialized.compareAndSet(false, true)) return
         MobileAds.initialize(activity)
     }
+}
+
+internal fun configureStandardAgeTreatment() {
+    MobileAds.setRequestConfiguration(
+        MobileAds.getRequestConfiguration().toBuilder()
+            .setAgeRestrictedTreatment(AgeRestrictedTreatment.UNSPECIFIED)
+            .build(),
+    )
 }

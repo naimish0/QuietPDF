@@ -656,7 +656,7 @@
     <string name="settings_privacy_card_description">文書処理、共有、広告データの取り扱いについて確認できます。</string>
     <string name="settings_privacy_description">QuietPDF は、デバイス上で選択された PDF と画像を処理し、ドキュメント処理に開発者のバックエンドを使用しません。\\n\\nインターネット アクセスは、Google の広告および同意サービスによって使用されます。ドキュメントの内容、ファイル名、抽出されたテキストが広告サービスに送信されることはありません。</string>
     <string name="settings_privacy_policy">プライバシーポリシー</string>
-    <string name="settings_privacy_policy_details">QuietPDF は、PDF および画像コンテンツをデバイス上でローカルに処理します。コア PDF ツールはドキュメントを QuietPDF サーバーにアップロードしません。\\n\\nGoogle モバイル広告と同意サービスは、同意の選択に従って、デバイス識別子、診断、インタラクション、IP アドレスから得られるおおよその位置情報を処理する場合があります。 QuietPDF からドキュメントの内容、ファイル名、抽出されたテキスト、署名、パスワードを受け取ることはありません。\\n\\n[共有] を選択すると、選択した受信アプリケーションは独自のプライバシー ポリシーに基づいてドキュメントを処理します。</string>
+    <string name="settings_privacy_policy_details">QuietPDF は PDF と画像の内容を端末上で処理します。主要な PDF ツールが文書を QuietPDF サーバーへアップロードすることはありません。\n\nGoogle モバイル広告と同意サービスは、同意の選択に応じて、端末識別子、診断情報、操作情報、IP アドレスから推定されるおおよその位置情報を処理する場合があります。QuietPDF が文書の内容、ファイル名、抽出テキスト、署名、パスワードをこれらのサービスへ送信することはありません。\n\n共有を選択した場合、送信先のアプリが独自のプライバシーポリシーに従って文書を処理します。</string>
     <string name="settings_close">近い</string>
     <string name="settings_advertising_title">広告</string>
     <string name="settings_advertising_card_description">広告のプライバシー情報を確認し、利用可能な設定を管理します。</string>
